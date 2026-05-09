@@ -14,7 +14,16 @@
 
 import { describe, expect, it } from 'vitest'
 import type { NotionTransport } from './_client.ts'
-import { createPage, getChildBlocks, getChildPages, getPage, searchTopLevelPages } from './pages.ts'
+import {
+  createPage,
+  getChildBlocks,
+  getChildPages,
+  getDatabase,
+  getPage,
+  queryDatabase,
+  searchDatabases,
+  searchTopLevelPages,
+} from './pages.ts'
 
 class FakeTransport implements NotionTransport {
   invocations: { name: string; args: Record<string, unknown> }[] = []
@@ -75,6 +84,66 @@ describe('searchTopLevelPages', () => {
       start_cursor: 'cursor-a',
     })
     expect(pages.map((p) => p.id)).toEqual(['p1', 'p2'])
+  })
+})
+
+describe('searchDatabases', () => {
+  it('invokes API-post-search with a database filter', async () => {
+    const transport = new FakeTransport()
+    transport.responses.push({
+      results: [{ id: 'db1', object: 'database' }],
+      has_more: false,
+      next_cursor: null,
+    })
+    const databases = await searchDatabases(transport)
+    expect(transport.invocations).toEqual([
+      {
+        name: 'API-post-search',
+        args: { filter: { value: 'database', property: 'object' }, page_size: 100 },
+      },
+    ])
+    expect(databases).toEqual([{ id: 'db1', object: 'database' }])
+  })
+})
+
+describe('getDatabase', () => {
+  it('invokes API-retrieve-a-database with the database id', async () => {
+    const transport = new FakeTransport()
+    const database = { id: 'db1', object: 'database' }
+    transport.responses.push(database)
+    const result = await getDatabase(transport, 'db1')
+    expect(transport.invocations).toEqual([
+      { name: 'API-retrieve-a-database', args: { database_id: 'db1' } },
+    ])
+    expect(result).toEqual(database)
+  })
+})
+
+describe('queryDatabase', () => {
+  it('paginates API-post-database-query and returns database rows', async () => {
+    const transport = new FakeTransport()
+    transport.responses.push({
+      results: [{ id: 'row1', object: 'page' }],
+      has_more: true,
+      next_cursor: 'cursor-db',
+    })
+    transport.responses.push({
+      results: [{ id: 'row2', object: 'page' }],
+      has_more: false,
+      next_cursor: null,
+    })
+    const rows = await queryDatabase(transport, 'db1')
+    expect(transport.invocations).toEqual([
+      { name: 'API-post-database-query', args: { database_id: 'db1', page_size: 100 } },
+      {
+        name: 'API-post-database-query',
+        args: { database_id: 'db1', page_size: 100, start_cursor: 'cursor-db' },
+      },
+    ])
+    expect(rows).toEqual([
+      { id: 'row1', object: 'page' },
+      { id: 'row2', object: 'page' },
+    ])
   })
 })
 
