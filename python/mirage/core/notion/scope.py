@@ -35,7 +35,7 @@ def detect_scope(path: PathSpec) -> NotionScope:
         if prefix:
             dir_key = dir_key.removeprefix(prefix.strip("/") + "/")
         parts = dir_key.split("/") if dir_key else []
-        if parts and parts[0] == "pages" and len(parts) >= 2:
+        if parts and parts[0] in ("pages", "databases") and len(parts) >= 2:
             return NotionScope(use_native=True, resource_path=dir_key)
 
     key = path.key
@@ -44,7 +44,7 @@ def detect_scope(path: PathSpec) -> NotionScope:
 
     parts = key.split("/")
 
-    if parts[0] != "pages":
+    if parts[0] not in ("pages", "databases"):
         return NotionScope(use_native=False, resource_path=key)
 
     if len(parts) == 1:
