@@ -15,7 +15,7 @@
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, type PathSpec } from '../../types.ts'
 import type { NotionTransport } from './_client.ts'
-import { getPage } from './pages.ts'
+import { getDatabase, getPage } from './pages.ts'
 import { parseSegment } from './pathing.ts'
 
 export interface NotionStatAccessor {
@@ -54,6 +54,22 @@ async function resolveModified(
   return time === '' ? null : time
 }
 
+async function resolveDatabaseModified(
+  transport: NotionTransport,
+  index: IndexCacheStore | undefined,
+  cacheKey: string,
+  databaseId: string,
+): Promise<string | null> {
+  if (index !== undefined) {
+    const result = await index.get(cacheKey)
+    const cached = result.entry?.remoteTime
+    if (typeof cached === 'string' && cached !== '') return cached
+  }
+  const database = await getDatabase(transport, databaseId)
+  const time = pickString(database, 'last_edited_time')
+  return time === '' ? null : time
+}
+
 export async function stat(
   accessor: NotionStatAccessor,
   path: PathSpec,
@@ -67,12 +83,89 @@ export async function stat(
   const key = p.replace(/^\/+|\/+$/g, '')
   const virtualKey = makeVirtualKey(prefix, key)
 
-  if (key === '') {
-    return new FileStat({ name: '/', type: FileType.DIRECTORY })
+  if (key === '' || key === 'pages') {
+    return new FileStat({ name: key === 'pages' ? 'pages' : '/', type: FileType.DIRECTORY })
+  }
+
+  if (key === 'databases') {
+    return new FileStat({ name: 'databases', type: FileType.DIRECTORY })
   }
 
   const parts = key.split('/')
   const lastSegment = parts[parts.length - 1] ?? ''
+
+  if (parts[0] === 'databases' && parts.length === 2) {
+    let parsedDatabase: { id: string; title: string }
+    try {
+      parsedDatabase = parseSegment(lastSegment)
+    } catch {
+      throw enoent(path.original)
+    }
+    if (index !== undefined) {
+      const result = await index.get(virtualKey)
+      const cached = result.entry?.remoteTime
+      if (result.entry !== null && result.entry !== undefined) {
+        return new FileStat({
+          name: lastSegment,
+          type: FileType.DIRECTORY,
+          modified: typeof cached === 'string' && cached !== '' ? cached : null,
+          size: null,
+          extra: { database_id: parsedDatabase.id },
+        })
+      }
+    }
+    const database = await getDatabase(accessor.transport, parsedDatabase.id)
+    const modified = pickString(database, 'last_edited_time')
+    return new FileStat({
+      name: lastSegment,
+      type: FileType.DIRECTORY,
+      modified: modified === '' ? null : modified,
+      size: null,
+      extra: { database_id: parsedDatabase.id },
+    })
+  }
+
+  if (lastSegment === 'database.json') {
+    if (parts[0] !== 'databases' || parts.length !== 3) throw enoent(path.original)
+    const databaseSegment = parts[parts.length - 2] ?? ''
+    let parsedDatabase: { id: string; title: string }
+    try {
+      parsedDatabase = parseSegment(databaseSegment)
+    } catch {
+      throw enoent(path.original)
+    }
+    const parentVirtualKey = makeVirtualKey(prefix, parts.slice(0, parts.length - 1).join('/'))
+    const modified = await resolveDatabaseModified(
+      accessor.transport,
+      index,
+      parentVirtualKey,
+      parsedDatabase.id,
+    )
+    return new FileStat({
+      name: 'database.json',
+      type: FileType.JSON,
+      modified,
+      size: null,
+      extra: { database_id: parsedDatabase.id },
+    })
+  }
+
+  if (parts[0] === 'databases') {
+    let parsedRow: { id: string; title: string }
+    try {
+      parsedRow = parseSegment(lastSegment)
+    } catch {
+      throw enoent(path.original)
+    }
+    const modified = await resolveModified(accessor.transport, index, virtualKey, parsedRow.id)
+    return new FileStat({
+      name: lastSegment,
+      type: FileType.DIRECTORY,
+      modified,
+      size: null,
+      extra: { page_id: parsedRow.id },
+    })
+  }
 
   if (lastSegment === 'page.json') {
     if (parts.length < 2) throw enoent(path.original)

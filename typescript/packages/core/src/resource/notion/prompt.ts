@@ -13,13 +13,19 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 export const NOTION_PROMPT = `{prefix}
-  <page-title>__<page-id>/
-    page.json
-    <child-page-title>__<child-id>/
+  pages/
+    <page-title>__<page-id>/
       page.json
-  Hierarchical page tree. cat shows page content as JSON.
+      <child-page-title>__<child-id>/
+        page.json
+  databases/
+    <database-title>__<database-id>/
+      database.json
+      <row-page-title>__<page-id>/
+        page.json
+  Hierarchical page tree plus shared databases. cat shows page/database content as JSON.
 
-  <page-title> is sanitized — don't construct it; ls the parent dir.`
+  Titles are sanitized — don't construct paths; ls the parent dir.`
 
 export const NOTION_WRITE_PROMPT = `  Write commands:
     notion-page-create --parent <parent-path> --title "title"`

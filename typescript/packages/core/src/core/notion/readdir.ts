@@ -14,10 +14,10 @@
 
 import { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import type { PathSpec } from '../../types.ts'
+import { PathSpec } from '../../types.ts'
 import type { NotionTransport } from './_client.ts'
-import { extractIdNoDashes, pageSegmentName } from './normalize.ts'
-import { getChildPages, searchTopLevelPages } from './pages.ts'
+import { databaseSegmentName, extractIdNoDashes, pageSegmentName } from './normalize.ts'
+import { getChildPages, queryDatabase, searchDatabases, searchTopLevelPages } from './pages.ts'
 import { formatSegment, parseSegment } from './pathing.ts'
 
 export interface NotionReaddirAccessor {
@@ -82,8 +82,96 @@ export async function readdir(
     return names
   }
 
+  if (key === 'pages') {
+    return readdir(
+      accessor,
+      new PathSpec({
+        original: prefix === '' ? '/' : prefix,
+        directory: prefix === '' ? '/' : prefix,
+        prefix,
+      }),
+      index,
+    )
+  }
+
+  if (key === 'databases') {
+    if (index !== undefined) {
+      const listing = await index.listDir(virtualKey)
+      if (listing.entries !== undefined && listing.entries !== null) {
+        return listing.entries
+      }
+    }
+    const databases = await searchDatabases(accessor.transport)
+    const entries: [string, IndexEntry][] = []
+    const names: string[] = []
+    for (const database of databases) {
+      const name = databaseSegmentName(database)
+      const id = extractIdNoDashes(database)
+      entries.push([
+        name,
+        new IndexEntry({
+          id,
+          name,
+          resourceType: 'notion/database',
+          remoteTime: pickString(database, 'last_edited_time'),
+          vfsName: name,
+        }),
+      ])
+      names.push(`${prefix}/databases/${name}`)
+    }
+    if (index !== undefined) await index.setDir(virtualKey, entries)
+    return names
+  }
+
   const parts = key.split('/')
   const lastSegment = parts[parts.length - 1] ?? ''
+  if (parts[0] === 'databases' && parts.length === 2) {
+    let parsedDatabase: { id: string; title: string }
+    try {
+      parsedDatabase = parseSegment(lastSegment)
+    } catch {
+      throw enoent(p)
+    }
+    if (index !== undefined) {
+      const listing = await index.listDir(virtualKey)
+      if (listing.entries !== undefined && listing.entries !== null) {
+        return listing.entries
+      }
+    }
+    const rows = await queryDatabase(accessor.transport, parsedDatabase.id)
+    const entries: [string, IndexEntry][] = [
+      [
+        'database.json',
+        new IndexEntry({
+          id: '',
+          name: 'database.json',
+          resourceType: 'notion/database-json',
+          remoteTime: '',
+          vfsName: 'database.json',
+        }),
+      ],
+    ]
+    const names: string[] = [`${prefix}/${key}/database.json`]
+    for (const row of rows) {
+      if (row.object !== 'page') continue
+      const segment = pageSegmentName(row)
+      const id = extractIdNoDashes(row)
+      entries.push([
+        segment,
+        new IndexEntry({
+          id,
+          name: segment,
+          resourceType: 'notion/page',
+          remoteTime: pickString(row, 'last_edited_time'),
+          vfsName: segment,
+        }),
+      ])
+      names.push(`${prefix}/${key}/${segment}`)
+    }
+    if (index !== undefined) await index.setDir(virtualKey, entries)
+    return names
+  }
+
   let parsed: { id: string; title: string }
   try {
     parsed = parseSegment(lastSegment)
