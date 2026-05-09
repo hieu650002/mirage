@@ -44,6 +44,11 @@ def test_pages_dir():
     assert scope.use_native is True
 
 
+def test_databases_dir():
+    scope = detect_scope(_gs("/notion/databases", prefix="/notion"))
+    assert scope.use_native is True
+
+
 def test_page_dir():
     scope = detect_scope(_gs("/notion/pages/MyPage__abc123", prefix="/notion"))
     assert scope.use_native is True
@@ -64,6 +69,16 @@ def test_nested_page():
     assert scope.page_id == "xyz"
 
 
+def test_database_row_page():
+    scope = detect_scope(
+        _gs(
+            "/notion/databases/Tasks__db123/Row__row456/page.json",
+            prefix="/notion",
+        ))
+    assert scope.use_native is False
+    assert scope.page_id == "row456"
+
+
 def test_glob_in_page_dir():
     spec = PathSpec(
         original="/notion/pages/MyPage__abc/*.json",
@@ -77,5 +92,5 @@ def test_glob_in_page_dir():
 
 
 def test_unknown_root_not_native():
-    scope = detect_scope(_gs("/notion/databases", prefix="/notion"))
+    scope = detect_scope(_gs("/notion/unknown", prefix="/notion"))
     assert scope.use_native is False
