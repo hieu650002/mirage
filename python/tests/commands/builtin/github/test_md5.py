@@ -51,7 +51,7 @@ async def test_md5_single_file_gnu_format(mock_github_api, github_env):
     accessor, index = github_env
     text, io = await _run(accessor, index, ["README.md"])
     assert io.exit_code == 0
-    assert text == f"{_digest('aaa111')}  /README.md"
+    assert text == f"{_digest('aaa111')}  /README.md\n"
 
 
 @pytest.mark.asyncio

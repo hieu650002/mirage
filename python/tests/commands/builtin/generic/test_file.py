@@ -31,7 +31,7 @@ async def test_file_single_text():
     out, io = await file_cmd([_spec("/a.txt")],
                              read_bytes=read_bytes,
                              stat_fn=stat_fn)
-    assert out == b"/a.txt: text"
+    assert out == b"/a.txt: text\n"
     assert io.exit_code == 0
 
 
@@ -56,7 +56,7 @@ async def test_file_directory_reported_without_read():
     out, _io = await file_cmd([_spec("/d")],
                               read_bytes=read_bytes,
                               stat_fn=stat_fn)
-    assert out == b"/d: directory"
+    assert out == b"/d: directory\n"
 
 
 @pytest.mark.asyncio
@@ -67,7 +67,7 @@ async def test_file_brief_drops_path_prefix():
                               read_bytes=read_bytes,
                               stat_fn=stat_fn,
                               b=True)
-    assert out == b"text"
+    assert out == b"text\n"
 
 
 @pytest.mark.asyncio

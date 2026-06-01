@@ -1,6 +1,8 @@
 from collections.abc import Awaitable, Callable
 
 from mirage.commands.builtin.utils.formatting import _human_size
+from mirage.commands.builtin.utils.output import (format_record_text,
+                                                  format_records)
 from mirage.types import PathSpec
 
 
@@ -79,10 +81,10 @@ async def du(
         )
         sub_texts.append(text)
         totals.append(total)
-    out = "\n".join(sub_texts)
+    out = format_record_text(sub_texts)
     if c:
         grand = sum(totals)
-        out += "\n" + _format_size(grand, h) + "\ttotal"
+        out += _format_size(grand, h) + "\ttotal\n"
     return out
 
 
@@ -141,4 +143,4 @@ async def du_multi(
         totals.append(total)
     if c:
         lines.append(_format_size(sum(totals), h) + "\ttotal")
-    return "\n".join(lines).encode()
+    return format_records(lines)
