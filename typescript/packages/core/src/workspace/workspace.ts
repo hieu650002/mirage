@@ -28,7 +28,11 @@ import type { Resource } from '../resource/base.ts'
 import { RAMResource, type RAMResourceState } from '../resource/ram/ram.ts'
 import { resourceStateRequiresOverride } from '../resource/secrets.ts'
 import { GENERAL_COMMANDS, HISTORY_COMMANDS } from '../commands/builtin/general/index.ts'
-import { CommandTimeoutError, runWithTimeout } from '../commands/builtin/utils/safeguard.ts'
+import {
+  applyOpSafeguard,
+  CommandTimeoutError,
+  runWithTimeout,
+} from '../commands/builtin/utils/safeguard.ts'
 import { resolveSafeguard } from '../commands/safeguard.ts'
 import { JobTable } from '../shell/job_table.ts'
 import { findSyntaxError, type ShellParser } from '../shell/parse.ts'
@@ -642,18 +646,27 @@ export class Workspace {
         ? { ...kwargs, index: resource.index }
         : kwargs
     const mount = this.registry.mountFor(path)
-    return runWithRevisions(
+    const opOverride = mount?.commandSafeguards.get(opName) ?? null
+    const opTimeout = opOverride !== null ? opOverride.timeoutSeconds : null
+    const result = await runWithRevisions(
       mount !== null && mount.revisions.size > 0 ? mount.revisions : null,
       async () =>
-        this.opsRegistry.call(
+        runWithTimeout(
+          Promise.resolve(
+            this.opsRegistry.call(
+              opName,
+              resource.kind,
+              resource.accessor ?? NOOP_ACCESSOR_INSTANCE,
+              spec,
+              args,
+              fullKwargs,
+            ),
+          ),
+          opTimeout,
           opName,
-          resource.kind,
-          resource.accessor ?? NOOP_ACCESSOR_INSTANCE,
-          spec,
-          args,
-          fullKwargs,
         ),
     )
+    return applyOpSafeguard(result, opOverride)
   }
 
   async resolve(path: string): Promise<[Resource, PathSpec, MountMode]> {

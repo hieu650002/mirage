@@ -82,6 +82,7 @@ export {
   resolveAcrossMounts,
   resolveSafeguard,
 } from './commands/safeguard.ts'
+export { CommandTimeoutError, SafeguardExceededError } from './commands/builtin/utils/safeguard.ts'
 export { GENERAL_COMMANDS } from './commands/builtin/general/index.ts'
 export { RAM_AWK } from './commands/builtin/ram/awk.ts'
 export { RAM_BASE64 } from './commands/builtin/ram/base64_cmd.ts'
