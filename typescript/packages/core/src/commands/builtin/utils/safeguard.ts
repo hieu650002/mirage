@@ -18,6 +18,85 @@ import { type CommandSafeguard, OnExceed } from '../../../types.ts'
 
 const NEWLINE = 0x0a
 const ENC = new TextEncoder()
+const DEC = new TextDecoder()
+
+export class CommandTimeoutError extends Error {
+  readonly command: string
+  readonly seconds: number
+  constructor(command: string, seconds: number) {
+    super(`${command}: timed out after ${String(seconds)}s`)
+    this.name = 'CommandTimeoutError'
+    this.command = command
+    this.seconds = seconds
+  }
+}
+
+export class SafeguardExceededError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SafeguardExceededError'
+  }
+}
+
+const TIMED_OUT = Symbol('timed-out')
+
+function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  return new Promise<T | typeof TIMED_OUT>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      resolve(TIMED_OUT)
+    }, ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err: unknown) => {
+        clearTimeout(timer)
+        reject(err instanceof Error ? err : new Error(String(err)))
+      },
+    )
+  })
+}
+
+export async function* withTimeout(
+  src: ByteSource,
+  seconds: number,
+  command: string,
+): AsyncIterableIterator<Uint8Array> {
+  const iterable: AsyncIterable<Uint8Array> = src instanceof Uint8Array ? yieldBytes(src) : src
+  const iterator = iterable[Symbol.asyncIterator]()
+  const deadline = performance.now() + seconds * 1000
+  for (;;) {
+    const remaining = deadline - performance.now()
+    if (remaining <= 0) throw new CommandTimeoutError(command, seconds)
+    const next = await withDeadline(iterator.next(), remaining)
+    if (next === TIMED_OUT) throw new CommandTimeoutError(command, seconds)
+    if (next.done === true) return
+    yield next.value
+  }
+}
+
+export function maybeWithTimeout(
+  stream: ByteSource | null,
+  safeguard: CommandSafeguard | null,
+  command: string,
+): ByteSource | null {
+  if (stream === null || stream instanceof Uint8Array) return stream
+  const timeout = safeguard?.timeoutSeconds ?? null
+  if (timeout === null || timeout <= 0) return stream
+  return withTimeout(stream, timeout, command)
+}
+
+export async function runWithTimeout<T>(
+  promise: Promise<T>,
+  seconds: number | null,
+  name: string,
+): Promise<T> {
+  if (seconds === null || seconds <= 0) return await promise
+  const result = await withDeadline(promise, seconds * 1000)
+  if (result === TIMED_OUT) throw new CommandTimeoutError(name || '?', seconds)
+  return result
+}
 
 function trimToLines(buf: Uint8Array, maxLines: number): Uint8Array {
   let count = 0
@@ -102,4 +181,22 @@ export async function applySafeguard(
     return [null, new IOResult({ exitCode: 1, stderr: notice })]
   }
   return [data, new IOResult({ stderr: notice })]
+}
+
+export async function applyOpSafeguard(
+  result: unknown,
+  safeguard: CommandSafeguard | null,
+): Promise<unknown> {
+  if (safeguard === null) return result
+  if (safeguard.maxBytes === null && safeguard.maxLines === null) return result
+  const isBytes = result instanceof Uint8Array
+  const isStream = result !== null && typeof result === 'object' && Symbol.asyncIterator in result
+  if (!isBytes && !isStream) return result
+  const [data, sgIo] = await applySafeguard(result as ByteSource, safeguard)
+  if (sgIo.exitCode !== 0) {
+    const message =
+      sgIo.stderr instanceof Uint8Array ? DEC.decode(sgIo.stderr) : 'safeguard exceeded'
+    throw new SafeguardExceededError(message.trim())
+  }
+  return data
 }

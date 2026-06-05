@@ -55,26 +55,53 @@ export type OnExceed = (typeof OnExceed)[keyof typeof OnExceed]
 export interface CommandSafeguardInit {
   maxBytes?: number | null
   maxLines?: number | null
+  timeoutSeconds?: number | null
   onExceed?: OnExceed
+}
+
+function minPositive(values: (number | null)[]): number | null {
+  const positives = values.filter((v): v is number => v !== null && v > 0)
+  return positives.length > 0 ? Math.min(...positives) : null
 }
 
 export class CommandSafeguard {
   readonly maxBytes: number | null
   readonly maxLines: number | null
+  readonly timeoutSeconds: number | null
   readonly onExceed: OnExceed
 
   constructor(init: CommandSafeguardInit = {}) {
     const maxBytes = init.maxBytes ?? null
     const maxLines = init.maxLines ?? null
+    const timeoutSeconds = init.timeoutSeconds ?? null
     if (maxBytes !== null && (!Number.isInteger(maxBytes) || maxBytes < 0)) {
       throw new TypeError(`maxBytes must be a non-negative integer, got ${String(maxBytes)}`)
     }
     if (maxLines !== null && (!Number.isInteger(maxLines) || maxLines < 0)) {
       throw new TypeError(`maxLines must be a non-negative integer, got ${String(maxLines)}`)
     }
+    if (timeoutSeconds !== null && (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 0)) {
+      throw new TypeError(
+        `timeoutSeconds must be a non-negative number, got ${String(timeoutSeconds)}`,
+      )
+    }
     this.maxBytes = maxBytes
     this.maxLines = maxLines
+    this.timeoutSeconds = timeoutSeconds
     this.onExceed = init.onExceed ?? OnExceed.TRUNCATE
+  }
+
+  static aggr(safeguards: Iterable<CommandSafeguard | null>): CommandSafeguard | null {
+    const present = [...safeguards].filter((s): s is CommandSafeguard => s !== null)
+    if (present.length === 0) return null
+    return new CommandSafeguard({
+      maxBytes: minPositive(present.map((s) => s.maxBytes)),
+      maxLines: minPositive(present.map((s) => s.maxLines)),
+      timeoutSeconds: minPositive(present.map((s) => s.timeoutSeconds)),
+      onExceed: present.some((s) => s.onExceed === OnExceed.ERROR)
+        ? OnExceed.ERROR
+        : OnExceed.TRUNCATE,
+    })
   }
 }
 

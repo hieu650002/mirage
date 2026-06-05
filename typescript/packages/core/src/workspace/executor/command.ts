@@ -31,6 +31,8 @@ import { ExecutionNode } from '../types.ts'
 import { asyncChain } from '../../io/stream.ts'
 import type { DispatchFn } from './cross_mount.ts'
 import { handleCrossMount, isCrossMount } from './cross_mount.ts'
+import { maybeWithTimeout } from '../../commands/builtin/utils/safeguard.ts'
+import { resolveAcrossMounts, resolveSafeguard } from '../../commands/safeguard.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
 import { handleJobs, handleKill, handlePs, handleWait } from './jobs.ts'
 
@@ -122,7 +124,23 @@ export async function handleCommand(
   }
 
   if (isCrossMount(cmdName, pathScopes, registry)) {
-    return handleCrossMount(cmdName, pathScopes, textOnly, dispatch, cmdStr)
+    const [csStdout, csIo, csExec] = await handleCrossMount(
+      cmdName,
+      pathScopes,
+      textOnly,
+      dispatch,
+      cmdStr,
+    )
+    if (csIo.safeguard === null) {
+      const mounts: Mount[] = []
+      for (const s of pathScopes) {
+        const m = registry.mountFor(s.original)
+        if (m !== null) mounts.push(m)
+      }
+      csIo.safeguard =
+        mounts.length > 0 ? resolveAcrossMounts(cmdName, mounts) : resolveSafeguard(cmdName)
+    }
+    return [maybeWithTimeout(csStdout, csIo.safeguard, cmdName), csIo, csExec]
   }
 
   if (pathScopes.length >= 2) {
@@ -226,6 +244,8 @@ export async function handleCommand(
       io.writes = prefixKeys(io.writes, prefix)
       io.cache = io.cache.map((p) => prefix + p)
     }
+    stdout = maybeWithTimeout(stdout, io.safeguard, cmdName)
+    io.stderr = maybeWithTimeout(io.stderr, io.safeguard, cmdName)
     const stderrBytes = await materialize(io.stderr)
     const exec = new ExecutionNode({
       command: cmdStr,
@@ -735,6 +755,7 @@ async function fanOutTraversal(
   }
 
   mergedIo.exitCode = finalIoExit
+  mergedIo.safeguard = resolveAcrossMounts(cmdName, mountsToRun)
   const stderrBytes = await materialize(mergedIo.stderr)
   const exec = new ExecutionNode({
     command: cmdStr,

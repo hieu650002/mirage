@@ -29,7 +29,12 @@ import type { Resource } from '../resource/base.ts'
 import { RAMResource, type RAMResourceState } from '../resource/ram/ram.ts'
 import { resourceStateRequiresOverride } from '../resource/secrets.ts'
 import { GENERAL_COMMANDS, HISTORY_COMMANDS } from '../commands/builtin/general/index.ts'
-import { applySafeguard } from '../commands/builtin/utils/safeguard.ts'
+import {
+  applySafeguard,
+  CommandTimeoutError,
+  runWithTimeout,
+} from '../commands/builtin/utils/safeguard.ts'
+import { resolveSafeguard } from '../commands/safeguard.ts'
 import { applyBarrier, BarrierPolicy } from '../shell/barrier.ts'
 import { JobTable } from '../shell/job_table.ts'
 import { findSyntaxError, type ShellParser } from '../shell/parse.ts'
@@ -713,7 +718,14 @@ export class Workspace {
         exitCode: res.exitCode,
       })
     }
-    return provisionNode({ registry: this.registry, executeFn }, rootNode, session)
+    const provName = command.trim().split(/\s+/)[0] ?? ''
+    const provResolved = provName !== '' ? resolveSafeguard(provName) : null
+    const provTimeout = provResolved !== null ? provResolved.timeoutSeconds : null
+    return runWithTimeout(
+      provisionNode({ registry: this.registry, executeFn }, rootNode, session),
+      provTimeout,
+      provName !== '' ? provName : '?',
+    )
   }
 
   async execute(
@@ -832,11 +844,22 @@ export class Workspace {
           ...(options.env !== undefined ? { env: { ...targetSession.env, ...options.env } } : {}),
         })
       : targetSession
-    const [[stdout, io], opRecords] = await runWithRecording(() =>
-      runWithSession(effectiveSession, () =>
-        executeNode(deps, rootNode, effectiveSession, stdin, null),
-      ),
-    )
+    let execResult: [[ByteSource | null, IOResult, ExecutionNode], OpRecord[]]
+    try {
+      execResult = await runWithRecording(() =>
+        runWithSession(effectiveSession, () =>
+          executeNode(deps, rootNode, effectiveSession, stdin, null),
+        ),
+      )
+    } catch (err) {
+      if (err instanceof CommandTimeoutError) {
+        const msg = new TextEncoder().encode(`${err.message}\n`)
+        targetSession.lastExitCode = 124
+        return new ExecuteResult(new Uint8Array(), msg, 124)
+      }
+      throw err
+    }
+    const [[stdout, io], opRecords] = execResult
     let materialized = await applyBarrier(stdout, io, BarrierPolicy.VALUE)
     io.syncExitCode()
     if (io.safeguard !== null && materialized !== null) {

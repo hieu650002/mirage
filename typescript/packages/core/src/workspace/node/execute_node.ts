@@ -57,6 +57,8 @@ import { expandNode } from '../expand/node.ts'
 import { expandAndClassify, expandParts } from '../expand/parts.ts'
 import type { TSNodeLike } from '../expand/variable.ts'
 import { handleCommand } from '../executor/command.ts'
+import { runWithTimeout } from '../../commands/builtin/utils/safeguard.ts'
+import { resolveSafeguard } from '../../commands/safeguard.ts'
 import {
   BreakSignal,
   ContinueSignal,
@@ -597,24 +599,30 @@ async function executeCommand(
     session.env[k] = v
   }
 
+  const resolved = name !== '' ? resolveSafeguard(name) : null
+  const timeout = resolved !== null ? resolved.timeoutSeconds : null
   try {
-    return await runCommandBody(
-      recurse,
-      dispatch,
-      registry,
-      executeFn,
-      node,
-      nonPrefixParts,
-      name,
-      session,
-      stdinIn,
-      callStack,
-      jobTable,
-      ensureOpen,
-      unmount,
-      pythonRuntime,
-      history,
-      signal,
+    return await runWithTimeout(
+      runCommandBody(
+        recurse,
+        dispatch,
+        registry,
+        executeFn,
+        node,
+        nonPrefixParts,
+        name,
+        session,
+        stdinIn,
+        callStack,
+        jobTable,
+        ensureOpen,
+        unmount,
+        pythonRuntime,
+        history,
+        signal,
+      ),
+      timeout,
+      name !== '' ? name : '?',
     )
   } finally {
     for (const [k, prev] of Object.entries(savedEnvOverrides)) {

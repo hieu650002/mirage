@@ -25,6 +25,7 @@ import type { OpKwargs } from '../../ops/registry.ts'
 const NOOP_ACCESSOR = new NOOPAccessor()
 import { getExtension } from '../../commands/resolve.ts'
 import { resolveSafeguard } from '../../commands/safeguard.ts'
+import { applyOpSafeguard, runWithTimeout } from '../../commands/builtin/utils/safeguard.ts'
 import type { CommandSpec } from '../../commands/spec/types.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult } from '../../io/types.ts'
@@ -440,10 +441,16 @@ export class Mount {
       ...(filetype !== null && kwargs.filetype === undefined ? { filetype } : {}),
     }
     const accessor = this.resource.accessor ?? NOOP_ACCESSOR
+    const opOverride = this.commandSafeguards.get(opName) ?? null
+    const opTimeout = opOverride !== null ? opOverride.timeoutSeconds : null
     return runWithRevisions(this.revisions.size > 0 ? this.revisions : null, async () => {
       for (const op of levels) {
-        const result = await op.fn(accessor, scope, args, effectiveKwargs)
-        if (result !== null && result !== undefined) return result
+        const result = await runWithTimeout(
+          Promise.resolve(op.fn(accessor, scope, args, effectiveKwargs)),
+          opTimeout,
+          opName,
+        )
+        if (result !== null && result !== undefined) return applyOpSafeguard(result, opOverride)
       }
       return null
     })

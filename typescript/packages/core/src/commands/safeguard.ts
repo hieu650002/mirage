@@ -15,15 +15,19 @@
 import { CommandSafeguard } from '../types.ts'
 
 const DEFAULT_MAX_LINES = 2000
+const DEFAULT_TIMEOUT_SECONDS = 600
 
-export const DEFAULT_COMMAND_SAFEGUARDS: Record<string, CommandSafeguard> = Object.freeze(
-  Object.fromEntries(
-    ['cat', 'grep', 'rg', 'head', 'tail'].map((name) => [
-      name,
-      new CommandSafeguard({ maxLines: DEFAULT_MAX_LINES }),
-    ]),
-  ),
+export const DEFAULT_COMMAND_SAFEGUARDS: Record<string, CommandSafeguard> = Object.fromEntries(
+  ['cat', 'grep', 'rg', 'head', 'tail'].map((name) => [
+    name,
+    new CommandSafeguard({
+      maxLines: DEFAULT_MAX_LINES,
+      timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+    }),
+  ]),
 )
+
+export const FALLBACK_SAFEGUARD = new CommandSafeguard({ timeoutSeconds: DEFAULT_TIMEOUT_SECONDS })
 
 export function resolveSafeguard(
   name: string,
@@ -32,5 +36,19 @@ export function resolveSafeguard(
 ): CommandSafeguard | null {
   if (mountOverride !== null) return mountOverride
   if (commandDefault !== null) return commandDefault
-  return DEFAULT_COMMAND_SAFEGUARDS[name] ?? null
+  return DEFAULT_COMMAND_SAFEGUARDS[name] ?? FALLBACK_SAFEGUARD
+}
+
+interface SafeguardMount {
+  commandSafeguards: Map<string, CommandSafeguard>
+}
+
+export function resolveAcrossMounts(
+  name: string,
+  mounts: Iterable<SafeguardMount>,
+): CommandSafeguard | null {
+  const resolved = [...mounts].map((m) =>
+    resolveSafeguard(name, null, m.commandSafeguards.get(name) ?? null),
+  )
+  return CommandSafeguard.aggr(resolved)
 }

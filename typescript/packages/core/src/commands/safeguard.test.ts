@@ -14,7 +14,12 @@
 
 import { describe, expect, it } from 'vitest'
 import { CommandSafeguard, OnExceed } from '../types.ts'
-import { DEFAULT_COMMAND_SAFEGUARDS, resolveSafeguard } from './safeguard.ts'
+import {
+  DEFAULT_COMMAND_SAFEGUARDS,
+  FALLBACK_SAFEGUARD,
+  resolveAcrossMounts,
+  resolveSafeguard,
+} from './safeguard.ts'
 
 describe('CommandSafeguard', () => {
   it('defaults to no limit + truncate', () => {
@@ -55,11 +60,12 @@ describe('resolveSafeguard', () => {
     expect(resolveSafeguard('cat', null, null)).toBe(DEFAULT_COMMAND_SAFEGUARDS.cat)
   })
 
-  it('returns null for unknown command', () => {
-    expect(resolveSafeguard('nl', null, null)).toBeNull()
+  it('returns FALLBACK_SAFEGUARD for unknown command', () => {
+    expect(resolveSafeguard('nl', null, null)).toBe(FALLBACK_SAFEGUARD)
+    expect(FALLBACK_SAFEGUARD.timeoutSeconds).not.toBeNull()
   })
 
-  it('includes the same five names as Python defaults', () => {
+  it('includes the same five names as Python defaults, with 2000 lines + 600s', () => {
     expect(Object.keys(DEFAULT_COMMAND_SAFEGUARDS).sort()).toEqual(
       ['cat', 'grep', 'head', 'rg', 'tail'].sort(),
     )
@@ -67,6 +73,31 @@ describe('resolveSafeguard', () => {
       const sg = DEFAULT_COMMAND_SAFEGUARDS[name]
       expect(sg).toBeDefined()
       expect(sg?.maxLines).toBe(2000)
+      expect(sg?.timeoutSeconds).toBe(600)
     }
+  })
+})
+
+describe('CommandSafeguard.aggr', () => {
+  it('returns null when nothing present', () => {
+    expect(CommandSafeguard.aggr([null, null])).toBeNull()
+  })
+
+  it('takes the tightest positive cap/timeout and prefers ERROR', () => {
+    const a = new CommandSafeguard({ maxLines: 100, timeoutSeconds: 30 })
+    const b = new CommandSafeguard({ maxLines: 50, timeoutSeconds: 60, onExceed: OnExceed.ERROR })
+    const merged = CommandSafeguard.aggr([a, b, null])
+    expect(merged?.maxLines).toBe(50)
+    expect(merged?.timeoutSeconds).toBe(30)
+    expect(merged?.onExceed).toBe(OnExceed.ERROR)
+  })
+})
+
+describe('resolveAcrossMounts', () => {
+  it('aggregates per-mount overrides, falling back to command default', () => {
+    const m1 = { commandSafeguards: new Map([['cat', new CommandSafeguard({ maxLines: 10 })]]) }
+    const m2 = { commandSafeguards: new Map<string, CommandSafeguard>() }
+    const merged = resolveAcrossMounts('cat', [m1, m2])
+    expect(merged?.maxLines).toBe(10)
   })
 })
