@@ -171,7 +171,8 @@
                 "group": "Knowledge",
                 "icon": "/images/dify-logo.svg",
                 "pages": [
-                  "home/setup/dify"
+                  "home/setup/dify",
+                  "home/setup/chroma"
                 ]
               },
               {
@@ -312,7 +313,8 @@
                 "group": "Knowledge",
                 "icon": "/images/dify-logo.svg",
                 "pages": [
-                  "python/resource/dify"
+                  "python/resource/dify",
+                  "python/resource/chroma"
                 ]
               },
               {

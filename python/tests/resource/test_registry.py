@@ -56,6 +56,7 @@ EXPECTED_RESOURCES = {
     "hf_buckets",
     "nextcloud",
     "dify",
+    "chroma",
 }
 
 
