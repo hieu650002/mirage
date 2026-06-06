@@ -85,7 +85,7 @@ def query_result_to_bytes(
     documents = first_result_list(response.get("documents"))
     metadatas = first_result_list(response.get("metadatas"))
     distances = first_result_list(response.get("distances"))
-    lines: list[str] = []
+    contents: list[str] = []
     for index, document in enumerate(documents):
         metadata = metadatas[index] if index < len(metadatas) else {}
         if not isinstance(metadata, dict):
@@ -103,10 +103,10 @@ def query_result_to_bytes(
         if prefix:
             path = prefix + path
         content = "" if document is None else str(document)
-        lines.append(f"{path}\t{score}\t{content}")
-    if not lines:
+        contents.append(f"{path}:{score}\n{content}")
+    if not contents:
         return b""
-    return ("\n".join(lines) + "\n").encode()
+    return ("\n".join(contents) + "\n").encode()
 
 
 def first_result_list(value: object) -> list:
