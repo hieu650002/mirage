@@ -14,19 +14,11 @@
 
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
-import { read as s3Read } from '../../../core/s3/read.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
+import { stream as s3Stream } from '../../../core/s3/stream.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function reverseString(s: string): string {
-  return Array.from(s).reverse().join('')
-}
+import { revGeneric } from '../generic/rev.ts'
 
 async function revCommand(
   accessor: S3Accessor,
@@ -34,36 +26,9 @@ async function revCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const allLines: string[] = []
-    for (const p of resolved) {
-      const data = DEC.decode(await s3Read(accessor, p, opts.index ?? undefined))
-      for (const line of data.split('\n')) {
-        // Python's splitlines drops a single trailing empty line.
-        allLines.push(line)
-      }
-      // Match Python splitlines(): drop trailing empty if data ended with \n
-      if (data.endsWith('\n') && allLines[allLines.length - 1] === '') {
-        allLines.pop()
-      }
-    }
-    const reversedLines = allLines.map(reverseString)
-    const out: ByteSource = ENC.encode(reversedLines.join('\n') + '\n')
-    return [out, new IOResult()]
-  }
-  const raw = await readStdinAsync(opts.stdin)
-  if (raw === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('rev: missing operand\n') })]
-  }
-  const text = DEC.decode(raw)
-  const lines = text.split('\n')
-  if (text.endsWith('\n') && lines[lines.length - 1] === '') {
-    lines.pop()
-  }
-  const reversedLines = lines.map(reverseString)
-  const out: ByteSource = ENC.encode(reversedLines.join('\n') + '\n')
-  return [out, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return revGeneric(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_REV = command({

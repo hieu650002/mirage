@@ -15,72 +15,22 @@
 import type { SlackAccessor } from '../../../accessor/slack.ts'
 import { resolveSlackGlob } from '../../../core/slack/glob.ts'
 import { stat as slackStat } from '../../../core/slack/stat.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
-import { PathSpec, ResourceName } from '../../../types.ts'
+import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-
-const ENC = new TextEncoder()
-
-function posixNormpath(p: string): string {
-  const isAbs = p.startsWith('/')
-  const parts = p.split('/')
-  const out: string[] = []
-  for (const seg of parts) {
-    if (seg === '' || seg === '.') continue
-    if (seg === '..') {
-      if (out.length > 0 && out[out.length - 1] !== '..') {
-        out.pop()
-      } else if (!isAbs) {
-        out.push('..')
-      }
-      continue
-    }
-    out.push(seg)
-  }
-  const joined = out.join('/')
-  if (isAbs) return '/' + joined
-  return joined === '' ? '.' : joined
-}
-
-async function existsPath(accessor: SlackAccessor, path: PathSpec): Promise<boolean> {
-  try {
-    await slackStat(accessor, path)
-    return true
-  } catch {
-    return false
-  }
-}
+import { realpathGeneric } from '../generic/realpath.ts'
 
 async function realpathCommand(
   accessor: SlackAccessor,
   paths: PathSpec[],
-  _texts: string[],
+  texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
   const resolved =
     paths.length > 0 ? await resolveSlackGlob(accessor, paths, opts.index ?? undefined) : []
-  const eFlag = opts.flags.e === true
-  const mountPrefix = resolved[0]?.prefix ?? ''
-  const lines: string[] = []
-  for (const p of resolved) {
-    const normalized = posixNormpath(p.original)
-    if (eFlag) {
-      const probe = new PathSpec({
-        original: normalized,
-        directory: normalized,
-        resolved: false,
-        prefix: mountPrefix,
-      })
-      if (!(await existsPath(accessor, probe))) {
-        const msg = `realpath: '${p.original}': No such file or directory\n`
-        return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(msg) })]
-      }
-    }
-    lines.push(normalized)
-  }
-  const out: ByteSource = ENC.encode(lines.join('\n') + '\n')
-  return [out, new IOResult()]
+  return realpathGeneric(resolved, texts, opts, (p) =>
+    slackStat(accessor, p, opts.index ?? undefined),
+  )
 }
 
 export const SLACK_REALPATH = command({

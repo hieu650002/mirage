@@ -14,7 +14,7 @@
 
 import type { PathSpec } from '../../types.ts'
 import type { S3Accessor } from '../../accessor/s3.ts'
-import { loadS3Module, rawPathOf, s3Prefix, withClient } from './_client.ts'
+import { loadS3Module, rawPathOf, s3Prefix, stripKeyPrefix, withClient } from './_client.ts'
 
 export async function du(accessor: S3Accessor, path: PathSpec): Promise<number> {
   const { ListObjectsV2Command } = await loadS3Module(accessor.config)
@@ -47,7 +47,10 @@ export async function du(accessor: S3Accessor, path: PathSpec): Promise<number> 
  * Return `[path, size]` pairs for every object under the prefix plus a trailing
  * entry with the total — mirrors Python's `du_all` used by `du -a`.
  */
-export async function duAll(accessor: S3Accessor, path: PathSpec): Promise<[string, number][]> {
+export async function duAll(
+  accessor: S3Accessor,
+  path: PathSpec,
+): Promise<[[string, number][], number]> {
   const { ListObjectsV2Command } = await loadS3Module(accessor.config)
   const raw = rawPathOf(path)
   const pfx = s3Prefix(raw, accessor.config)
@@ -70,13 +73,12 @@ export async function duAll(accessor: S3Accessor, path: PathSpec): Promise<[stri
         const key = obj.Key
         if (key === undefined) continue
         const size = obj.Size ?? 0
-        const entry = '/' + key.replace(/^\/+/, '')
+        const entry = '/' + stripKeyPrefix(key, accessor.config)
         entries.push([entry, size])
         total += size
       }
       continuationToken = resp.IsTruncated === true ? resp.NextContinuationToken : undefined
     } while (continuationToken !== undefined)
   })
-  entries.push([raw, total])
-  return entries
+  return [entries, total]
 }

@@ -14,55 +14,11 @@
 
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
-import { read as s3Read } from '../../../core/s3/read.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
+import { stream as s3Stream } from '../../../core/s3/stream.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function topologicalSort(pairs: readonly (readonly [string, string])[]): [string[], boolean] {
-  const graph = new Map<string, Set<string>>()
-  const inDegree = new Map<string, number>()
-  const getOrCreate = (node: string): Set<string> => {
-    const existing = graph.get(node)
-    if (existing !== undefined) return existing
-    const created = new Set<string>()
-    graph.set(node, created)
-    inDegree.set(node, 0)
-    return created
-  }
-  for (const [a, b] of pairs) {
-    const adj = getOrCreate(a)
-    getOrCreate(b)
-    if (!adj.has(b)) {
-      adj.add(b)
-      inDegree.set(b, (inDegree.get(b) ?? 0) + 1)
-    }
-  }
-  const queue: string[] = []
-  for (const [node, deg] of inDegree) {
-    if (deg === 0) queue.push(node)
-  }
-  const result: string[] = []
-  let head = 0
-  while (head < queue.length) {
-    const node = queue[head] ?? ''
-    head += 1
-    result.push(node)
-    const neighbors = [...(graph.get(node) ?? new Set<string>())].sort()
-    for (const nb of neighbors) {
-      const d = (inDegree.get(nb) ?? 0) - 1
-      inDegree.set(nb, d)
-      if (d === 0) queue.push(nb)
-    }
-  }
-  const hasCycle = result.length !== graph.size
-  return [result, hasCycle]
-}
+import { tsortGeneric } from '../generic/tsort.ts'
 
 async function tsortCommand(
   accessor: S3Accessor,
@@ -70,36 +26,9 @@ async function tsortCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  let raw: Uint8Array
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const first = resolved[0]
-    if (first === undefined) return [null, new IOResult()]
-    raw = await s3Read(accessor, first, opts.index ?? undefined)
-  } else {
-    const stdinData = await readStdinAsync(opts.stdin)
-    if (stdinData === null) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tsort: missing input\n') })]
-    }
-    raw = stdinData
-  }
-  const text = DEC.decode(raw)
-  const tokens = text.split(/\s+/).filter((s) => s !== '')
-  if (tokens.length % 2 !== 0) {
-    const out: ByteSource = ENC.encode('tsort: odd number of tokens\n')
-    return [out, new IOResult({ exitCode: 1 })]
-  }
-  const pairs: [string, string][] = []
-  for (let i = 0; i < tokens.length; i += 2) {
-    pairs.push([tokens[i] ?? '', tokens[i + 1] ?? ''])
-  }
-  const [sorted, hasCycle] = topologicalSort(pairs)
-  if (hasCycle) {
-    const out: ByteSource = ENC.encode('tsort: cycle detected\n')
-    return [out, new IOResult({ exitCode: 1 })]
-  }
-  const result: ByteSource = ENC.encode(sorted.join('\n') + '\n')
-  return [result, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return tsortGeneric(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_TSORT = command({

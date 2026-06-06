@@ -15,133 +15,10 @@
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
 import { stream as s3Stream } from '../../../core/s3/stream.ts'
-import { IOResult } from '../../../io/types.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { resolveSource } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function padRight(s: string, width: number): string {
-  return s.length >= width ? s : s + ' '.repeat(width - s.length)
-}
-
-function hexByte(b: number, uppercase: boolean): string {
-  const h = b.toString(16).padStart(2, '0')
-  return uppercase ? h.toUpperCase() : h
-}
-
-function hexOffset(offset: number, uppercase: boolean): string {
-  const h = offset.toString(16).padStart(8, '0')
-  return uppercase ? h.toUpperCase() : h
-}
-
-async function* xxdDumpStream(
-  source: AsyncIterable<Uint8Array>,
-  cols: number,
-  group: number,
-  uppercase: boolean,
-): AsyncIterable<Uint8Array> {
-  let offset = 0
-  let leftover = new Uint8Array(0)
-  const hexColumnWidth = cols * 2 + Math.floor(cols / group) - 1
-  const emitRow = (row: Uint8Array): Uint8Array => {
-    const hexParts: string[] = []
-    for (let g = 0; g < row.byteLength; g += group) {
-      let seg = ''
-      const end = Math.min(g + group, row.byteLength)
-      for (let k = g; k < end; k++) seg += hexByte(row[k] ?? 0, uppercase)
-      hexParts.push(seg)
-    }
-    const hexPart = hexParts.join(' ')
-    let asciiPart = ''
-    for (const b of row) asciiPart += b >= 32 && b < 127 ? String.fromCharCode(b) : '.'
-    const line = `${hexOffset(offset, uppercase)}: ${padRight(hexPart, hexColumnWidth)}  ${asciiPart}\n`
-    return ENC.encode(line)
-  }
-  for await (const chunk of source) {
-    const merged = new Uint8Array(leftover.byteLength + chunk.byteLength)
-    merged.set(leftover, 0)
-    merged.set(chunk, leftover.byteLength)
-    let i = 0
-    while (i + cols <= merged.byteLength) {
-      yield emitRow(merged.subarray(i, i + cols))
-      offset += cols
-      i += cols
-    }
-    leftover = merged.subarray(i)
-  }
-  if (leftover.byteLength > 0) {
-    yield emitRow(leftover)
-  }
-}
-
-async function* xxdPlainStream(
-  source: AsyncIterable<Uint8Array>,
-  uppercase: boolean,
-): AsyncIterable<Uint8Array> {
-  for await (const chunk of source) {
-    let hex = ''
-    for (const b of chunk) hex += hexByte(b, uppercase)
-    yield ENC.encode(hex)
-  }
-  yield ENC.encode('\n')
-}
-
-async function* xxdReverseStream(source: AsyncIterable<Uint8Array>): AsyncIterable<Uint8Array> {
-  const chunks: Uint8Array[] = []
-  for await (const c of source) chunks.push(c)
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const buf = new Uint8Array(total)
-  let off = 0
-  for (const c of chunks) {
-    buf.set(c, off)
-    off += c.byteLength
-  }
-  const text = DEC.decode(buf)
-  const hexParts: string[] = []
-  for (const rawLine of text.split('\n')) {
-    if (rawLine === '') continue
-    let line = rawLine
-    const colon = line.indexOf(':')
-    if (colon !== -1) line = line.slice(colon + 1)
-    const twoSpace = line.indexOf('  ')
-    if (twoSpace !== -1) line = line.slice(0, twoSpace)
-    hexParts.push(line.replace(/\s+/g, ''))
-  }
-  const hex = hexParts.join('')
-  const out = new Uint8Array(Math.floor(hex.length / 2))
-  for (let i = 0; i < out.byteLength; i++) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
-  yield out
-}
-
-async function* applyLimits(
-  source: AsyncIterable<Uint8Array>,
-  skip: number,
-  limit: number,
-): AsyncIterable<Uint8Array> {
-  let pos = 0
-  let remaining = limit
-  for await (let chunk of source) {
-    const len = chunk.byteLength
-    if (pos + len <= skip) {
-      pos += len
-      continue
-    }
-    if (pos < skip) {
-      chunk = chunk.subarray(skip - pos)
-      pos = skip
-    }
-    if (remaining <= 0) break
-    if (chunk.byteLength > remaining) chunk = chunk.subarray(0, remaining)
-    yield chunk
-    remaining -= chunk.byteLength
-    pos += chunk.byteLength
-  }
-}
+import { xxdGeneric } from '../generic/xxd.ts'
 
 async function xxdCommand(
   accessor: S3Accessor,
@@ -149,36 +26,9 @@ async function xxdCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const cache: string[] = []
-  let source: AsyncIterable<Uint8Array>
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const first = resolved[0]
-    if (first === undefined) return [null, new IOResult()]
-    source = s3Stream(accessor, first)
-    cache.push(first.original)
-  } else {
-    try {
-      source = resolveSource(opts.stdin, 'xxd: missing input')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${msg}\n`) })]
-    }
-  }
-  const toInt = (v: string | boolean | undefined): number =>
-    typeof v === 'string' ? Number.parseInt(v, 10) : 0
-  const skip = toInt(opts.flags.s)
-  const limitFlag = toInt(opts.flags.l)
-  if (skip > 0 || limitFlag > 0) {
-    const limit = limitFlag > 0 ? limitFlag : Number.MAX_SAFE_INTEGER
-    source = applyLimits(source, skip, limit)
-  }
-  const uppercase = opts.flags.u === true
-  if (opts.flags.r === true) return [xxdReverseStream(source), new IOResult({ cache })]
-  if (opts.flags.p === true) return [xxdPlainStream(source, uppercase), new IOResult({ cache })]
-  const cols = toInt(opts.flags.c) > 0 ? toInt(opts.flags.c) : 16
-  const group = toInt(opts.flags.g) > 0 ? toInt(opts.flags.g) : 2
-  return [xxdDumpStream(source, cols, group, uppercase), new IOResult({ cache })]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return xxdGeneric(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_XXD = command({

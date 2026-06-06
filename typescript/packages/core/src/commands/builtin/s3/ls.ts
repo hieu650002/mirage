@@ -16,132 +16,11 @@ import type { S3Accessor } from '../../../accessor/s3.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
 import { readdir as s3Readdir } from '../../../core/s3/readdir.ts'
 import { stat as s3Stat } from '../../../core/s3/stat.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
-import type { FileStat } from '../../../types.ts'
-import { FileType, PathSpec, ResourceName } from '../../../types.ts'
+import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { humanSize } from '../utils/formatting.ts'
+import { lsGeneric } from '../generic/ls.ts'
 import { metadataProvision } from './provision.ts'
-
-const ENC = new TextEncoder()
-
-async function lsEntries(
-  accessor: S3Accessor,
-  path: PathSpec,
-  allFiles: boolean,
-  sortBy: 'name' | 'time' | 'size',
-  reverse: boolean,
-  listDir: boolean,
-  warnings: string[],
-  indexCache: CommandOpts['index'],
-): Promise<FileStat[]> {
-  if (listDir) {
-    const s = await s3Stat(accessor, path, indexCache ?? undefined)
-    return [s]
-  }
-  let entries: string[]
-  try {
-    entries = await s3Readdir(accessor, path, indexCache ?? undefined)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    warnings.push(`ls: cannot access '${path.original}': ${msg}`)
-    return []
-  }
-  const stats: FileStat[] = []
-  for (const entry of entries) {
-    try {
-      const eSpec = new PathSpec({
-        original: entry,
-        directory: entry,
-        resolved: false,
-        prefix: path.prefix,
-      })
-      const s = await s3Stat(accessor, eSpec, indexCache ?? undefined)
-      if (!allFiles && s.name.startsWith('.')) continue
-      stats.push(s)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      warnings.push(`ls: cannot access '${entry}': ${msg}`)
-    }
-  }
-  if (sortBy === 'time') {
-    stats.sort((a, b) => (a.modified ?? '').localeCompare(b.modified ?? ''))
-    if (!reverse) stats.reverse()
-  } else if (sortBy === 'size') {
-    stats.sort((a, b) => (a.size ?? 0) - (b.size ?? 0))
-    if (!reverse) stats.reverse()
-  } else {
-    stats.sort((a, b) => a.name.localeCompare(b.name))
-    if (reverse) stats.reverse()
-  }
-  return stats
-}
-
-async function walkGrouped(
-  accessor: S3Accessor,
-  path: PathSpec,
-  allFiles: boolean,
-  sortBy: 'name' | 'time' | 'size',
-  reverse: boolean,
-  groups: [PathSpec, FileStat[]][],
-  warnings: string[],
-  indexCache: CommandOpts['index'],
-): Promise<void> {
-  const here = await lsEntries(
-    accessor,
-    path,
-    allFiles,
-    sortBy,
-    reverse,
-    false,
-    warnings,
-    indexCache,
-  )
-  groups.push([path, here])
-  for (const s of here) {
-    if (s.type === FileType.DIRECTORY) {
-      const entryPath = path.child(s.name)
-      const entrySpec = new PathSpec({
-        original: entryPath,
-        directory: entryPath,
-        resolved: false,
-        prefix: path.prefix,
-      })
-      await walkGrouped(
-        accessor,
-        entrySpec,
-        allFiles,
-        sortBy,
-        reverse,
-        groups,
-        warnings,
-        indexCache,
-      )
-    }
-  }
-}
-
-function formatEntries(
-  entries: readonly FileStat[],
-  results: string[],
-  long: boolean,
-  human: boolean,
-  classify: boolean,
-): void {
-  if (long) {
-    for (const e of entries) {
-      const sizeStr = human ? humanSize(e.size ?? 0) : String(e.size ?? 0)
-      results.push(`${e.type ?? '-'}\t${sizeStr}\t${e.modified ?? ''}\t${e.name}`)
-    }
-  } else {
-    for (const e of entries) {
-      const isDir = classify && e.type === FileType.DIRECTORY
-      const name = isDir ? e.name + '/' : e.name
-      results.push(name)
-    }
-  }
-}
 
 async function lsCommand(
   accessor: S3Accessor,
@@ -149,68 +28,14 @@ async function lsCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-  const targets: PathSpec[] =
-    resolved.length > 0
-      ? resolved
-      : [
-          new PathSpec({
-            original: opts.cwd,
-            directory: opts.cwd,
-            resolved: false,
-            prefix: opts.mountPrefix ?? '',
-          }),
-        ]
-  const long = opts.flags.args_l === true && opts.flags.args_1 !== true
-  const allFiles = opts.flags.a === true || opts.flags.A === true
-  const human = opts.flags.h === true
-  const reverse = opts.flags.r === true
-  const recursive = opts.flags.R === true
-  const listDir = opts.flags.d === true
-  const classify = opts.flags.F === true
-  const sortBy: 'name' | 'time' | 'size' =
-    opts.flags.t === true ? 'time' : opts.flags.S === true ? 'size' : 'name'
-  const warnings: string[] = []
-  const results: string[] = []
-  if (recursive && !listDir) {
-    const groups: [PathSpec, FileStat[]][] = []
-    for (const p of targets) {
-      await walkGrouped(accessor, p, allFiles, sortBy, reverse, groups, warnings, opts.index)
-    }
-    for (let i = 0; i < groups.length; i++) {
-      const group = groups[i]
-      if (group === undefined) continue
-      const [dirSpec, entries] = group
-      if (i > 0) results.push('')
-      results.push(`${dirSpec.original}:`)
-      formatEntries(entries, results, long, human, classify)
-    }
-  } else {
-    for (const p of targets) {
-      let entries: FileStat[]
-      try {
-        entries = await lsEntries(
-          accessor,
-          p,
-          allFiles,
-          sortBy,
-          reverse,
-          listDir,
-          warnings,
-          opts.index,
-        )
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        warnings.push(`ls: cannot access '${p.original}': ${msg}`)
-        continue
-      }
-      formatEntries(entries, results, long, human, classify)
-    }
-  }
-  const stderr = warnings.length > 0 ? ENC.encode(warnings.join('\n')) : null
-  const exitCode = warnings.length > 0 && results.length === 0 ? 1 : 0
-  const out: ByteSource = ENC.encode(results.join('\n'))
-  return [out, new IOResult({ stderr, exitCode })]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return lsGeneric(
+    resolved,
+    opts,
+    (p) => s3Readdir(accessor, p, opts.index ?? undefined),
+    (p) => s3Stat(accessor, p, opts.index ?? undefined),
+  )
 }
 
 export const S3_LS = command({

@@ -15,21 +15,10 @@
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
 import { stream as s3Stream } from '../../../core/s3/stream.ts'
-import { AsyncLineIterator } from '../../../io/async_line_iterator.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { resolveSource } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-
-async function collectLines(source: AsyncIterable<Uint8Array>): Promise<Uint8Array[]> {
-  const lines: Uint8Array[] = []
-  const iter = new AsyncLineIterator(source)
-  for await (const line of iter) lines.push(line)
-  return lines
-}
+import { tacGeneric } from '../generic/tac.ts'
 
 async function tacCommand(
   accessor: S3Accessor,
@@ -37,36 +26,9 @@ async function tacCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const cache: string[] = []
-  let source: AsyncIterable<Uint8Array>
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const first = resolved[0]
-    if (first === undefined) return [null, new IOResult()]
-    source = s3Stream(accessor, first)
-    cache.push(first.original)
-  } else {
-    try {
-      source = resolveSource(opts.stdin, 'tac: missing input')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${msg}\n`) })]
-    }
-  }
-  const lines = await collectLines(source)
-  lines.reverse()
-  let total = 0
-  for (const l of lines) total += l.byteLength + 1
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const l of lines) {
-    out.set(l, offset)
-    offset += l.byteLength
-    out[offset] = 0x0a
-    offset += 1
-  }
-  const result: ByteSource = out
-  return [result, new IOResult({ cache })]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return tacGeneric(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_TAC = command({

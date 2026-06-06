@@ -14,15 +14,11 @@
 
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
-import { read as s3Read } from '../../../core/s3/read.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
-import { type PathSpec, ResourceName } from '../../../types.ts'
-import { gunzip } from '../../../utils/compress.ts'
+import { stream as s3Stream } from '../../../core/s3/stream.ts'
+import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
+import { zcatGeneric } from '../generic/zcat.ts'
 
 async function zcatCommand(
   accessor: S3Accessor,
@@ -30,24 +26,9 @@ async function zcatCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  let raw: Uint8Array
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const first = resolved[0]
-    if (first === undefined) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('zcat: missing input\n') })]
-    }
-    raw = await s3Read(accessor, first, opts.index ?? undefined)
-  } else {
-    const stdinBytes = await readStdinAsync(opts.stdin)
-    if (stdinBytes === null) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('zcat: missing input\n') })]
-    }
-    raw = stdinBytes
-  }
-  const out = await gunzip(raw)
-  const result: ByteSource = out
-  return [result, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return zcatGeneric(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_ZCAT = command({

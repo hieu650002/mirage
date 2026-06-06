@@ -208,7 +208,7 @@ export class S3Resource implements Resource {
 
   // Ignored — duAll is not yet on the public Resource interface, but keeping
   // it around matches the node-side S3Resource.opsMap hook for completeness.
-  _duAll(p: PathSpec): Promise<[string, number][]> {
+  _duAll(p: PathSpec): Promise<[[string, number][], number]> {
     return duAllCore(this.accessor, p)
   }
 

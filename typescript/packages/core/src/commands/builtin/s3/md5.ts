@@ -13,14 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { S3Accessor } from '../../../accessor/s3.ts'
-import { read as s3Read } from '../../../core/s3/read.ts'
-import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
+import { resolveGlob } from '../../../core/s3/glob.ts'
+import { stream as s3Stream } from '../../../core/s3/stream.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
-import { md5Hex } from '../../../utils/hash.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-
-const ENC = new TextEncoder()
+import { md5Generic } from '../generic/md5.ts'
 
 async function md5Command(
   accessor: S3Accessor,
@@ -28,20 +26,9 @@ async function md5Command(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const lines: string[] = []
-  if (paths.length > 0) {
-    for (const p of paths) {
-      const data = await s3Read(accessor, p, opts.index ?? undefined)
-      lines.push(`${md5Hex(data)}  ${p.original}`)
-    }
-  } else if (opts.stdin !== null) {
-    const data = await materialize(opts.stdin)
-    lines.push(`${md5Hex(data)}  -`)
-  } else {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('md5: missing operand\n') })]
-  }
-  const out: ByteSource = ENC.encode(lines.join('\n'))
-  return [out, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return md5Generic(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_MD5 = command({

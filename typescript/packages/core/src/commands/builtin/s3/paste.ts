@@ -13,21 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { S3Accessor } from '../../../accessor/s3.ts'
-import { read as s3Read } from '../../../core/s3/read.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
+import { stream as s3Stream } from '../../../core/s3/stream.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function splitLinesNoEnds(text: string): string[] {
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped === '' ? [] : stripped.split('\n')
-}
+import { pasteGeneric } from '../generic/paste.ts'
 
 async function pasteCommand(
   accessor: S3Accessor,
@@ -35,41 +26,9 @@ async function pasteCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const delimiter = typeof opts.flags.d === 'string' ? opts.flags.d : '\t'
-  const serial = opts.flags.s === true
   const resolved =
-    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : paths
-  const fileLines: string[][] = []
-  let stdinConsumed = false
-  for (const p of resolved) {
-    if (p.original === '-') {
-      const raw = stdinConsumed ? null : await readStdinAsync(opts.stdin)
-      stdinConsumed = true
-      fileLines.push(splitLinesNoEnds(raw !== null ? DEC.decode(raw) : ''))
-    } else {
-      const data = await s3Read(accessor, p)
-      fileLines.push(splitLinesNoEnds(DEC.decode(data)))
-    }
-  }
-  if (fileLines.length === 0 && !stdinConsumed) {
-    const raw = await readStdinAsync(opts.stdin)
-    if (raw !== null) fileLines.push(splitLinesNoEnds(DEC.decode(raw)))
-  }
-  if (fileLines.length === 0) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('paste: missing operand\n') })]
-  }
-  let outLines: string[]
-  if (serial) {
-    outLines = fileLines.map((lines) => lines.join(delimiter))
-  } else {
-    const maxLen = Math.max(...fileLines.map((l) => l.length))
-    outLines = []
-    for (let i = 0; i < maxLen; i++) {
-      outLines.push(fileLines.map((lines) => lines[i] ?? '').join(delimiter))
-    }
-  }
-  const out: ByteSource = ENC.encode(outLines.join('\n') + '\n')
-  return [out, new IOResult()]
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return pasteGeneric(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_PASTE = command({

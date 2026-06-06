@@ -19,23 +19,11 @@ import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
+import { numberLines } from '../cat_helper.ts'
+import { readStdinAsync, wrapBytes } from '../utils/stream.ts'
 import { fileReadProvision } from './_provision.ts'
 
 const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function numberLines(data: Uint8Array): Uint8Array {
-  const text = DEC.decode(data)
-  const lines = text.split('\n')
-  const trailing = text.endsWith('\n')
-  const limit = trailing ? lines.length - 1 : lines.length
-  const out: string[] = []
-  for (let i = 0; i < limit; i++) {
-    out.push(`     ${String(i + 1)}\t${lines[i] ?? ''}\n`)
-  }
-  return ENC.encode(out.join(''))
-}
 
 function concatBuffers(buffers: readonly Uint8Array[]): Uint8Array {
   if (buffers.length === 0) return new Uint8Array(0)
@@ -71,14 +59,14 @@ async function catCommand(
       buffers.push(data)
     }
     const merged = concatBuffers(buffers)
-    const out: ByteSource = nFlag ? numberLines(merged) : merged
+    const out: ByteSource = nFlag ? numberLines(wrapBytes(merged)) : merged
     return [out, new IOResult({ reads, cache })]
   }
   const raw = await readStdinAsync(opts.stdin)
   if (raw === null) {
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('cat: missing operand\n') })]
   }
-  const out: ByteSource = nFlag ? numberLines(raw) : raw
+  const out: ByteSource = nFlag ? numberLines(wrapBytes(raw)) : raw
   return [out, new IOResult()]
 }
 
