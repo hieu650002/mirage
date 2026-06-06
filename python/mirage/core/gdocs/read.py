@@ -25,7 +25,7 @@ from mirage.types import PathSpec
 async def read_doc(token_manager: TokenManager, doc_id: str) -> bytes:
     url = f"{DOCS_API_BASE}/documents/{doc_id}"
     data = await google_get(token_manager, url)
-    return json.dumps(data, ensure_ascii=False).encode()
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
 
 
 async def read(

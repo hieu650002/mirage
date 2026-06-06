@@ -67,4 +67,5 @@ async def read(
                                     attachment_id)
     processed = await get_message_processed(accessor.token_manager,
                                             result.entry.id)
-    return json.dumps(processed, ensure_ascii=False).encode()
+    return json.dumps(processed, ensure_ascii=False,
+                      separators=(",", ":")).encode()

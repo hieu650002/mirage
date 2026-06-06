@@ -36,7 +36,7 @@ async def read_spreadsheet(token_manager: TokenManager,
     """
     url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}"
     data = await google_get(token_manager, url)
-    return json.dumps(data, ensure_ascii=False).encode()
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
 
 
 async def read_values(token_manager: TokenManager, spreadsheet_id: str,
@@ -53,7 +53,7 @@ async def read_values(token_manager: TokenManager, spreadsheet_id: str,
     """
     url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_}"
     data = await google_get(token_manager, url)
-    return json.dumps(data, ensure_ascii=False).encode()
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
 
 
 async def fetch_sheet_names(

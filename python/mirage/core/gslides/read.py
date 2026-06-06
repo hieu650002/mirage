@@ -27,7 +27,7 @@ async def read_presentation(token_manager: TokenManager,
                             presentation_id: str) -> bytes:
     url = f"{SLIDES_API_BASE}/presentations/{presentation_id}"
     data = await google_get(token_manager, url)
-    return json.dumps(data, ensure_ascii=False).encode()
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
 
 
 async def read(
