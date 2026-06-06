@@ -22,6 +22,7 @@ from functools import partial
 from typing import Any
 
 from mirage.cache.file.config import CacheConfig, RedisCacheConfig
+from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import IndexConfig
 from mirage.commands.builtin.general import HISTORY_COMMANDS
@@ -51,6 +52,7 @@ from mirage.types import (DEFAULT_AGENT_ID, DEFAULT_SESSION_ID,
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.dispatcher import Dispatcher
 from mirage.workspace.file_prompt import build_file_prompt
+from mirage.workspace.fork import fork_workspace
 from mirage.workspace.fuse import FuseManager
 from mirage.workspace.history import ExecutionHistory
 from mirage.workspace.mount import Mount, MountRegistry
@@ -93,9 +95,12 @@ class Workspace:
         native: bool = False,
         observe: BaseResource | None = None,
         observe_prefix: str = "/.sessions",
+        _cache_store: FileCacheMixin | None = None,
     ) -> None:
         self._registry = MountRegistry()
-        if isinstance(cache, RedisCacheConfig):
+        if _cache_store is not None:
+            self._cache = _cache_store
+        elif isinstance(cache, RedisCacheConfig):
             if RedisFileCacheStore is None:
                 raise ImportError(
                     "RedisCacheConfig requires the 'redis' extra. "
@@ -430,6 +435,35 @@ class Workspace:
             and m["prefix"] in prefix_to_resource
         }
         return type(self)._from_state(state, resources=resources)
+
+    async def fork(self) -> "Workspace":
+        """Cheap copy-on-write fork of this workspace.
+
+        Returns a child Workspace that isolates *internal* state from the
+        parent. The read/scratch cache and RAM-backed mounts are forked
+        copy-on-write: file *contents* (immutable bytes) are shared by
+        reference and only the lightweight key index is copied, so a
+        write or delete in the child never touches the parent and vice
+        versa. Sessions (cwd/env), history, and revision pins are copied
+        by value. Disk mounts are copied eagerly (correct, not yet
+        cheap). The child gets its own observer and job table.
+
+        Remote backends (S3, Slack, GDrive, ...) are **shared by
+        reference**: a write the child sends to them is real and visible
+        to the parent and the outside world. Forking isolates agent
+        state, not the external world — staged/reversible external writes
+        are a separate layer.
+
+        Call between operations, not concurrently with an in-flight
+        ``execute()`` on the same workspace.
+
+        Raises:
+            NotImplementedError: if the cache or any mount index is
+                Redis-backed (out-of-process state cannot be cheaply
+                forked).
+            RuntimeError: if the workspace is closed.
+        """
+        return await fork_workspace(self)
 
     @classmethod
     def _from_state(cls,

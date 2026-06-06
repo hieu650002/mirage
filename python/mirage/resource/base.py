@@ -127,3 +127,14 @@ class BaseResource:
 
     def load_state(self, state: dict) -> None:
         pass
+
+    def fork(self) -> "BaseResource":
+        """Return the resource to use in a forked workspace.
+
+        Default is share-by-reference: a live, externally-owned backend
+        (S3, Slack, GDrive, a Redis mount, ...) is the same object in
+        parent and child, so a write the child sends to it is real and
+        visible to both. In-process content backends override this to
+        return an isolated copy (RAM: copy-on-write; Disk: eager copy).
+        """
+        return self

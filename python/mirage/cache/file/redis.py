@@ -35,6 +35,11 @@ class RedisFileCacheStore(RedisResource, FileCacheMixin):
         self._meta_prefix = f"{key_prefix}meta:"
         self.max_drain_bytes: int | None = max_drain_bytes
 
+    def fork(self) -> "RedisFileCacheStore":
+        raise NotImplementedError(
+            "RedisFileCacheStore cannot be forked: its state lives outside "
+            "the process. Workspace.fork() requires the default RAM cache.")
+
     async def get(self, key: str) -> bytes | None:
         return await self._cache_client.get(f"{self._data_prefix}{key}")
 

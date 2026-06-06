@@ -20,3 +20,17 @@ class RAMStore:
     files: dict[str, bytes] = field(default_factory=dict)
     dirs: set[str] = field(default_factory=lambda: {"/"})
     modified: dict[str, str] = field(default_factory=dict)
+
+    def fork(self) -> "RAMStore":
+        """Cheap copy-on-write fork.
+
+        File *contents* are ``bytes`` (immutable), so they are shared by
+        reference; only the lightweight key index (the dicts/set) is
+        copied. A write rebinds one key in the child; a delete pops one
+        key from the child. Neither touches the parent.
+        """
+        return RAMStore(
+            files=dict(self.files),
+            dirs=set(self.dirs),
+            modified=dict(self.modified),
+        )

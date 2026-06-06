@@ -99,3 +99,15 @@ class RAMResource(BaseResource):
         self._store.files = dict(state.get("files", {}))
         self._store.dirs = set(state.get("dirs", ["/"]))
         self._store.modified = dict(state.get("modified", {}))
+
+    def fork(self) -> "RAMResource":
+        """Copy-on-write fork sharing this resource's byte payloads.
+
+        The child gets a forked :class:`RAMStore` (shared contents, own
+        key index) and a fresh empty index cache (directory listings are
+        derived and re-built on demand).
+        """
+        child = RAMResource()
+        child._store = self._store.fork()
+        child.accessor = RAMAccessor(child._store)
+        return child
