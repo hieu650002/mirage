@@ -7,7 +7,6 @@ class ChromaConfig(BaseModel):
     host: str = "localhost"
     port: int = 8000
     ssl: bool = False
-    path: str | None = None
     collection_name: str
     slug_field: str = "page_slug"
     chunk_index_field: str = "chunk_index"

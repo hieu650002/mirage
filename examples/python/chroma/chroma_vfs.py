@@ -36,7 +36,6 @@ def build_resource() -> ChromaResource:
         host=os.environ.get("CHROMA_HOST", "localhost"),
         port=int_env("CHROMA_PORT", 8000),
         ssl=bool_env("CHROMA_SSL", False),
-        path=os.environ.get("CHROMA_PATH"),
         collection_name=require_env("CHROMA_COLLECTION"),
         slug_field=os.environ.get("CHROMA_SLUG_FIELD", "page_slug"),
         chunk_index_field=os.environ.get("CHROMA_CHUNK_INDEX_FIELD",

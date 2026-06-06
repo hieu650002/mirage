@@ -1,4 +1,5 @@
 import json
+from functools import partial
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +17,7 @@ class FakeCollection:
         self.queries: list[dict] = []
         self.contains_queries: list[dict] = []
 
-    def get(self, **kwargs):
+    async def get(self, **kwargs):
         self.get_calls.append(kwargs)
         ids = kwargs.get("ids")
         if ids == ["__path_tree__"]:
@@ -56,7 +57,7 @@ class FakeCollection:
 
         return {"documents": [], "metadatas": []}
 
-    def query(self, **kwargs):
+    async def query(self, **kwargs):
         self.queries.append(kwargs)
         return {
             "documents": [["quickstart chunk", "api chunk"]],
@@ -114,11 +115,17 @@ def chroma_collection() -> FakeCollection:
     return collection
 
 
+async def _get_collection(collection):
+    return collection
+
+
 @pytest.fixture
 def chroma_accessor(chroma_collection) -> SimpleNamespace:
-    return SimpleNamespace(config=SimpleNamespace(
-        slug_field="page_slug", chunk_index_field="chunk_index"),
-                           collection=chroma_collection)
+    return SimpleNamespace(
+        config=SimpleNamespace(slug_field="page_slug",
+                               chunk_index_field="chunk_index"),
+        collection=chroma_collection,
+        get_collection=partial(_get_collection, chroma_collection))
 
 
 @pytest.fixture

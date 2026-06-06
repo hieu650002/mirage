@@ -14,8 +14,7 @@ filesystem. The collection must already contain:
 - A metadata field that maps each chunk to a virtual file path slug.
 - A metadata field that orders chunks within each file.
 
-The Python resource connects with either Chroma's `HttpClient` or
-`PersistentClient`.
+The Python resource connects via Chroma's `AsyncHttpClient`.
 
 ## Path Tree Document
 
@@ -84,14 +83,6 @@ CHROMA_SSL=false
 CHROMA_SLUG_FIELD=page_slug
 CHROMA_CHUNK_INDEX_FIELD=chunk_index
 CHROMA_EXAMPLE_QUERY=getting started
-```
-
-For a local persistent Chroma directory, use `CHROMA_PATH` instead of host and
-port:
-
-```bash
-CHROMA_PATH=/absolute/path/to/chroma
-CHROMA_COLLECTION=knowledge
 ```
 
 ## Validate the Collection

@@ -33,7 +33,8 @@ async def search_segments(
                 "$in": sorted(scoped_slugs)
             }
         }
-    response = accessor.collection.query(**kwargs)
+    collection = await accessor.get_collection()
+    response = await collection.query(**kwargs)
     return query_result_to_bytes(response, accessor.config.slug_field,
                                  mount_prefix, scoped_slugs)
 

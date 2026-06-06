@@ -6,7 +6,8 @@ PAGE_CHUNK_BATCH_SIZE = 100
 
 
 async def fetch_path_tree(accessor) -> str:
-    result = accessor.collection.get(ids=[PATH_TREE_ID])
+    collection = await accessor.get_collection()
+    result = await collection.get(ids=[PATH_TREE_ID])
     documents = result.get("documents") or []
     if not documents:
         raise FileNotFoundError(PATH_TREE_ID)
@@ -30,10 +31,11 @@ async def iter_page_chunks(accessor, slug: str) -> AsyncIterator[str]:
 
 
 async def page_chunks(accessor, slug: str) -> list[dict[str, Any]]:
+    collection = await accessor.get_collection()
     chunks: list[dict[str, Any]] = []
     offset = 0
     while True:
-        result = accessor.collection.get(
+        result = await collection.get(
             where={accessor.config.slug_field: slug},
             include=["documents", "metadatas"],
             limit=PAGE_CHUNK_BATCH_SIZE,
@@ -63,7 +65,8 @@ async def query_contains(
 ) -> list[str]:
     if not candidate_slugs:
         return []
-    result = accessor.collection.get(
+    collection = await accessor.get_collection()
+    result = await collection.get(
         where={accessor.config.slug_field: {
             "$in": candidate_slugs
         }},

@@ -23,7 +23,6 @@ config = ChromaConfig(
     host=os.environ.get("CHROMA_HOST", "localhost"),
     port=int(os.environ.get("CHROMA_PORT", "8000")),
     ssl=os.environ.get("CHROMA_SSL", "false").lower() == "true",
-    path=os.environ.get("CHROMA_PATH"),
     collection_name=os.environ["CHROMA_COLLECTION"],
     slug_field=os.environ.get("CHROMA_SLUG_FIELD", "page_slug"),
     chunk_index_field=os.environ.get("CHROMA_CHUNK_INDEX_FIELD", "chunk_index"),
