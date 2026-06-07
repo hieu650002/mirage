@@ -14,6 +14,9 @@
 
 import asyncio
 
+from mirage.resource.disk.disk import DiskResource
+from mirage.workspace.snapshot.utils import norm_mount_prefix
+
 try:
     from mirage.cache.file.redis import RedisFileCacheStore
 except ImportError:
@@ -27,11 +30,6 @@ except ImportError:
 DEV_PREFIX = "/dev/"
 
 
-def _norm_prefix(prefix: str) -> str:
-    stripped = prefix.strip("/")
-    return "/" + stripped + "/" if stripped else "/"
-
-
 def _assert_forkable(ws) -> None:
     if ws._closed:
         raise RuntimeError("Workspace is closed")
@@ -42,19 +40,23 @@ def _assert_forkable(ws) -> None:
             "cache lives outside the process and cannot be cheaply forked "
             "(an empty staged workspace would silently lose "
             "default-mount scratch).")
-    if RedisIndexCacheStore is not None:
-        for m in ws._registry.mounts():
-            if isinstance(m.resource.index, RedisIndexCacheStore):
-                raise NotImplementedError(
-                    f"Workspace.fork() does not support the Redis-backed "
-                    f"index on mount {m.prefix!r}: its state lives outside "
-                    "the process and cannot be cheaply forked.")
+    for m in ws._registry.mounts():
+        if isinstance(m.resource, DiskResource):
+            raise NotImplementedError(
+                f"Workspace.fork() does not yet support the disk mount at "
+                f"{m.prefix!r}: disk isolation is owned by Lane C (#178).")
+        if (RedisIndexCacheStore is not None
+                and isinstance(m.resource.index, RedisIndexCacheStore)):
+            raise NotImplementedError(
+                f"Workspace.fork() does not support the Redis-backed index "
+                f"on mount {m.prefix!r}: its state lives outside the "
+                "process and cannot be cheaply forked.")
 
 
 def _auto_prefixes(ws) -> set[str]:
     prefixes = {DEV_PREFIX}
     if ws.observer is not None:
-        prefixes.add(_norm_prefix(ws.observer.prefix))
+        prefixes.add(norm_mount_prefix(ws.observer.prefix))
     return prefixes
 
 
@@ -116,6 +118,9 @@ async def fork_workspace(ws):
         ws: the live Workspace to fork.
     """
     _assert_forkable(ws)
+    # Intentional asymmetry: history entries are copied by value, but
+    # history_path + observer are rebuilt fresh (no double-persist of
+    # inherited records, no writes to the live audit sink).
     staged = type(ws)(
         _fork_resources(ws),
         consistency=ws._consistency,
