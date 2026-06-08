@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { rstripSlash, stripSlash } from './util/slash.ts'
+
 export const MountMode = Object.freeze({
   READ: 'read',
   WRITE: 'write',
@@ -232,7 +234,7 @@ export class PathSpec {
   }
 
   get key(): string {
-    return this.stripPrefix.replace(/^\/+|\/+$/g, '')
+    return stripSlash(this.stripPrefix)
   }
 
   get dir(): PathSpec {
@@ -246,7 +248,7 @@ export class PathSpec {
   }
 
   child(name: string): string {
-    return `${this.original.replace(/\/+$/, '')}/${name}`
+    return `${rstripSlash(this.original)}/${name}`
   }
 
   static fromStrPath(path: string, prefix = ''): PathSpec {
