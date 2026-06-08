@@ -16,6 +16,7 @@ import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
 import type { LanceRow } from './_driver.ts'
 import type { LanceDBConfigResolved } from '../../resource/lancedb/config.ts'
 import type { PathSpec } from '../../types.ts'
+import { rstripSlash, stripSlash } from '../../util/slash.ts'
 import { renderCard } from './render.ts'
 
 const ENC = new TextEncoder()
@@ -30,7 +31,7 @@ function toStr(value: unknown): string {
 function targetTable(paths: PathSpec[], config: LanceDBConfigResolved): string | null {
   if (config.table !== null) return config.table
   for (const path of paths) {
-    const key = path.stripPrefix.replace(/^\/+|\/+$/g, '')
+    const key = stripSlash(path.stripPrefix)
     if (key !== '') return key.split('/')[0] ?? null
   }
   return null
@@ -49,7 +50,7 @@ function canonicalPath(
     if (value !== null && value !== undefined) segs.push(toStr(value))
   }
   segs.push(`${toStr(row[config.idColumn])}.md`)
-  const prefix = mountPrefix.replace(/\/+$/, '')
+  const prefix = rstripSlash(mountPrefix)
   return `${prefix}/${segs.join('/')}`
 }
 

@@ -14,6 +14,7 @@
 
 import type { LanceDBConfigResolved } from '../../resource/lancedb/config.ts'
 import { PathSpec } from '../../types.ts'
+import { stripSlash } from '../../util/slash.ts'
 
 export const ScopeLevel = Object.freeze({
   ROOT: 'root',
@@ -59,7 +60,7 @@ function make(
 
 export function detectScope(path: PathSpec | string, config: LanceDBConfigResolved): LanceDBScope {
   const raw = path instanceof PathSpec ? path.stripPrefix : path
-  const key = raw.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(raw)
   const segs = key === '' ? [] : key.split('/')
 
   let table: string

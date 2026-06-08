@@ -16,6 +16,7 @@ import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { LanceRow } from './_driver.ts'
 import { PathSpec } from '../../types.ts'
+import { rstripSlash } from '../../util/slash.ts'
 import { ScopeLevel, detectScope } from './scope.ts'
 
 function notFound(p: string): Error {
@@ -42,7 +43,7 @@ export async function readdir(
   const spec = typeof path === 'string' ? PathSpec.fromStrPath(path) : path
   const config = accessor.config
   const scope = detectScope(spec, config)
-  const base = spec.original.replace(/\/+$/, '')
+  const base = rstripSlash(spec.original)
 
   if (scope.level === ScopeLevel.ROOT) {
     const tables = await accessor.driver.listTables()
