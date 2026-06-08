@@ -16,6 +16,7 @@ import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { FileType, PathSpec, type FileStat } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { formatLsLong } from '../utils/formatting.ts'
+import { rstripSlash } from '../../../util/slash.ts'
 
 const ENC = new TextEncoder()
 
@@ -64,7 +65,7 @@ function sortStats(
   const sorted = [...stats].sort((a, b) => {
     if (sortBy === 'time') return (b.modified ?? '').localeCompare(a.modified ?? '')
     if (sortBy === 'size') return (b.size ?? 0) - (a.size ?? 0)
-    return a.name.localeCompare(b.name)
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   })
   if (reverse) sorted.reverse()
   return sorted
@@ -101,7 +102,7 @@ async function walkGrouped(
   groups.push([dir, sorted])
   for (const s of sorted) {
     if (s.type === FileType.DIRECTORY) {
-      const base = dir.original.replace(/\/+$/, '')
+      const base = rstripSlash(dir.original)
       const childPath = `${base}/${s.name}`
       await walkGrouped(readdir, stat, childSpec(childPath, dir.prefix), opts, groups, warnings)
     }

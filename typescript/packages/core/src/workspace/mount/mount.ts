@@ -34,6 +34,7 @@ import type { RegisteredOp } from '../../ops/registry.ts'
 import type { Resource } from '../../resource/base.ts'
 import { type CommandSafeguard, ConsistencyPolicy, MountMode, PathSpec } from '../../types.ts'
 import type { PyodideRuntime } from '../executor/python/runtime.ts'
+import { rstripSlash } from '../../util/slash.ts'
 
 type CmdKey = string
 type OpKey = string
@@ -341,7 +342,7 @@ export class Mount {
       ]
     }
 
-    const mountPrefix = this.prefix.replace(/\/+$/, '')
+    const mountPrefix = rstripSlash(this.prefix)
     const filetypeFns = this.filetypeHandlers(cmdName)
     const isFiletypeCmd =
       extension !== null && extension !== '' && this.cmds.has(cmdKey(cmdName, extension))
@@ -426,7 +427,7 @@ export class Mount {
     if (this.mode === MountMode.READ && levels.some((o) => o.write)) {
       throw new Error(`mount ${this.prefix} is read-only`)
     }
-    const mountPrefix = this.prefix.replace(/\/+$/, '')
+    const mountPrefix = rstripSlash(this.prefix)
     const lastSlash = path.lastIndexOf('/')
     const scope = new PathSpec({
       original: path,

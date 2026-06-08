@@ -277,6 +277,8 @@ export { sha256sumGeneric } from './commands/builtin/generic/sha256sum.ts'
 export { jqGeneric, jqProvisionGeneric } from './commands/builtin/generic/jq.ts'
 export { grepGeneric } from './commands/builtin/generic/grep.ts'
 export { rgGeneric } from './commands/builtin/generic/rg.ts'
+export { cpGeneric } from './commands/builtin/generic/cp.ts'
+export { mvGeneric } from './commands/builtin/generic/mv.ts'
 export { awkGeneric } from './commands/builtin/generic/awk.ts'
 export { catGeneric, catProvisionGeneric } from './commands/builtin/generic/cat.ts'
 export { headGeneric, headProvisionGeneric } from './commands/builtin/generic/head.ts'
@@ -1223,3 +1225,5 @@ export {
 export { HttpPostHogDriver, type HttpPostHogDriverOptions } from './core/posthog/http_driver.ts'
 
 export { setHttpProxyBase } from './commands/builtin/utils/http.ts'
+
+export { lstripSlash, rstripSlash, stripSlash } from './util/slash.ts'
