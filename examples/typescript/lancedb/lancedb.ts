@@ -122,12 +122,17 @@ async function main(): Promise<void> {
   await show(ws, 'tree -L 2 /fashion/')
   await show(ws, 'ls /fashion/Men/Shoes')
   await show(ws, 'cat /fashion/Men/Shoes/White/3.md')
+  await show(ws, 'head -n 3 /fashion/Men/Shoes/White/3.md')
+  await show(ws, 'tail -n 2 /fashion/Men/Shoes/White/3.md')
 
   console.log('\n=== stat /fashion/Men/Shoes/White/3.jpg (raw image bytes) ===')
   const s = await ws.execute("stat -c '%s' /fashion/Men/Shoes/White/3.jpg")
   console.log(`  image size: ${DEC.decode(s.stdout).trim()} bytes`)
 
   await show(ws, 'search "white running sneakers" /fashion')
+
+  await show(ws, 'grep -ril blue /fashion/Women')
+  await show(ws, 'rg -li running /fashion/Men')
 
   console.log("\n=== find /fashion -name '*.md' | wc -l ===")
   const f = await ws.execute("find /fashion -name '*.md' | wc -l")

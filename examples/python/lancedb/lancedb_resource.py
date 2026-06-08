@@ -51,6 +51,8 @@ async def main() -> None:
     await show(ws, "tree -L 2 /fashion/")
     await show(ws, "ls /fashion/Men/Shoes")
     await show(ws, "cat /fashion/Men/Shoes/White/3.md")
+    await show(ws, "head -n 3 /fashion/Men/Shoes/White/3.md")
+    await show(ws, "tail -n 2 /fashion/Men/Shoes/White/3.md")
 
     print("\n=== stat /fashion/Men/Shoes/White/3.jpg (raw image bytes) ===")
     r = await ws.execute("stat -c '%s' /fashion/Men/Shoes/White/3.jpg")
@@ -59,6 +61,7 @@ async def main() -> None:
     await show(ws, 'search "white running sneakers" /fashion')
 
     await show(ws, "grep -ril blue /fashion/Women")
+    await show(ws, "rg -li running /fashion/Men")
 
     print("\n=== find /fashion -name '*.md' | wc -l ===")
     r = await ws.execute("find /fashion -name '*.md' | wc -l")
