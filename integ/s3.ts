@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { getCalls, resetCalls } from "./s3_probe.ts";
 import {
   CreateBucketCommand,
   PutObjectCommand,
@@ -93,6 +94,11 @@ const CROSS_CASES: ReadonlyArray<readonly [string, string]> = [
 const EXIT_CODE_CASES: ReadonlyArray<readonly [string, string]> = [
   ["grep_match", `grep -q mirage {m}/data/example.jsonl`],
   ["grep_no_match", `grep -q zzzznomatch {m}/data/example.jsonl`],
+];
+
+const INDEX_CASES: ReadonlyArray<readonly [string, string]> = [
+  ["ls_l", `ls -l {m}/data/`],
+  ["tree", `tree {m}/`],
 ];
 
 const TIMEOUT_CASES: ReadonlyArray<readonly [string, string]> = [
@@ -191,6 +197,22 @@ async function runExit(
   if (err) process.stdout.write(err.endsWith("\n") ? err : err + "\n");
 }
 
+async function measureCalls(name: string, cmd: string): Promise<void> {
+  const ws = buildWorkspace();
+  resetCalls();
+  try {
+    await ws.execute(cmd);
+  } catch {
+    // count whatever calls were issued even on error
+  }
+  const c = getCalls();
+  process.stdout.write(`=== ${name} ===\n`);
+  process.stdout.write(
+    `ListObjectsV2=${c.ListObjectsV2 ?? 0} HeadObject=${c.HeadObject ?? 0}\n`,
+  );
+  await ws.close();
+}
+
 async function main(): Promise<void> {
   await seed();
   const ws = buildWorkspace();
@@ -201,6 +223,14 @@ async function main(): Promise<void> {
         await run(ws, `${tag}:${name}`, tmpl.replaceAll("{m}", mount));
     }
     for (const [name, cmd] of CROSS_CASES) await run(ws, `cross:${name}`, cmd);
+    for (const mount of MOUNTS) {
+      const tag = mount.slice(1);
+      for (const [name, tmpl] of INDEX_CASES)
+        await measureCalls(
+          `${tag}:calls:${name}`,
+          tmpl.replaceAll("{m}", mount),
+        );
+    }
     for (const mount of MOUNTS) {
       const tag = mount.slice(1);
       for (const [name, tmpl] of EXIT_CODE_CASES)
