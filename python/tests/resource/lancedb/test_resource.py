@@ -65,4 +65,4 @@ def test_cloud_config_fields_and_remote():
                     host_override="https://my-db.region.api.lancedb.com")
     assert res.is_remote is True
     assert res.config.region == "us-west-2"
-    assert res.config.host_override.endswith("lancedb.com")
+    assert res.config.host_override == "https://my-db.region.api.lancedb.com"
