@@ -1,0 +1,77 @@
+---
+title: LanceDB
+icon: database
+description: Mount a LanceDB table as a Mirage filesystem in TypeScript, with label folders and semantic search as paths.
+---
+
+`LanceDBResource` exposes a LanceDB table as a read-only filesystem: group-by
+columns become nested folders, each row is a card plus an optional blob file, and
+semantic search is a virtual `_search` folder. The TypeScript backend mirrors the
+[Python one](/python/resource/lancedb) and returns identical results.
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node @lancedb/lancedb
+```
+
+```ts
+import { LanceDBResource, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const fashion = new LanceDBResource({
+  config: {
+    uri: '/data/fashion.lancedb', // or s3://, gs://, db:// (LanceDB Cloud)
+    table: 'fashion',
+    groupBy: ['gender', 'articleType', 'baseColour'],
+    idColumn: 'id',
+    titleColumn: 'productDisplayName',
+    blobColumn: 'image_bytes',
+    blobExt: 'jpg',
+    vectorColumn: 'vector', // presence enables _search
+    searchLimit: 5,
+  },
+})
+
+const ws = new Workspace({ '/fashion/': fashion }, { mode: MountMode.READ })
+
+await ws.execute('ls /fashion/Men/Shoes/White')
+await ws.execute('cat "/fashion/_search/red running shoes/3.md"') // card + score
+```
+
+## Filesystem layout
+
+```text
+/fashion/<gender>/<articleType>/<baseColour>/<id>.md   # row card
+/fashion/<gender>/<articleType>/<baseColour>/<id>.jpg  # raw blob bytes
+/fashion/_search/<query>/<id>.md                       # ranked result, with score
+```
+
+## Cloud and Enterprise
+
+`db://` URIs connect to LanceDB Cloud (`apiKey` + `region`) or Enterprise
+(`apiKey` + `hostOverride`):
+
+```ts
+const fashion = new LanceDBResource({
+  config: {
+    uri: 'db://my-database',
+    apiKey: process.env.LANCEDB_API_KEY,
+    region: 'us-east-1',
+    hostOverride: 'https://my-database.us-east-1.api.lancedb.com', // Enterprise only
+    table: 'fashion',
+    groupBy: ['gender'],
+    idColumn: 'id',
+    vectorColumn: 'vector',
+  },
+})
+```
+
+## Supported commands
+
+`ls`, `cd`, `tree`, `cat`, `stat`, `find`, and `wc`. Search is the
+`_search/<query>` path, so it composes with `ls`/`cat`/`tree`/`find`.
+
+Search requires a table built with an embedding function on a source field, so
+`tbl.search(text)` auto-embeds the query. The Node example under
+`examples/typescript/lancedb/` builds such a table and produces the same output
+as the Python example, including identical similarity scores.

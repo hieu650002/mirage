@@ -433,7 +433,8 @@
                 "icon": "database",
                 "pages": [
                   "typescript/setup/mongodb",
-                  "typescript/setup/postgres"
+                  "typescript/setup/postgres",
+                  "typescript/setup/lancedb"
                 ]
               },
               {
