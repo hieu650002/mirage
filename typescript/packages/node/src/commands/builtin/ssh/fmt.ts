@@ -12,15 +12,30 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ResourceName, command, specOf, wcAggregate, wcGeneric } from '@struktoai/mirage-core'
-import { stream as sshStream } from '../../../../core/ssh/stream.ts'
-import type { SSHAccessor } from '../../../../accessor/ssh.ts'
+import {
+  ResourceName,
+  command,
+  fmtGeneric,
+  specOf,
+  type CommandFnResult,
+  type CommandOpts,
+  type PathSpec,
+} from '@struktoai/mirage-core'
+import { stream as sshStream } from '../../../core/ssh/stream.ts'
+import type { SSHAccessor } from '../../../accessor/ssh.ts'
 
-export const SSH_WC = command({
-  name: 'wc',
+async function fmtCommand(
+  accessor: SSHAccessor,
+  paths: PathSpec[],
+  _texts: string[],
+  opts: CommandOpts,
+): Promise<CommandFnResult> {
+  return fmtGeneric(paths, opts, (p) => sshStream(accessor, p))
+}
+
+export const SSH_FMT = command({
+  name: 'fmt',
   resource: ResourceName.SSH,
-  spec: specOf('wc'),
-  fn: (accessor: SSHAccessor, paths, texts, opts) =>
-    wcGeneric(paths, texts, opts, (p) => sshStream(accessor, p)),
-  aggregate: wcAggregate,
+  spec: specOf('fmt'),
+  fn: fmtCommand,
 })

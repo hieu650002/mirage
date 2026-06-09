@@ -12,15 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ResourceName, command, specOf, wcAggregate, wcGeneric } from '@struktoai/mirage-core'
-import { stream as sshStream } from '../../../../core/ssh/stream.ts'
-import type { SSHAccessor } from '../../../../accessor/ssh.ts'
+import { ResourceName, command, sha256sumGeneric, specOf } from '@struktoai/mirage-core'
+import { stream as sshStream } from '../../../core/ssh/stream.ts'
+import type { SSHAccessor } from '../../../accessor/ssh.ts'
 
-export const SSH_WC = command({
-  name: 'wc',
+export const SSH_SHA256SUM = command({
+  name: 'sha256sum',
   resource: ResourceName.SSH,
-  spec: specOf('wc'),
-  fn: (accessor: SSHAccessor, paths, texts, opts) =>
-    wcGeneric(paths, texts, opts, (p) => sshStream(accessor, p)),
-  aggregate: wcAggregate,
+  spec: specOf('sha256sum'),
+  fn: (accessor: SSHAccessor, paths, _texts, opts) =>
+    sha256sumGeneric(paths, opts, (p) => sshStream(accessor, p)),
 })

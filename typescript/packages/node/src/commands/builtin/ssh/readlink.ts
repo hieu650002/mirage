@@ -12,15 +12,17 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ResourceName, command, specOf, wcAggregate, wcGeneric } from '@struktoai/mirage-core'
-import { stream as sshStream } from '../../../../core/ssh/stream.ts'
-import type { SSHAccessor } from '../../../../accessor/ssh.ts'
+import {
+  ResourceName,
+  command,
+  readlinkGeneric,
+  specOf,
+  type Accessor,
+} from '@struktoai/mirage-core'
 
-export const SSH_WC = command({
-  name: 'wc',
+export const SSH_READLINK = command({
+  name: 'readlink',
   resource: ResourceName.SSH,
-  spec: specOf('wc'),
-  fn: (accessor: SSHAccessor, paths, texts, opts) =>
-    wcGeneric(paths, texts, opts, (p) => sshStream(accessor, p)),
-  aggregate: wcAggregate,
+  spec: specOf('readlink'),
+  fn: (_accessor: Accessor, paths, texts, opts) => readlinkGeneric(paths, texts, opts),
 })

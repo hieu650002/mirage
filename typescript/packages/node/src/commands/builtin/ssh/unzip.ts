@@ -12,15 +12,23 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ResourceName, command, specOf, wcAggregate, wcGeneric } from '@struktoai/mirage-core'
-import { stream as sshStream } from '../../../../core/ssh/stream.ts'
-import type { SSHAccessor } from '../../../../accessor/ssh.ts'
+import { ResourceName, command, specOf, unzipGeneric } from '@struktoai/mirage-core'
+import type { SSHAccessor } from '../../../accessor/ssh.ts'
+import { stream as sshStream } from '../../../core/ssh/stream.ts'
+import { writeBytes as sshWrite } from '../../../core/ssh/write.ts'
+import { mkdir as sshMkdir } from '../../../core/ssh/mkdir.ts'
 
-export const SSH_WC = command({
-  name: 'wc',
+export const SSH_UNZIP = command({
+  name: 'unzip',
   resource: ResourceName.SSH,
-  spec: specOf('wc'),
-  fn: (accessor: SSHAccessor, paths, texts, opts) =>
-    wcGeneric(paths, texts, opts, (p) => sshStream(accessor, p)),
-  aggregate: wcAggregate,
+  spec: specOf('unzip'),
+  fn: (accessor: SSHAccessor, paths, _texts, opts) =>
+    unzipGeneric(
+      paths,
+      opts,
+      (p) => sshStream(accessor, p),
+      (p, d) => sshWrite(accessor, p, d),
+      (p, parents) => sshMkdir(accessor, p, parents ?? false),
+    ),
+  write: true,
 })

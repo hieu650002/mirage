@@ -12,15 +12,21 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ResourceName, command, specOf, wcAggregate, wcGeneric } from '@struktoai/mirage-core'
-import { stream as sshStream } from '../../../../core/ssh/stream.ts'
-import type { SSHAccessor } from '../../../../accessor/ssh.ts'
+import { ResourceName, command, mktempGeneric, specOf } from '@struktoai/mirage-core'
+import type { SSHAccessor } from '../../../accessor/ssh.ts'
+import { mkdir as sshMkdir } from '../../../core/ssh/mkdir.ts'
+import { writeBytes as sshWrite } from '../../../core/ssh/write.ts'
 
-export const SSH_WC = command({
-  name: 'wc',
+export const SSH_MKTEMP = command({
+  name: 'mktemp',
   resource: ResourceName.SSH,
-  spec: specOf('wc'),
-  fn: (accessor: SSHAccessor, paths, texts, opts) =>
-    wcGeneric(paths, texts, opts, (p) => sshStream(accessor, p)),
-  aggregate: wcAggregate,
+  spec: specOf('mktemp'),
+  fn: (accessor: SSHAccessor, _paths, texts, opts) =>
+    mktempGeneric(
+      texts,
+      opts,
+      (p, parents) => sshMkdir(accessor, p, parents ?? false),
+      (p, d) => sshWrite(accessor, p, d),
+    ),
+  write: true,
 })

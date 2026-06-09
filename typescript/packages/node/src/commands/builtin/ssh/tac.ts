@@ -12,15 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ResourceName, command, specOf, wcAggregate, wcGeneric } from '@struktoai/mirage-core'
-import { stream as sshStream } from '../../../../core/ssh/stream.ts'
-import type { SSHAccessor } from '../../../../accessor/ssh.ts'
+import { ResourceName, command, specOf, tacGeneric } from '@struktoai/mirage-core'
+import type { SSHAccessor } from '../../../accessor/ssh.ts'
+import { stream as sshStream } from '../../../core/ssh/stream.ts'
 
-export const SSH_WC = command({
-  name: 'wc',
+export const SSH_TAC = command({
+  name: 'tac',
   resource: ResourceName.SSH,
-  spec: specOf('wc'),
-  fn: (accessor: SSHAccessor, paths, texts, opts) =>
-    wcGeneric(paths, texts, opts, (p) => sshStream(accessor, p)),
-  aggregate: wcAggregate,
+  spec: specOf('tac'),
+  fn: (accessor: SSHAccessor, paths, _texts, opts) =>
+    tacGeneric(paths, opts, (p) => sshStream(accessor, p)),
 })

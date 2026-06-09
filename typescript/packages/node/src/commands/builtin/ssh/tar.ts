@@ -12,15 +12,23 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ResourceName, command, specOf, wcAggregate, wcGeneric } from '@struktoai/mirage-core'
-import { stream as sshStream } from '../../../../core/ssh/stream.ts'
-import type { SSHAccessor } from '../../../../accessor/ssh.ts'
+import { ResourceName, command, specOf, tarGeneric } from '@struktoai/mirage-core'
+import { stream as sshStream } from '../../../core/ssh/stream.ts'
+import { writeBytes as sshWrite } from '../../../core/ssh/write.ts'
+import { mkdir as sshMkdir } from '../../../core/ssh/mkdir.ts'
+import type { SSHAccessor } from '../../../accessor/ssh.ts'
 
-export const SSH_WC = command({
-  name: 'wc',
+export const SSH_TAR = command({
+  name: 'tar',
   resource: ResourceName.SSH,
-  spec: specOf('wc'),
-  fn: (accessor: SSHAccessor, paths, texts, opts) =>
-    wcGeneric(paths, texts, opts, (p) => sshStream(accessor, p)),
-  aggregate: wcAggregate,
+  spec: specOf('tar'),
+  fn: (accessor: SSHAccessor, paths, _texts, opts) =>
+    tarGeneric(
+      paths,
+      opts,
+      (p) => sshStream(accessor, p),
+      (p, data) => sshWrite(accessor, p, data),
+      (p) => sshMkdir(accessor, p, false),
+    ),
+  write: true,
 })

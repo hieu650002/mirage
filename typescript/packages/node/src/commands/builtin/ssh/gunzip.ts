@@ -12,15 +12,23 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ResourceName, command, specOf, wcAggregate, wcGeneric } from '@struktoai/mirage-core'
-import { stream as sshStream } from '../../../../core/ssh/stream.ts'
-import type { SSHAccessor } from '../../../../accessor/ssh.ts'
+import { ResourceName, command, specOf, gunzipGeneric } from '@struktoai/mirage-core'
+import type { SSHAccessor } from '../../../accessor/ssh.ts'
+import { stream as sshStream } from '../../../core/ssh/stream.ts'
+import { writeBytes as sshWrite } from '../../../core/ssh/write.ts'
+import { unlink as sshUnlink } from '../../../core/ssh/unlink.ts'
 
-export const SSH_WC = command({
-  name: 'wc',
+export const SSH_GUNZIP = command({
+  name: 'gunzip',
   resource: ResourceName.SSH,
-  spec: specOf('wc'),
-  fn: (accessor: SSHAccessor, paths, texts, opts) =>
-    wcGeneric(paths, texts, opts, (p) => sshStream(accessor, p)),
-  aggregate: wcAggregate,
+  spec: specOf('gunzip'),
+  fn: (accessor: SSHAccessor, paths, _texts, opts) =>
+    gunzipGeneric(
+      paths,
+      opts,
+      (p) => sshStream(accessor, p),
+      (p, d) => sshWrite(accessor, p, d),
+      (p) => sshUnlink(accessor, p),
+    ),
+  write: true,
 })
