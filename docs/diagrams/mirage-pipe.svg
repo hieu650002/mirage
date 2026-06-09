@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 700 660" role="img" font-family="'Anthropic Sans', -apple-system, 'Segoe UI', sans-serif">
+  <title>Mirage Pipe — the governed crossing (a pipeline of actions)</title>
+  <desc>The agent is sealed inside the sandbox. Every read flows up a pipeline (identity → access → layout → redact) and every write flows down a pipeline (access → journal), both resting on the identity floor. Below sits the Mirage VFS and backends.</desc>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="700" height="660" fill="#FFFFFF"/>
+
+  <text x="28" y="26" fill="#14140C" font-size="15" font-weight="600">Mirage Pipe — the governed crossing</text>
+  <text x="28" y="44" fill="#5F5E5A" font-size="12">a pipeline every read and write passes through · not a single box</text>
+
+  <!-- sandbox wrap -->
+  <rect x="28" y="58" width="644" height="446" rx="14" fill="none" stroke="#5DCAA5" stroke-width="0.8" stroke-dasharray="6 5"/>
+  <text x="44" y="76" fill="#0F6E56" font-size="12">sandbox · confinement · the only door (buy) — interim: deny code-exec under a view</text>
+
+  <!-- agent -->
+  <rect x="130" y="88" width="440" height="44" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.6"/>
+  <text x="350" y="104" text-anchor="middle" fill="#444441" font-size="14" font-weight="500">agent</text>
+  <text x="350" y="121" text-anchor="middle" fill="#5F5E5A" font-size="12">reads · acts · may run code</text>
+
+  <!-- read / write direction labels -->
+  <text x="170" y="150" text-anchor="middle" fill="#185FA5" font-size="12">read ↑</text>
+  <text x="540" y="150" text-anchor="middle" fill="#993C1D" font-size="12">write ↓</text>
+
+  <!-- READ pipeline (left column, flows UP toward agent) -->
+  <rect x="60" y="156" width="250" height="44" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.6"/>
+  <text x="185" y="172" text-anchor="middle" fill="#0C447C" font-size="14" font-weight="500">redact · project content (defer)</text>
+  <text x="185" y="189" text-anchor="middle" fill="#185FA5" font-size="12">pushdown → batch → stream</text>
+
+  <rect x="60" y="224" width="250" height="44" rx="8" fill="#E1F2F0" stroke="#0F7A8A" stroke-width="0.6"/>
+  <text x="185" y="240" text-anchor="middle" fill="#0B525C" font-size="14" font-weight="500">layout · reshape the namespace</text>
+  <text x="185" y="257" text-anchor="middle" fill="#0F7A8A" font-size="12">which view · rename · regroup · order</text>
+
+  <rect x="60" y="292" width="250" height="44" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.6"/>
+  <text x="185" y="308" text-anchor="middle" fill="#3C3489" font-size="14" font-weight="500">access · gate (core)</text>
+  <text x="185" y="325" text-anchor="middle" fill="#534AB7" font-size="12">visible?</text>
+
+  <!-- WRITE pipeline (right column, flows DOWN toward backend) -->
+  <rect x="390" y="156" width="250" height="44" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.6"/>
+  <text x="515" y="172" text-anchor="middle" fill="#3C3489" font-size="14" font-weight="500">access · gate (core)</text>
+  <text x="515" y="189" text-anchor="middle" fill="#534AB7" font-size="12">may(verb)? — deny, never rewrite</text>
+
+  <rect x="390" y="224" width="250" height="44" rx="8" fill="#FAECE7" stroke="#993C1D" stroke-width="0.6"/>
+  <text x="515" y="240" text-anchor="middle" fill="#712B13" font-size="14" font-weight="500">journal · separate track</text>
+  <text x="515" y="257" text-anchor="middle" fill="#993C1D" font-size="12">stage · promote · undo</text>
+
+  <!-- identity floor (shared by both pipelines) -->
+  <rect x="60" y="360" width="580" height="44" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.6"/>
+  <text x="350" y="376" text-anchor="middle" fill="#3C3489" font-size="14" font-weight="500">identity · one canonical id per object — the floor (core)</text>
+  <text x="350" y="393" text-anchor="middle" fill="#534AB7" font-size="12">both pipelines resolve and rest here · access gates the same module on each path</text>
+
+  <!-- READ arrows (up, blue, x=185) -->
+  <line x1="185" y1="156" x2="185" y2="134" marker-end="url(#ar)" stroke="#185FA5" stroke-width="1.5"/>
+  <line x1="185" y1="224" x2="185" y2="202" marker-end="url(#ar)" stroke="#185FA5" stroke-width="1.5"/>
+  <line x1="185" y1="292" x2="185" y2="270" marker-end="url(#ar)" stroke="#185FA5" stroke-width="1.5"/>
+  <line x1="185" y1="360" x2="185" y2="338" marker-end="url(#ar)" stroke="#185FA5" stroke-width="1.5"/>
+
+  <!-- WRITE arrows (down, orange, x=515) -->
+  <line x1="515" y1="134" x2="515" y2="154" marker-end="url(#ar)" stroke="#993C1D" stroke-width="1.5"/>
+  <line x1="515" y1="200" x2="515" y2="222" marker-end="url(#ar)" stroke="#993C1D" stroke-width="1.5"/>
+  <line x1="515" y1="268" x2="515" y2="358" marker-end="url(#ar)" stroke="#993C1D" stroke-width="1.5"/>
+
+  <!-- identity -> VFS (down, grey, crosses the sandbox boundary into the data plane) -->
+  <line x1="350" y1="404" x2="350" y2="518" marker-end="url(#ar)" stroke="#5F5E5A" stroke-width="1.5"/>
+
+  <!-- VFS / backends (outside the sandbox) -->
+  <rect x="200" y="520" width="300" height="44" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.6"/>
+  <text x="350" y="536" text-anchor="middle" fill="#444441" font-size="14" font-weight="500">Mirage VFS → backends</text>
+  <text x="350" y="553" text-anchor="middle" fill="#5F5E5A" font-size="12">S3 · Slack · Gmail · Postgres · GitHub … ~30</text>
+
+  <!-- legend -->
+  <text x="28" y="592" fill="#14140C" font-size="13" font-weight="500">build status</text>
+  <rect x="28" y="602" width="13" height="13" rx="3" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.6"/>
+  <text x="48" y="612" fill="#3D3D3A" font-size="12">core — build now (identity, access)</text>
+  <rect x="360" y="602" width="13" height="13" rx="3" fill="#E1F2F0" stroke="#0F7A8A" stroke-width="0.6"/>
+  <text x="380" y="612" fill="#3D3D3A" font-size="12">core slice now + rest defer (layout)</text>
+  <rect x="28" y="624" width="13" height="13" rx="3" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.6"/>
+  <text x="48" y="634" fill="#3D3D3A" font-size="12">defer — pushdown-first (redact)</text>
+  <rect x="360" y="624" width="13" height="13" rx="3" fill="#FAECE7" stroke="#993C1D" stroke-width="0.6"/>
+  <text x="380" y="634" fill="#3D3D3A" font-size="12">separate track — the moat (journal)</text>
+  <rect x="28" y="646" width="13" height="13" rx="3" fill="none" stroke="#5DCAA5" stroke-width="0.6" stroke-dasharray="3 2"/>
+  <text x="48" y="656" fill="#3D3D3A" font-size="12">parallel · buy (sandbox)</text>
+</svg>
