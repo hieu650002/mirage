@@ -1027,6 +1027,26 @@ export { readdir as mongoReaddir } from './core/mongodb/readdir.ts'
 export { stat as mongoStat } from './core/mongodb/stat.ts'
 export { resolveGlob as resolveMongoGlob } from './core/mongodb/glob.ts'
 export { detectScope as detectMongoScope, type MongoDBScope } from './core/mongodb/scope.ts'
+export type { LanceDriver, LanceRow } from './core/lancedb/_driver.ts'
+export { LanceDBAccessor } from './accessor/lancedb.ts'
+export {
+  resolveLanceDBConfig,
+  type LanceDBConfig,
+  type LanceDBConfigResolved,
+} from './resource/lancedb/config.ts'
+export { LANCEDB_PROMPT } from './resource/lancedb/prompt.ts'
+export { LANCEDB_OPS } from './ops/lancedb/index.ts'
+export { LANCEDB_COMMANDS } from './commands/builtin/lancedb/index.ts'
+export { read as lanceRead } from './core/lancedb/read.ts'
+export { readdir as lanceReaddir } from './core/lancedb/readdir.ts'
+export { stat as lanceStat } from './core/lancedb/stat.ts'
+export { resolveGlob as resolveLanceGlob } from './core/lancedb/glob.ts'
+export { searchRowsOutput as lanceSearch } from './core/lancedb/search.ts'
+export {
+  detectScope as detectLanceScope,
+  ScopeLevel as LanceScopeLevel,
+  type LanceDBScope,
+} from './core/lancedb/scope.ts'
 export {
   countDocuments as mongoCountDocuments,
   findDocuments as mongoFindDocuments,
