@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 700 660" role="img" font-family="'Anthropic Sans', -apple-system, 'Segoe UI', sans-serif">
-  <title>Mirage Pipe — the governed crossing (a pipeline of actions)</title>
+  <title>Mirage Pipe — Separating Agent's view vs. Physical Backend (a pipeline of actions)</title>
   <desc>The agent is sealed inside the sandbox. Every read flows up a pipeline (identity → access → layout → redact) and every write flows down a pipeline (access → journal), both resting on the identity floor. Below sits the Mirage VFS and backends.</desc>
   <defs>
     <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -9,7 +9,7 @@
 
   <rect x="0" y="0" width="700" height="660" fill="#FFFFFF"/>
 
-  <text x="28" y="26" fill="#14140C" font-size="15" font-weight="600">Mirage Pipe — the governed crossing</text>
+  <text x="28" y="26" fill="#14140C" font-size="15" font-weight="600">Mirage Pipe — Separating Agent's view vs. Physical Backend</text>
   <text x="28" y="44" fill="#5F5E5A" font-size="12">a pipeline every read and write passes through · not a single box</text>
 
   <!-- sandbox wrap -->
