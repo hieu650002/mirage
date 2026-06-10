@@ -309,7 +309,6 @@ export {
   type AsyncReaddirFn,
   type AsyncReadBytesFn,
   type AsyncStatFn,
-  type FiletypeFn,
   rgFolderFiletype,
   type RgFolderFiletypeOptions,
   rgFull,
@@ -644,8 +643,11 @@ export { resolveLinearGlob } from './core/linear/glob.ts'
 export { LINEAR_PROMPT, LINEAR_WRITE_PROMPT } from './resource/linear/prompt.ts'
 export { NotionAccessor, type NotionResourceLike } from './accessor/notion.ts'
 export {
+  HttpNotionTransport,
   MCPNotionTransport,
+  NotionAPIError,
   NotionMCPError,
+  type HttpNotionTransportOptions,
   type NotionTransport,
   type MCPNotionTransportOptions,
 } from './core/notion/_client.ts'

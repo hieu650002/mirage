@@ -193,6 +193,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.0.0
         version: 3.1033.0
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.0.0
+        version: 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
       '@struktoai/mirage-browser':
         specifier: workspace:*
         version: link:../typescript/packages/browser
@@ -205,6 +208,12 @@ importers:
       chromadb:
         specifier: ^3.4.3
         version: 3.4.3
+      mongodb:
+        specifier: ^6.0.0
+        version: 6.21.0(socks@2.8.7)
+      pg:
+        specifier: ^8.0.0
+        version: 8.20.0
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
