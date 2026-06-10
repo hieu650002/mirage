@@ -15,9 +15,10 @@
 import type { DropboxAccessor } from '../../accessor/dropbox.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { FindOptions } from '../../resource/base.ts'
-import { PathSpec } from '../../types.ts'
+import { PathSpec, type FileStat } from '../../types.ts'
 import { rstripSlash } from '../../util/slash.ts'
 import { readdir } from './readdir.ts'
+import { stat } from './stat.ts'
 
 function fnmatch(name: string, pattern: string): boolean {
   const re = pattern
@@ -31,6 +32,20 @@ interface WalkEntry {
   path: string
   depth: number
   file: boolean
+}
+
+async function statEntry(
+  accessor: DropboxAccessor,
+  path: string,
+  prefix: string,
+  index: IndexCacheStore | undefined,
+): Promise<FileStat | null> {
+  const spec = new PathSpec({ original: path, directory: path, resolved: false, prefix })
+  try {
+    return await stat(accessor, spec, index)
+  } catch {
+    return null
+  }
 }
 
 async function walk(
@@ -87,9 +102,28 @@ export async function find(
     if (options.iname != null && !fnmatch(name.toLowerCase(), options.iname.toLowerCase())) {
       continue
     }
-    if (options.nameExclude != null && fnmatch(name, options.nameExclude)) continue
     const key =
       prefix !== '' && entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : entry.path
+    if (options.pathPattern != null && !fnmatch(key, options.pathPattern)) continue
+    if (options.nameExclude != null && fnmatch(name, options.nameExclude)) continue
+    const needSize = entry.file && (options.minSize != null || options.maxSize != null)
+    const needMtime = options.mtimeMin != null || options.mtimeMax != null
+    if (needSize || needMtime) {
+      const st = await statEntry(accessor, entry.path, prefix, index)
+      if (st === null) continue
+      if (needSize) {
+        const size = st.size ?? 0
+        if (options.minSize != null && size < options.minSize) continue
+        if (options.maxSize != null && size > options.maxSize) continue
+      }
+      if (needMtime) {
+        if (st.modified === null || st.modified === '') continue
+        const mt = Date.parse(st.modified) / 1000
+        if (Number.isNaN(mt)) continue
+        if (options.mtimeMin != null && mt < options.mtimeMin) continue
+        if (options.mtimeMax != null && mt > options.mtimeMax) continue
+      }
+    }
     results.push(key)
   }
   return results
