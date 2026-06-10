@@ -62,6 +62,18 @@ describe('io key prefix convention', () => {
     await ws.close()
   })
 
+  it('2> records a mount-relative key even when the command fails', async () => {
+    const ws = new Workspace({ '/data': new RAMResource() }, { mode: MountMode.WRITE })
+    const captured = captureIo(ws)
+    const result = await ws.execute('cat /data/missing.txt 2> /data/err.txt')
+    expect(result.exitCode).not.toBe(0)
+    assertSinglePrefix(captured)
+    const back = await ws.execute('cat /data/err.txt')
+    expect(back.exitCode).toBe(0)
+    expect(new TextDecoder().decode(back.stdout)).toContain('missing.txt')
+    await ws.close()
+  })
+
   it('csplit -f with a mount path writes parts inside the mount', async () => {
     const ws = new Workspace({ '/data': new RAMResource() }, { mode: MountMode.WRITE })
     await ws.execute('tee /data/seed.txt > /dev/null', {

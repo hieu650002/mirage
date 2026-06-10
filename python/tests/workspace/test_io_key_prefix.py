@@ -108,6 +108,22 @@ def test_ram_io_keys_single_prefixed(cmd, stdin):
     asyncio.run(run())
 
 
+def test_ram_stderr_redirect_records_mount_relative_key():
+    ws = Workspace({"/data": RAMResource()}, mode=MountMode.WRITE)
+
+    async def run():
+        captured = _capture_io(ws)
+        result = await ws.execute("cat /data/missing.txt 2> /data/err.txt")
+        assert result.exit_code != 0
+        _assert_single_prefix(captured)
+        back = await ws.execute("cat /data/err.txt")
+        assert back.exit_code == 0
+        assert "missing.txt" in await back.stdout_str()
+        await ws.close()
+
+    asyncio.run(run())
+
+
 def test_ram_csplit_writes_parts_inside_mount():
     ws = Workspace({"/data": RAMResource()}, mode=MountMode.WRITE)
 
