@@ -36,7 +36,7 @@ const NAMES = [
   'a{2}',
   'x+y',
 ]
-const PATTERNS = ['*', '*.txt', 'a?txt*', '?', '', 'a.txt', '[abc]', 'a{2}', 'x+y', '*.*', 'a*b']
+const PATTERNS = ['*', '*.txt', 'a?txt*', '?', '', 'a.txt', 'a{2}', 'x+y', '*.*', 'a*b']
 
 describe('fnmatch matches the prior per-file copies', () => {
   it('equals the legacy regex-replace implementation on a sample grid', () => {
@@ -58,8 +58,39 @@ describe('fnmatch matches the prior per-file copies', () => {
     expect(fnmatch('axtxt', 'a.txt')).toBe(false)
     expect(fnmatch('x+y', 'x+y')).toBe(true)
     expect(fnmatch('a{2}', 'a{2}')).toBe(true)
-    expect(fnmatch('[abc]', '[abc]')).toBe(true)
-    expect(fnmatch('b', '[abc]')).toBe(false)
+  })
+})
+
+describe('fnmatch supports [...] character classes like Python fnmatch', () => {
+  it('matches single characters from a class', () => {
+    expect(fnmatch('b', '[abc]')).toBe(true)
+    expect(fnmatch('d', '[abc]')).toBe(false)
+    expect(fnmatch('[abc]', '[abc]')).toBe(false)
+    expect(fnmatch('file1.txt', 'file[0-9].txt')).toBe(true)
+    expect(fnmatch('fileX.txt', 'file[0-9].txt')).toBe(false)
+  })
+
+  it('supports ! negation', () => {
+    expect(fnmatch('d', '[!abc]')).toBe(true)
+    expect(fnmatch('a', '[!abc]')).toBe(false)
+    expect(fnmatch('a', '[!]a]')).toBe(false)
+    expect(fnmatch('x', '[!]a]')).toBe(true)
+  })
+
+  it('treats an unterminated [ as a literal, including [] and [!]', () => {
+    expect(fnmatch('[ab', '[ab')).toBe(true)
+    expect(fnmatch('a', '[ab')).toBe(false)
+    expect(fnmatch('[]', '[]')).toBe(true)
+    expect(fnmatch('a', '[]')).toBe(false)
+    expect(fnmatch('[!]', '[!]')).toBe(true)
+    expect(fnmatch('x', '[!]')).toBe(false)
+  })
+
+  it('treats a leading ^ or [ inside a class as a literal member', () => {
+    expect(fnmatch('^', '[^a]')).toBe(true)
+    expect(fnmatch('a', '[^a]')).toBe(true)
+    expect(fnmatch('b', '[^a]')).toBe(false)
+    expect(fnmatch('[', '[[a]')).toBe(true)
   })
 })
 

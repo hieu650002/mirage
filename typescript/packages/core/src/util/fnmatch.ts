@@ -13,11 +13,39 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 export function fnmatch(name: string, pattern: string): boolean {
-  const re = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\?/g, '.')
-    .replace(/\*/g, '.*')
-  return new RegExp(`^${re}$`).test(name)
+  // Mirrors CPython fnmatch.translate: *, ?, and [...] classes with !
+  // negation; an unclosed [ (including [] and [!]) is a literal.
+  let re = '^'
+  let i = 0
+  const n = pattern.length
+  while (i < n) {
+    const c = pattern.charAt(i)
+    i += 1
+    if (c === '*') {
+      re += '.*'
+    } else if (c === '?') {
+      re += '.'
+    } else if (c === '[') {
+      let j = i
+      if (j < n && pattern[j] === '!') j += 1
+      if (j < n && pattern[j] === ']') j += 1
+      while (j < n && pattern[j] !== ']') j += 1
+      if (j >= n) {
+        re += '\\['
+      } else {
+        // Unlike Python re, JS needs ] escaped inside a class.
+        let stuff = pattern.slice(i, j).replace(/\\/g, '\\\\').replace(/\]/g, '\\]')
+        i = j + 1
+        if (stuff.startsWith('!')) stuff = `^${stuff.slice(1)}`
+        else if (stuff.startsWith('^') || stuff.startsWith('[')) stuff = `\\${stuff}`
+        re += `[${stuff}]`
+      }
+    } else {
+      re += c.replace(/[.+^${}()|[\]\\]/, '\\$&')
+    }
+  }
+  re += '$'
+  return new RegExp(re).test(name)
 }
 
 // Shell-expansion variant: also supports [...] character classes.
