@@ -14,6 +14,7 @@
 
 import type { ChromaClient, Collection } from 'chromadb'
 import { Accessor } from './base.ts'
+import { loadOptionalPeer } from '../utils/optional_peer.ts'
 import type { ChromaConfigResolved } from '../resource/chroma/config.ts'
 
 export class ChromaAccessor extends Accessor {
@@ -28,10 +29,12 @@ export class ChromaAccessor extends Accessor {
 
   async getClient(): Promise<ChromaClient> {
     if (this.client === null) {
-      // chromadb is an optional peer dependency, loaded only when a
-      // chroma mount is actually used
-      const { ChromaClient } = await import('chromadb')
-      this.client = new ChromaClient({
+      const spec = 'chromadb'
+      const mod = (await loadOptionalPeer(() => import(/* @vite-ignore */ spec), {
+        feature: 'ChromaResource',
+        packageName: 'chromadb',
+      })) as { ChromaClient: new (o: { host: string; port: number; ssl: boolean }) => ChromaClient }
+      this.client = new mod.ChromaClient({
         host: this.config.host,
         port: this.config.port,
         ssl: this.config.ssl,
