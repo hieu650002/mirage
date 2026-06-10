@@ -12,11 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import {
-  command,
-  realpathGeneric,
-  specOf,
-} from '@struktoai/mirage-core'
+import { command, realpathGeneric, specOf } from '@struktoai/mirage-core'
 import { HF_RESOURCES, type HfAccessor } from '../../../accessor/hf.ts'
 import { stat as hfStat } from '../../../core/hf/stat.ts'
 

@@ -12,12 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import {
-  command,
-  headGeneric,
-  headerAggregate,
-  specOf,
-} from '@struktoai/mirage-core'
+import { command, headGeneric, headerAggregate, specOf } from '@struktoai/mirage-core'
 import { stream as hfStream } from '../../../../core/hf/stream.ts'
 import { stat as hfStat } from '../../../../core/hf/stat.ts'
 import type { HfAccessor } from '../../../../accessor/hf.ts'
