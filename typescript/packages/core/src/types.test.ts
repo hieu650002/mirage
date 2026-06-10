@@ -76,8 +76,8 @@ describe('ResourceName', () => {
     expect(ResourceName.POSTGRES).toBe('postgres')
   })
 
-  it('contains exactly 32 entries', () => {
-    expect(Object.keys(ResourceName)).toHaveLength(32)
+  it('contains exactly 36 entries', () => {
+    expect(Object.keys(ResourceName)).toHaveLength(36)
   })
 
   it('is frozen at runtime', () => {

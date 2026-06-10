@@ -64,6 +64,26 @@ const REGISTRY: Record<string, ResourceFactory> = {
     const { normalizeR2Config } = await import('./r2/config.ts')
     return new R2Resource(normalizeR2Config(config))
   },
+  hf_buckets: async (config) => {
+    const { HfBucketsResource } = await import('./hf_buckets/hf_buckets.ts')
+    const { normalizeHfBucketsConfig } = await import('./hf_buckets/config.ts')
+    return new HfBucketsResource(normalizeHfBucketsConfig(config))
+  },
+  hf_datasets: async (config) => {
+    const { HfDatasetsResource } = await import('./hf_datasets/hf_datasets.ts')
+    const { normalizeHfRepoConfig } = await import('./hf_buckets/config.ts')
+    return new HfDatasetsResource(normalizeHfRepoConfig(config))
+  },
+  hf_models: async (config) => {
+    const { HfModelsResource } = await import('./hf_models/hf_models.ts')
+    const { normalizeHfRepoConfig } = await import('./hf_buckets/config.ts')
+    return new HfModelsResource(normalizeHfRepoConfig(config))
+  },
+  hf_spaces: async (config) => {
+    const { HfSpacesResource } = await import('./hf_spaces/hf_spaces.ts')
+    const { normalizeHfRepoConfig } = await import('./hf_buckets/config.ts')
+    return new HfSpacesResource(normalizeHfRepoConfig(config))
+  },
   supabase: async (config) => {
     const { SupabaseResource } = await import('./supabase/supabase.ts')
     const { normalizeSupabaseConfig } = await import('./supabase/config.ts')

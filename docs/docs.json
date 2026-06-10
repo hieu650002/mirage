@@ -394,6 +394,16 @@
                 ]
               },
               {
+                "group": "Hugging Face",
+                "icon": "/images/huggingface-logo.svg",
+                "pages": [
+                  "typescript/setup/hf_buckets",
+                  "typescript/setup/hf_datasets",
+                  "typescript/setup/hf_models",
+                  "typescript/setup/hf_spaces"
+                ]
+              },
+              {
                 "group": "Google Workspace",
                 "icon": "google",
                 "pages": [
@@ -481,7 +491,7 @@
       },
       {
         "label": "strukto-ai/mirage",
-      "icon": "github",
+        "icon": "github",
         "href": "https://github.com/strukto-ai/mirage"
       }
     ]

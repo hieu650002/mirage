@@ -139,6 +139,10 @@ export const ResourceName = Object.freeze({
   POSTGRES: 'postgres',
   LANCEDB: 'lancedb',
   CHROMA: 'chroma',
+  HF_BUCKETS: 'hf_buckets',
+  HF_DATASETS: 'hf_datasets',
+  HF_MODELS: 'hf_models',
+  HF_SPACES: 'hf_spaces',
   DATABRICKS_VOLUME: 'databricks_volume',
 } as const)
 
