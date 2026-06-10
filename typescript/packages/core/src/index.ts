@@ -1247,3 +1247,4 @@ export { HttpPostHogDriver, type HttpPostHogDriverOptions } from './core/posthog
 export { setHttpProxyBase } from './commands/builtin/utils/http.ts'
 
 export { lstripSlash, rstripSlash, stripSlash } from './util/slash.ts'
+export { fnmatch } from './util/fnmatch.ts'
