@@ -141,6 +141,15 @@ export const ResourceName = Object.freeze({
   POSTHOG: 'posthog',
   LANCEDB: 'lancedb',
   CHROMA: 'chroma',
+  MINIO: 'minio',
+  CEPH: 'ceph',
+  WASABI: 'wasabi',
+  BACKBLAZE: 'backblaze',
+  DIGITALOCEAN: 'digitalocean',
+  TENCENT: 'tencent',
+  ALIYUN: 'aliyun',
+  SCALEWAY: 'scaleway',
+  QINGSTOR: 'qingstor',
 } as const)
 
 export type ResourceName = (typeof ResourceName)[keyof typeof ResourceName]
