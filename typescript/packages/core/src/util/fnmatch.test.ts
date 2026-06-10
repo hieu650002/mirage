@@ -44,8 +44,8 @@ const NAMES = [
   ']',
 ]
 
-// Generated against CPython fnmatch.fnmatchcase; regeneration script in
-// docs/plans/2026-06-09-ts-fnmatch-python-parity.md Task 1.
+// Generated against CPython fnmatch.fnmatchcase. Regenerate by running each
+// pattern through python3: [n for n in NAMES if fnmatch.fnmatchcase(n, pattern)]
 const GOLDEN: [string, string[]][] = [
   ['*', NAMES],
   ['?', ['a', 'b', 'd', '!', '-', '^', 'z', '[', ']']],
