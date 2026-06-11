@@ -30,7 +30,9 @@ async function makeWs(): Promise<Workspace> {
   const r = new RAMResource()
   r.store.dirs.add('/')
   r.store.dirs.add('/data')
-  r.store.files.set('/data/a.txt', ENC.encode('orange line\nplain line\n'))
+  r.store.files.set('/data/a.txt', ENC.encode('orange line\nplain line\nlast line\n'))
+  r.store.files.set('/data/pats.txt', ENC.encode('orange\nlast\n'))
+  r.store.files.set('/data/empty.txt', new Uint8Array())
   const registry = new OpsRegistry()
   registry.registerResource(r)
   return new Workspace({ '/': r }, { mode: MountMode.WRITE, ops: registry, shellParser: parser })
@@ -58,6 +60,51 @@ describe('grep -e pattern flag', () => {
     const io = await ws.execute('grep -e orange -e plain /data/a.txt')
     expect(io.exitCode).toBe(0)
     expect(stdoutStr(io)).toBe('orange line\nplain line\n')
+    await ws.close()
+  })
+
+  it('-f reads patterns from a workspace file', async () => {
+    const ws = await makeWs()
+    const io = await ws.execute('grep -f /data/pats.txt /data/a.txt')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('orange line\nlast line\n')
+    await ws.close()
+  })
+
+  it('-e and -f union', async () => {
+    const ws = await makeWs()
+    const io = await ws.execute('grep -e plain -f /data/pats.txt /data/a.txt')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('orange line\nplain line\nlast line\n')
+    await ws.close()
+  })
+
+  it('empty -f file matches nothing (GNU semantics)', async () => {
+    const ws = await makeWs()
+    const io = await ws.execute('grep -f /data/empty.txt /data/a.txt')
+    expect(io.exitCode).toBe(1)
+    expect(stdoutStr(io)).toBe('')
+    await ws.close()
+  })
+
+  it('-v with empty -f file matches everything', async () => {
+    const ws = await makeWs()
+    const io = await ws.execute('grep -v -f /data/empty.txt /data/a.txt')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('orange line\nplain line\nlast line\n')
+    await ws.close()
+  })
+
+  it('rg -e and repeated rg -e work like grep', async () => {
+    const ws = await makeWs()
+    const single = await ws.execute('rg -e orange /data/a.txt')
+    expect(single.exitCode).toBe(0)
+    expect(stdoutStr(single)).toContain('orange line')
+    const multi = await ws.execute('rg -e orange -e plain /data/a.txt')
+    expect(multi.exitCode).toBe(0)
+    expect(stdoutStr(multi)).toContain('orange line')
+    expect(stdoutStr(multi)).toContain('plain line')
+    expect(stdoutStr(multi)).not.toContain('last line')
     await ws.close()
   })
 })

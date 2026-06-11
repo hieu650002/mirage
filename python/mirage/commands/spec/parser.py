@@ -165,9 +165,10 @@ def parse_command(
         raw_args.append(tok)
         i += 1
 
-    positional: tuple[OperandKind, ...] = tuple(
-        op.kind for op in spec.positional
-        if op.provided_by is None or op.provided_by not in flags)
+    positional: tuple[OperandKind,
+                      ...] = tuple(op.kind for op in spec.positional
+                                   if not any(name in flags
+                                              for name in op.provided_by))
 
     classified: list[tuple[str, OperandKind]] = []
     for j, arg in enumerate(raw_args):

@@ -16,7 +16,8 @@ import re
 from collections.abc import AsyncIterator
 
 from mirage.commands.builtin.grep_context import grep_context_lines
-from mirage.commands.builtin.grep_helper import compile_pattern
+from mirage.commands.builtin.grep_helper import (NEVER_MATCH, compile_pattern,
+                                                 merge_pattern_list)
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.builtin.utils.stream import _resolve_source
 from mirage.io.async_line_iterator import AsyncLineIterator
@@ -110,15 +111,29 @@ async def grep(
     B: str | None = None,
     C: str | None = None,
     e: str | None = None,
+    f: PathSpec | None = None,
     prefix: str = "",
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
+    pattern: str | None
     if e is not None:
         pattern = e
     elif texts:
         pattern = texts[0]
+    elif f is not None:
+        pattern = None
     else:
         raise ValueError("grep: usage: grep [flags] pattern [path]")
+
+    if f is not None:
+        if ops is None or "read_stream" not in ops:
+            raise ValueError(
+                "grep: -f: pattern file requires filesystem context")
+        chunks = [chunk async for chunk in ops["read_stream"](f)]
+        pattern = merge_pattern_list(pattern, b"".join(chunks))
+        if pattern is None:
+            pattern = NEVER_MATCH
+            F = False
 
     max_count = int(m) if m is not None else None
     after_ctx = int(A) if A is not None else (int(C) if C is not None else 0)

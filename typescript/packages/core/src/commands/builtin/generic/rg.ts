@@ -87,7 +87,7 @@ export async function rgGeneric(
   stream: Stream,
   scopeCheck?: ScopeCheck,
 ): Promise<CommandFnResult> {
-  const [exprText] = texts
+  const exprText = typeof opts.flags.e === 'string' ? opts.flags.e : texts[0]
   if (exprText === undefined) {
     return [
       null,

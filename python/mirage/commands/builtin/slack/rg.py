@@ -42,6 +42,7 @@ async def rg(
     accessor: SlackAccessor,
     paths: list[PathSpec],
     *texts: str,
+    e: str | None = None,
     stdin: AsyncIterator[bytes] | bytes | None = None,
     i: bool = False,
     v: bool = False,
@@ -62,9 +63,9 @@ async def rg(
     index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    if not texts:
+    if e is None and not texts:
         raise ValueError("rg: usage: rg [flags] pattern [path]")
-    pattern_str = texts[0]
+    pattern_str = e if e is not None else texts[0]
     max_count = int(m) if m is not None else None
     after_ctx = int(A) if A is not None else (int(C) if C is not None else 0)
     before_ctx = int(B) if B is not None else (int(C) if C is not None else 0)

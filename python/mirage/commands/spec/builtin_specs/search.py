@@ -39,8 +39,10 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-B", value_kind=OperandKind.TEXT),
             Option(short="-C", value_kind=OperandKind.TEXT),
             Option(short="-e", value_kind=OperandKind.TEXT, repeatable=True),
+            Option(short="-f", value_kind=OperandKind.PATH),
         ),
-        positional=(Operand(kind=OperandKind.TEXT, provided_by="-e"), ),
+        positional=(Operand(kind=OperandKind.TEXT,
+                            provided_by=("-e", "-f")), ),
         rest=Operand(kind=OperandKind.PATH),
     ),
     'search':
@@ -64,6 +66,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-w"),
             Option(short="-F"),
             Option(short="-o"),
+            Option(short="-e", value_kind=OperandKind.TEXT, repeatable=True),
             Option(short="-m", value_kind=OperandKind.TEXT),
             Option(short="-A", value_kind=OperandKind.TEXT),
             Option(short="-B", value_kind=OperandKind.TEXT),
@@ -72,7 +75,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(long="--type", value_kind=OperandKind.TEXT),
             Option(long="--glob", value_kind=OperandKind.TEXT),
         ),
-        positional=(Operand(kind=OperandKind.TEXT), ),
+        positional=(Operand(kind=OperandKind.TEXT, provided_by=("-e", )), ),
         rest=Operand(kind=OperandKind.PATH),
     ),
     'sed':
@@ -129,7 +132,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-q"),
             Option(short="-w"),
         ),
-        positional=(Operand(kind=OperandKind.TEXT, provided_by="-e"), ),
+        positional=(Operand(kind=OperandKind.TEXT, provided_by=("-e", )), ),
         rest=Operand(kind=OperandKind.PATH),
     ),
 }

@@ -223,7 +223,7 @@ describe('parseCommand — providedBy frees the positional slot', () => {
       new Option({ short: '-n' }),
       new Option({ short: '-e', valueKind: OperandKind.TEXT }),
     ],
-    positional: [new Operand({ kind: OperandKind.TEXT, providedBy: '-e' })],
+    positional: [new Operand({ kind: OperandKind.TEXT, providedBy: ['-e'] })],
     rest: new Operand({ kind: OperandKind.PATH }),
   })
 
@@ -279,6 +279,30 @@ describe('parseCommand — repeatable value flags accumulate newline-joined', ()
   it('non-repeatable value flags keep the last value', () => {
     const p = parseCommand(specOf('grep'), ['-m', '1', '-m', '2', 'pat'], '/')
     expect(p.flags['-m']).toBe('2')
+  })
+
+  it('accumulates repeated -e for rg and frees the positional slot', () => {
+    const p = parseCommand(specOf('rg'), ['-e', 'foo', '-e', 'bar', '/x'], '/')
+    expect(p.flags['-e']).toBe('foo\nbar')
+    expect(p.texts()).toEqual([])
+    expect(p.paths()).toEqual(['/x'])
+  })
+})
+
+describe('parseCommand — grep -f pattern file', () => {
+  it('frees the positional slot and routes the pattern file', () => {
+    const p = parseCommand(specOf('grep'), ['-f', 'pats.txt', 'a.txt'], '/data')
+    expect(p.flags['-f']).toBe('/data/pats.txt')
+    expect(p.texts()).toEqual([])
+    expect(p.paths()).toEqual(['/data/a.txt'])
+    expect(p.routingPaths()).toContain('/data/pats.txt')
+  })
+
+  it('keeps -e and -f together', () => {
+    const p = parseCommand(specOf('grep'), ['-e', 'foo', '-f', '/p.txt', '/a.txt'], '/')
+    expect(p.flags['-e']).toBe('foo')
+    expect(p.flags['-f']).toBe('/p.txt')
+    expect(p.paths()).toEqual(['/a.txt'])
   })
 })
 

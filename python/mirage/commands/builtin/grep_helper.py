@@ -33,6 +33,8 @@ BINARY_EXTENSIONS = frozenset({
     ".h5",
 })
 
+NEVER_MATCH = r"(?!)"
+
 
 def classify_pattern(
     pattern: str,
@@ -54,6 +56,32 @@ def classify_pattern(
     if re.fullmatch(r'[\w\s\-_.]+', pattern):
         return PatternType.SIMPLE
     return PatternType.REGEX
+
+
+def merge_pattern_list(
+    pattern: str | None,
+    file_data: bytes | None,
+) -> str | None:
+    """Merge a pattern list with the content of a -f pattern file.
+
+    Args:
+        pattern (str | None): newline-separated pattern list from -e or the
+            positional argument, or None when only -f supplied patterns.
+        file_data (bytes | None): raw -f file content, or None without -f.
+
+    Returns:
+        str | None: merged newline-separated pattern list, or None when the
+            list is empty (GNU: zero patterns match nothing).
+    """
+    parts: list[str] = [] if pattern is None else pattern.split("\n")
+    if file_data:
+        text = file_data.decode(errors="replace")
+        if text.endswith("\n"):
+            text = text[:-1]
+        parts.extend(text.split("\n"))
+    if not parts:
+        return None
+    return "\n".join(parts)
 
 
 def build_pattern_str(

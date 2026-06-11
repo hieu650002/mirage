@@ -75,7 +75,7 @@ def test_non_repeatable_value_flag_keeps_last_value():
 def test_provided_by_only_skips_slot_when_flag_present():
     spec = CommandSpec(
         options=(Option(short="-e", value_kind=OperandKind.TEXT), ),
-        positional=(Operand(kind=OperandKind.TEXT, provided_by="-e"), ),
+        positional=(Operand(kind=OperandKind.TEXT, provided_by=("-e", )), ),
         rest=Operand(kind=OperandKind.PATH),
     )
     with_flag = parse_command(spec, ["-e", "pat", "/x"], "/")
@@ -83,3 +83,26 @@ def test_provided_by_only_skips_slot_when_flag_present():
     without_flag = parse_command(spec, ["pat", "/x"], "/")
     assert without_flag.texts() == ["pat"]
     assert without_flag.paths() == ["/x"]
+
+
+def test_grep_dash_f_frees_positional_and_routes_pattern_file():
+    parsed = parse_command(SPECS["grep"], ["-f", "pats.txt", "a.txt"], "/data")
+    assert parsed.flags["-f"] == "/data/pats.txt"
+    assert parsed.texts() == []
+    assert parsed.paths() == ["/data/a.txt"]
+    assert "/data/pats.txt" in parsed.routing_paths()
+
+
+def test_grep_dash_e_and_dash_f_together():
+    parsed = parse_command(SPECS["grep"],
+                           ["-e", "foo", "-f", "/p.txt", "/a.txt"], "/")
+    assert parsed.flags["-e"] == "foo"
+    assert parsed.flags["-f"] == "/p.txt"
+    assert parsed.paths() == ["/a.txt"]
+
+
+def test_rg_dash_e_frees_positional_and_accumulates():
+    parsed = parse_command(SPECS["rg"], ["-e", "foo", "-e", "bar", "/x"], "/")
+    assert parsed.flags["-e"] == "foo\nbar"
+    assert parsed.texts() == []
+    assert parsed.paths() == ["/x"]

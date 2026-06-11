@@ -13,7 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { compilePattern, isRegexPattern } from './grep_helper.ts'
+import { NEVER_MATCH, compilePattern, isRegexPattern, mergePatternList } from './grep_helper.ts'
+
+const ENC = new TextEncoder()
 
 describe('compilePattern', () => {
   it('single pattern keeps regex semantics', () => {
@@ -61,6 +63,36 @@ describe('compilePattern', () => {
     const pat = compilePattern('foo\nbar', true)
     expect(pat.test('FOO')).toBe(true)
     expect(pat.test('Bar')).toBe(true)
+  })
+})
+
+describe('mergePatternList', () => {
+  it('file only', () => {
+    expect(mergePatternList(null, ENC.encode('foo\nbar\n'))).toBe('foo\nbar')
+  })
+
+  it('combines flag and file patterns', () => {
+    expect(mergePatternList('x', ENC.encode('y\nz\n'))).toBe('x\ny\nz')
+  })
+
+  it('no file keeps the pattern', () => {
+    expect(mergePatternList('x', null)).toBe('x')
+  })
+
+  it('empty file yields null (GNU: zero patterns)', () => {
+    expect(mergePatternList(null, new Uint8Array())).toBeNull()
+  })
+
+  it('single blank line is one empty pattern', () => {
+    expect(mergePatternList(null, ENC.encode('\n'))).toBe('')
+  })
+})
+
+describe('NEVER_MATCH', () => {
+  it('matches nothing', () => {
+    const pat = compilePattern(NEVER_MATCH)
+    expect(pat.test('')).toBe(false)
+    expect(pat.test('anything')).toBe(false)
   })
 })
 

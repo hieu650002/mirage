@@ -40,6 +40,7 @@ async def rg(
     accessor: LangfuseAccessor,
     paths: list[PathSpec],
     *texts: str,
+    e: str | None = None,
     stdin: AsyncIterator[bytes] | bytes | None = None,
     i: bool = False,
     v: bool = False,
@@ -60,9 +61,9 @@ async def rg(
     index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    if not texts:
+    if e is None and not texts:
         raise ValueError("rg: usage: rg [flags] pattern [path]")
-    pattern_str = texts[0]
+    pattern_str = e if e is not None else texts[0]
     max_count = int(m) if m is not None else None
     pat = compile_pattern(pattern_str, i, F, w)
     after_ctx = int(A) if A is not None else (int(C) if C is not None else 0)

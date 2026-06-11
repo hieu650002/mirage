@@ -179,7 +179,7 @@ export function parseCommand(spec: CommandSpec, argv: string[], cwd: string): Pa
   }
 
   const positional: OperandKind[] = spec.positional
-    .filter((op) => op.providedBy === null || !(op.providedBy in flags))
+    .filter((op) => !op.providedBy.some((name) => name in flags))
     .map((op) => op.kind)
 
   const classified: [string, OperandKind][] = []

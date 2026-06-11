@@ -42,13 +42,13 @@ async function rgCommand(
   texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  if (texts.length === 0 || texts[0] === undefined) {
+  const pattern = typeof opts.flags.e === 'string' ? opts.flags.e : texts[0]
+  if (pattern === undefined) {
     return [
       null,
       new IOResult({ exitCode: 2, stderr: ENC.encode('rg: usage: rg [flags] pattern [path]\n') }),
     ]
   }
-  const pattern = texts[0]
   const maxCount = typeof opts.flags.m === 'string' ? Number.parseInt(opts.flags.m, 10) : null
 
   if (paths.length > 0) {

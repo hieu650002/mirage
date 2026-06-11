@@ -2,9 +2,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 
 from mirage.cache.index import IndexCacheStore
-from mirage.commands.builtin.grep_helper import (compile_pattern,
+from mirage.commands.builtin.grep_helper import (NEVER_MATCH, compile_pattern,
                                                  grep_files_only, grep_lines,
-                                                 grep_recursive, grep_stream)
+                                                 grep_recursive, grep_stream,
+                                                 merge_pattern_list)
 from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.output import (format_optional_records,
                                                   format_records)
@@ -19,14 +20,14 @@ from mirage.types import FileStat, FileType, PathSpec
 async def grep(
     paths: list[PathSpec],
     *,
-    pattern: str,
+    pattern: str | None,
     readdir: Callable[..., Awaitable[list[str]]],
     stat: Callable[[PathSpec], Awaitable[FileStat]],
     read_bytes: Callable[..., Awaitable[bytes]],
     read_stream: Callable[..., AsyncIterator[bytes]] | None,
     accessor: object = None,
     stdin: AsyncIterator[bytes] | bytes | None = None,
-    pattern_via_e: bool = False,
+    pattern_file: PathSpec | None = None,
     ignore_case: bool = False,
     invert: bool = False,
     line_numbers: bool = False,
@@ -49,7 +50,8 @@ async def grep(
     Args:
         paths (list[PathSpec]): Backend paths to search. Empty paths consume
             stdin.
-        pattern (str): Pattern text from CLI arguments.
+        pattern (str | None): Newline-separated pattern list from `-e` or the
+            positional argument, or None when only `-f` supplies patterns.
         readdir (Callable[..., Awaitable[list[str]]]): Directory reader.
         stat (Callable[[PathSpec], Awaitable[FileStat]]): Backend stat reader.
         read_bytes (Callable[..., Awaitable[bytes]]): Whole-file reader.
@@ -58,7 +60,8 @@ async def grep(
         accessor (object): Backend accessor passed through wrapper helpers.
         stdin (AsyncIterator[bytes] | bytes | None): Input used when paths is
             empty.
-        pattern_via_e (bool): True when the pattern came from `-e`.
+        pattern_file (PathSpec | None): `-f`, file holding newline-separated
+            patterns, read via the backend.
         ignore_case (bool): `-i`, case-insensitive matching.
         invert (bool): `-v`, select non-matching lines.
         line_numbers (bool): `-n`, prefix line numbers.
@@ -82,6 +85,19 @@ async def grep(
     Returns:
         tuple[ByteSource | None, IOResult]: Output stream and exit metadata.
     """
+    if pattern_file is not None:
+        file_data = await call_read_bytes(read_bytes,
+                                          accessor,
+                                          pattern_file,
+                                          index=index,
+                                          prefix=pattern_file.prefix)
+        pattern = merge_pattern_list(pattern, file_data)
+        if pattern is None:
+            pattern = NEVER_MATCH
+            fixed_string = False
+    if pattern is None:
+        raise ValueError("grep: usage: grep [flags] pattern [path]")
+
     if paths:
         mount_prefix = paths[0].prefix
         rd = partial(call_readdir,

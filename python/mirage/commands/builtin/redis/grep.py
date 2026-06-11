@@ -59,6 +59,7 @@ async def grep(
     B: str | None = None,
     C: str | None = None,
     e: str | None = None,
+    f: PathSpec | None = None,
     index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
@@ -66,6 +67,8 @@ async def grep(
         pattern = e
     elif texts:
         pattern = texts[0]
+    elif f is not None:
+        pattern = None
     else:
         raise ValueError("grep: usage: grep [flags] pattern [path]")
     max_count = int(m) if m is not None else None
@@ -76,6 +79,7 @@ async def grep(
     return await generic_grep(
         resolved,
         pattern=pattern,
+        pattern_file=f,
         readdir=_readdir,
         stat=_stat,
         read_bytes=_read,

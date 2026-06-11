@@ -36,7 +36,7 @@ class Option:
 @dataclass(frozen=True)
 class Operand:
     kind: OperandKind = OperandKind.PATH
-    provided_by: str | None = None
+    provided_by: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -44,7 +44,7 @@ async function rgCommand(
   if (paths.length > 0) {
     const first = paths[0]
     if (first === undefined) return [null, new IOResult()]
-    const pattern = texts[0] ?? ''
+    const pattern = typeof opts.flags.e === 'string' ? opts.flags.e : (texts[0] ?? '')
     const fixedString = opts.flags.F === true
     const key = scopeRelativeKey(first)
     let fileCount = countScopeFiles(accessor.tree, key)

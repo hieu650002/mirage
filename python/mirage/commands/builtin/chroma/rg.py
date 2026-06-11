@@ -18,6 +18,7 @@ async def rg(
     accessor,
     paths: list[PathSpec],
     *texts: str,
+    e: str | None = None,
     stdin: AsyncIterator[bytes] | bytes | None = None,
     i: bool = False,
     v: bool = False,
@@ -37,7 +38,7 @@ async def rg(
     index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    if not texts:
+    if e is None and not texts:
         raise ValueError("rg: usage: rg [flags] pattern [path]")
     if paths:
         paths = await resolve_glob(accessor, paths, index)
@@ -47,7 +48,7 @@ async def rg(
         context_before = context_after = int(C)
     return await generic_rg(
         paths,
-        pattern=texts[0],
+        pattern=e if e is not None else texts[0],
         readdir=readdir,
         stat=stat_light,
         read_bytes=read_bytes,

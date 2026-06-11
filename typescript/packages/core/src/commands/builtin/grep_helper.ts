@@ -27,8 +27,26 @@ export const BINARY_EXTENSIONS: ReadonlySet<string> = new Set([
   '.h5',
 ])
 
+export const NEVER_MATCH = '(?!)'
+
+const DEC = new TextDecoder()
+
 export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function mergePatternList(
+  pattern: string | null,
+  fileData: Uint8Array | null,
+): string | null {
+  const parts: string[] = pattern === null ? [] : pattern.split('\n')
+  if (fileData !== null && fileData.length > 0) {
+    let text = DEC.decode(fileData)
+    if (text.endsWith('\n')) text = text.slice(0, -1)
+    parts.push(...text.split('\n'))
+  }
+  if (parts.length === 0) return null
+  return parts.join('\n')
 }
 
 export function buildPatternStr(pattern: string, fixedString = false, wholeWord = false): string {

@@ -13,8 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.constants import PatternType
-from mirage.commands.builtin.grep_helper import (classify_pattern,
-                                                 compile_pattern)
+from mirage.commands.builtin.grep_helper import (NEVER_MATCH, classify_pattern,
+                                                 compile_pattern,
+                                                 merge_pattern_list)
 
 
 def test_single_pattern_keeps_regex_semantics():
@@ -68,3 +69,29 @@ def test_classify_pattern_newline_list_is_regex():
     assert classify_pattern("foo\nbar", False) == PatternType.REGEX
     assert classify_pattern("foo\nbar", True) == PatternType.REGEX
     assert classify_pattern("foo bar", False) == PatternType.SIMPLE
+
+
+def test_merge_pattern_list_file_only():
+    assert merge_pattern_list(None, b"foo\nbar\n") == "foo\nbar"
+
+
+def test_merge_pattern_list_combines_flag_and_file():
+    assert merge_pattern_list("x", b"y\nz\n") == "x\ny\nz"
+
+
+def test_merge_pattern_list_no_file_keeps_pattern():
+    assert merge_pattern_list("x", None) == "x"
+
+
+def test_merge_pattern_list_empty_file_is_none():
+    assert merge_pattern_list(None, b"") is None
+
+
+def test_merge_pattern_list_blank_line_matches_all():
+    assert merge_pattern_list(None, b"\n") == ""
+
+
+def test_never_match_pattern_matches_nothing():
+    pat = compile_pattern(NEVER_MATCH)
+    assert not pat.search("")
+    assert not pat.search("anything")

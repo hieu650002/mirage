@@ -50,16 +50,16 @@ export class Option {
 
 export interface OperandInit {
   kind?: OperandKind
-  providedBy?: string | null
+  providedBy?: readonly string[]
 }
 
 export class Operand {
   readonly kind: OperandKind
-  readonly providedBy: string | null
+  readonly providedBy: readonly string[]
 
   constructor(init: OperandInit = {}) {
     this.kind = init.kind ?? OperandKind.PATH
-    this.providedBy = init.providedBy ?? null
+    this.providedBy = init.providedBy ?? []
     Object.freeze(this)
   }
 }

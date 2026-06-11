@@ -37,6 +37,7 @@ async def grep(
     B: str | None = None,
     C: str | None = None,
     e: str | None = None,
+    f: PathSpec | None = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
     index = _extra.get("index")
@@ -45,6 +46,8 @@ async def grep(
         pattern = e
     elif texts:
         pattern = texts[0]
+    elif f is not None:
+        pattern = None
     else:
         raise ValueError("grep: usage: grep [flags] pattern [path]")
     files = paths
@@ -72,6 +75,7 @@ async def grep(
     return await generic_grep(
         files,
         pattern=pattern,
+        pattern_file=f,
         readdir=readdir,
         stat=stat_light,
         read_bytes=read_bytes,

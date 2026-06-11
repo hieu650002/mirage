@@ -17,12 +17,14 @@ import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { FileType, PathSpec, type FileStat } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import {
+  NEVER_MATCH,
   compilePattern,
   grepFilesOnly,
   type GrepFilesOnlyOptions,
   grepLines,
   grepRecursive,
   grepStream,
+  mergePatternList,
 } from '../grep_helper.ts'
 import { resolveSource } from '../utils/stream.ts'
 
@@ -54,9 +56,13 @@ interface FlagSet {
   beforeContext: number
 }
 
-function getPattern(texts: readonly string[], flags: Record<string, string | boolean>): string {
+function getPattern(
+  texts: readonly string[],
+  flags: Record<string, string | boolean>,
+): string | null {
   if (typeof flags.e === 'string') return flags.e
   if (texts.length > 0 && texts[0] !== undefined) return texts[0]
+  if (typeof flags.f === 'string') return null
   throw new Error('grep: usage: grep [flags] pattern [path]')
 }
 
@@ -116,7 +122,7 @@ export async function grepGeneric(
   scopeCheck?: ScopeCheck,
   showFilename = false,
 ): Promise<CommandFnResult> {
-  let pattern: string
+  let pattern: string | null
   try {
     pattern = getPattern(texts, opts.flags)
   } catch (err) {
@@ -125,6 +131,37 @@ export async function grepGeneric(
   }
   const f = parseFlags(opts.flags)
   const recursive = opts.flags.r === true || opts.flags.R === true
+
+  if (typeof opts.flags.f === 'string') {
+    const patternSpec = PathSpec.fromStrPath(
+      opts.flags.f,
+      paths[0]?.prefix ?? opts.mountPrefix ?? '',
+    )
+    let fileData: Uint8Array
+    try {
+      fileData = await materialize(stream(patternSpec))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return [
+        null,
+        new IOResult({ exitCode: 2, stderr: ENC.encode(`${name}: ${opts.flags.f}: ${msg}\n`) }),
+      ]
+    }
+    pattern = mergePatternList(pattern, fileData)
+    if (pattern === null) {
+      pattern = NEVER_MATCH
+      f.fixedString = false
+    }
+  }
+  if (pattern === null) {
+    return [
+      null,
+      new IOResult({
+        exitCode: 2,
+        stderr: ENC.encode(`${name}: usage: ${name} [flags] pattern [path]\n`),
+      }),
+    ]
+  }
 
   if (paths.length > 0) {
     const first = paths[0]
