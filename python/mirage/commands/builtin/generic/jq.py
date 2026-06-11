@@ -28,11 +28,8 @@ async def jq(
     c: bool = False,
     s: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
-    if not texts:
-        # Deliberate divergence: piped GNU jq defaults the filter to "." and
-        # only prints usage (exit 2) on a tty; agents get a concise error.
-        raise ValueError("jq: usage: jq EXPRESSION [path]")
-    expression = texts[0]
+    # GNU jq defaults the filter to "." when no expression is given
+    expression = texts[0] if texts else "."
     spread = "[]" in expression
     if paths:
         if is_jsonl_path(

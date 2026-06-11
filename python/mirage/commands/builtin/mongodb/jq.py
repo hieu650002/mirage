@@ -38,9 +38,7 @@ async def jq(
     index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    if not texts:
-        raise ValueError("jq: usage: jq EXPRESSION [path]")
-    expression = texts[0]
+    expression = texts[0] if texts else "."
     if paths:
         paths = await resolve_glob(accessor, paths, index)
         outputs: list[bytes] = []
