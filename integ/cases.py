@@ -392,6 +392,10 @@ CASES: list[tuple[str, str]] = [
     # ----- fmt / fold / expand -----
     ("fmt_w10", "fmt -w 10 /data/c.txt"),
     ("fold_s", "fold -s -w 6 /data/a.txt"),
+    ("fold_file", "fold -w 3 /data/a.txt"),
+    ("fold_multi", "fold -w 4 /data/a.txt /data/b.txt"),
+    ("fold_default", "fold /data/c.txt"),
+    ("fold_s_spaces", "fold -s -w 8 /data/mixed.txt"),
     ("expand_t4", "expand -t 4 /data/tabbed.txt"),
     ("unexpand_all", "echo '    hi' | unexpand -a"),
 

@@ -1085,6 +1085,37 @@ world
 foo
 bar
 baz
+=== fold_file ===
+hel
+lo
+wor
+ld
+foo
+bar
+baz
+=== fold_multi ===
+hell
+o
+worl
+d
+foo
+bar
+baz
+1
+2
+3
+=== fold_default ===
+alpha
+beta
+gamma
+delta
+=== fold_s_spaces ===
+Hello 
+World
+HELLO 
+world
+hello 
+WORLD
 === expand_t4 ===
 a   1
 b   2
