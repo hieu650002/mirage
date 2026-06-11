@@ -127,7 +127,7 @@ async def test_grep_single_dir_operand_warns():
     readdir, stat, rb, rs = _make_backend({"/d/a.txt": b"apple\n"})
     output, io = await grep(
         [_spec("/d")],
-        pattern="ap",
+        ["ap"],
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
