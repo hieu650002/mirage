@@ -119,7 +119,6 @@ jobs:
           - { extra: pdf, module: mirage.core.filetype.pdf }
           - { extra: parquet, module: mirage.core.filetype.parquet }
           - { extra: hdf5, module: mirage.core.filetype.hdf5 }
-          - { extra: audio, module: mirage.commands.local_audio }
           - { extra: nextcloud, module: mirage.resource.nextcloud }
           - { extra: hf, module: mirage.resource.hf_buckets }
           - { extra: langfuse, module: mirage.resource.langfuse }
@@ -198,7 +197,7 @@ jobs:
       - name: Verify optional peers stay out of the bare install
         run: |
           cd "$RUNNER_TEMP/minimal"
-          for dep in @lancedb opendal mongodb pg redis ssh2 imapflow mailparser nodemailer music-metadata wavefile sherpa-onnx-node @zkochan; do
+          for dep in @lancedb opendal mongodb pg redis ssh2 imapflow mailparser nodemailer @zkochan; do
             if [ -e "node_modules/$dep" ]; then
               echo "FAIL: optional peer $dep leaked into bare install"
               exit 1
