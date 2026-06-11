@@ -21,10 +21,22 @@ export const OperandKind = Object.freeze({
 export type OperandKind = (typeof OperandKind)[keyof typeof OperandKind]
 
 export interface OptionInit {
+  /** Short form, e.g. "-e". */
   short?: string | null
+  /** Long form, e.g. "--max-depth". */
   long?: string | null
+  /**
+   * NONE for boolean flags; TEXT or PATH for value flags. PATH values are
+   * cwd-resolved and routed for mount dispatch.
+   */
   valueKind?: OperandKind
+  /** Treat "-<digits>" as this flag's value (e.g. head -5). */
   numericShorthand?: boolean
+  /**
+   * Repeated occurrences accumulate newline-joined instead of last-wins
+   * (POSIX pattern-list form, e.g. grep -e). Repeatable PATH flags resolve
+   * and route each joined path.
+   */
   repeatable?: boolean
   description?: string
 }
@@ -49,7 +61,13 @@ export class Option {
 }
 
 export interface OperandInit {
+  /** PATH operands are cwd-resolved and routed; TEXT pass through verbatim. */
   kind?: OperandKind
+  /**
+   * Flags that supply this operand's value. When any is present the slot is
+   * skipped and remaining args classify as rest (e.g. grep's pattern with
+   * -e/-f).
+   */
   providedBy?: readonly string[]
 }
 

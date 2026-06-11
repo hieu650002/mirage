@@ -39,7 +39,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-B", value_kind=OperandKind.TEXT),
             Option(short="-C", value_kind=OperandKind.TEXT),
             Option(short="-e", value_kind=OperandKind.TEXT, repeatable=True),
-            Option(short="-f", value_kind=OperandKind.PATH),
+            Option(short="-f", value_kind=OperandKind.PATH, repeatable=True),
         ),
         positional=(Operand(kind=OperandKind.TEXT,
                             provided_by=("-e", "-f")), ),

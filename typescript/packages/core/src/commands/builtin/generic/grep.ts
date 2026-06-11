@@ -133,21 +133,21 @@ export async function grepGeneric(
   const recursive = opts.flags.r === true || opts.flags.R === true
 
   if (typeof opts.flags.f === 'string') {
-    const patternSpec = PathSpec.fromStrPath(
-      opts.flags.f,
-      paths[0]?.prefix ?? opts.mountPrefix ?? '',
-    )
-    let fileData: Uint8Array
-    try {
-      fileData = await materialize(stream(patternSpec))
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return [
-        null,
-        new IOResult({ exitCode: 2, stderr: ENC.encode(`${name}: ${opts.flags.f}: ${msg}\n`) }),
-      ]
+    // Repeatable -f carries newline-joined resolved paths; read each file.
+    for (const filePath of opts.flags.f.split('\n')) {
+      const patternSpec = PathSpec.fromStrPath(filePath, paths[0]?.prefix ?? opts.mountPrefix ?? '')
+      let fileData: Uint8Array
+      try {
+        fileData = await materialize(stream(patternSpec))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return [
+          null,
+          new IOResult({ exitCode: 2, stderr: ENC.encode(`${name}: ${filePath}: ${msg}\n`) }),
+        ]
+      }
+      pattern = mergePatternList(pattern, fileData)
     }
-    pattern = mergePatternList(pattern, fileData)
     if (pattern === null) {
       pattern = NEVER_MATCH
       f.fixedString = false

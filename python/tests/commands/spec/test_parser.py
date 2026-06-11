@@ -101,6 +101,15 @@ def test_grep_dash_e_and_dash_f_together():
     assert parsed.paths() == ["/a.txt"]
 
 
+def test_grep_repeated_dash_f_accumulates_and_routes_each_file():
+    parsed = parse_command(SPECS["grep"],
+                           ["-f", "p1.txt", "-f", "p2.txt", "a.txt"], "/data")
+    assert parsed.flags["-f"] == "/data/p1.txt\n/data/p2.txt"
+    assert parsed.paths() == ["/data/a.txt"]
+    assert "/data/p1.txt" in parsed.routing_paths()
+    assert "/data/p2.txt" in parsed.routing_paths()
+
+
 def test_rg_dash_e_frees_positional_and_accumulates():
     parsed = parse_command(SPECS["rg"], ["-e", "foo", "-e", "bar", "/x"], "/")
     assert parsed.flags["-e"] == "foo\nbar"

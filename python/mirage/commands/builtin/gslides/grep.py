@@ -67,7 +67,7 @@ async def grep(
     B: str | None = None,
     C: str | None = None,
     e: str | None = None,
-    f: PathSpec | None = None,
+    f: PathSpec | list[PathSpec] | None = None,
     prefix: str = "",
     index: IndexCacheStore = None,
     **_extra: object,

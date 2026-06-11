@@ -206,9 +206,15 @@ export function parseCommand(spec: CommandSpec, argv: string[], cwd: string): Pa
     if (kind === OperandKind.PATH && flagName in flags) {
       const val = flags[flagName]
       if (typeof val === 'string') {
-        const resolved = resolvePath(cwd, val)
-        flags[flagName] = resolved
-        pathFlagValues.push(resolved)
+        if (repeatFlags.has(flagName) && val.includes('\n')) {
+          const parts = val.split('\n').map((part) => resolvePath(cwd, part))
+          flags[flagName] = parts.join('\n')
+          pathFlagValues.push(...parts)
+        } else {
+          const resolved = resolvePath(cwd, val)
+          flags[flagName] = resolved
+          pathFlagValues.push(resolved)
+        }
       }
     }
   }

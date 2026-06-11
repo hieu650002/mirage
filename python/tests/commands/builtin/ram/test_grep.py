@@ -83,6 +83,37 @@ async def test_grep_dash_e_and_dash_f_union(workspace):
 
 
 @pytest.mark.asyncio
+async def test_grep_repeated_dash_f_unions_pattern_files(workspace):
+    await workspace.ops.mkdir("/data")
+    await workspace.ops.write("/data/a.txt",
+                              b"orange line\nplain line\nlast line\n")
+    await workspace.ops.write("/data/p1.txt", b"orange\n")
+    await workspace.ops.write("/data/p2.txt", b"last\n")
+
+    io = await workspace.execute(
+        "grep -f /data/p1.txt -f /data/p2.txt /data/a.txt",
+        session_id="default")
+    assert io.exit_code == 0
+    assert (io.stdout or b"").decode() == "orange line\nlast line\n"
+
+
+@pytest.mark.asyncio
+async def test_grep_dash_e_and_repeated_dash_f_union(workspace):
+    await workspace.ops.mkdir("/data")
+    await workspace.ops.write("/data/a.txt",
+                              b"orange line\nplain line\nlast line\n")
+    await workspace.ops.write("/data/p1.txt", b"orange\n")
+    await workspace.ops.write("/data/p2.txt", b"last\n")
+
+    io = await workspace.execute(
+        "grep -e plain -f /data/p1.txt -f /data/p2.txt /data/a.txt",
+        session_id="default")
+    assert io.exit_code == 0
+    assert (io.stdout
+            or b"").decode() == "orange line\nplain line\nlast line\n"
+
+
+@pytest.mark.asyncio
 async def test_grep_dash_f_empty_file_matches_nothing(workspace):
     # GNU semantics: an empty -f file contains zero patterns and matches
     # nothing (BSD grep diverges and matches everything).

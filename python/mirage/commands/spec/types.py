@@ -25,6 +25,22 @@ class OperandKind(str, Enum):
 
 @dataclass(frozen=True)
 class Option:
+    """One flag accepted by a command.
+
+    Args:
+        short (str | None): short form, e.g. "-e".
+        long (str | None): long form, e.g. "--max-depth".
+        value_kind (OperandKind): NONE for boolean flags; TEXT or PATH for
+            value flags. PATH values are cwd-resolved and routed for mount
+            dispatch, and reach the command as PathSpec.
+        numeric_shorthand (bool): treat "-<digits>" as this flag's value
+            (e.g. head -5).
+        repeatable (bool): repeated occurrences accumulate newline-joined
+            instead of last-wins (POSIX pattern-list form, e.g. grep -e).
+            Repeatable PATH flags resolve and route each joined path and
+            reach the command as list[PathSpec] when repeated.
+        description (str | None): help text.
+    """
     short: str | None = None
     long: str | None = None
     value_kind: OperandKind = OperandKind.NONE
@@ -35,6 +51,15 @@ class Option:
 
 @dataclass(frozen=True)
 class Operand:
+    """One positional argument slot.
+
+    Args:
+        kind (OperandKind): PATH operands are cwd-resolved and routed for
+            mount dispatch; TEXT operands pass through verbatim.
+        provided_by (tuple[str, ...]): flags that supply this operand's
+            value. When any is present the slot is skipped and remaining
+            args classify as rest (e.g. grep's pattern with -e/-f).
+    """
     kind: OperandKind = OperandKind.PATH
     provided_by: tuple[str, ...] = ()
 

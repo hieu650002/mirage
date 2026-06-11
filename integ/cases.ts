@@ -44,6 +44,7 @@ export const SEED_FILES: Record<string, string> = {
   "/data/sorted_c.txt": "apple\ncherry\nelder\nfig\n",
   "/data/prefix_dup.txt": "1 apple\n2 apple\n3 banana\n",
   "/data/patterns.txt": "world\nbar\n",
+  "/data/patterns2.txt": "baz\n",
 };
 
 export const CASES: ReadonlyArray<readonly [string, string]> = [
@@ -287,6 +288,7 @@ export const CASES: ReadonlyArray<readonly [string, string]> = [
   ["grep_e_multi_pattern_F", "grep -F -e a.b -e foo /data/a.txt"],
   ["grep_f_file", "grep -f /data/patterns.txt /data/a.txt"],
   ["grep_e_f_union", "grep -e hello -f /data/patterns.txt /data/a.txt"],
+  ["grep_f_multi", "grep -f /data/patterns.txt -f /data/patterns2.txt /data/a.txt"],
   ["rg_e_flag", "rg -e world /data/a.txt"],
   ["rg_e_multi", "rg -e world -e bar /data/a.txt"],
 

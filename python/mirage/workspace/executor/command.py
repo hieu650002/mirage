@@ -16,8 +16,8 @@ from collections.abc import Callable
 
 from mirage.commands.builtin.utils.safeguard import maybe_with_timeout
 from mirage.commands.safeguard import resolve_across_mounts, resolve_safeguard
-from mirage.commands.spec import (SPECS, OperandKind, parse_command,
-                                  parse_to_kwargs)
+from mirage.commands.spec import (SPECS, OperandKind, flag_kwarg_name,
+                                  parse_command, parse_to_kwargs)
 from mirage.io import IOResult
 from mirage.io.stream import async_chain, materialize, wrap_cachable_streams
 from mirage.io.types import ByteSource
@@ -135,9 +135,26 @@ def _parse_flags(
         parsed = parse_command(spec, argv, cwd=cwd)
         flag_kwargs = parse_to_kwargs(parsed)
 
-        # Recover PathSpec for PATH flag values
+        # Recover PathSpec for PATH flag values; repeatable PATH flags carry
+        # newline-joined resolved paths and become a list of PathSpec.
+        repeat_path_keys = {
+            flag_kwarg_name(name)
+            for opt in spec.options
+            if opt.value_kind == OperandKind.PATH and opt.repeatable
+            for name in (opt.short, opt.long) if name
+        }
         for key, value in flag_kwargs.items():
-            if isinstance(value, str) and value in scope_map:
+            if not isinstance(value, str):
+                continue
+            if key in repeat_path_keys and "\n" in value:
+                flag_kwargs[key] = [
+                    scope_map.get(
+                        part,
+                        PathSpec(original=part,
+                                 directory=part[:part.rfind("/") + 1] or "/",
+                                 resolved=True)) for part in value.split("\n")
+                ]
+            elif value in scope_map:
                 flag_kwargs[key] = scope_map[value]
 
         # Classify positional args

@@ -36,7 +36,7 @@ async def grep(
     B: str | None = None,
     C: str | None = None,
     e: str | None = None,
-    f: PathSpec | None = None,
+    f: PathSpec | list[PathSpec] | None = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
     index = _extra.get("index")

@@ -187,9 +187,15 @@ def parse_command(
     for flag_name, kind in value_flag_kinds.items():
         if (kind == OperandKind.PATH and flag_name in flags
                 and isinstance(flags[flag_name], str)):
-            resolved = _resolve(cwd, flags[flag_name])
-            flags[flag_name] = resolved
-            path_flag_values.append(resolved)
+            value = flags[flag_name]
+            if flag_name in repeat_flags and "\n" in value:
+                parts = [_resolve(cwd, part) for part in value.split("\n")]
+                flags[flag_name] = "\n".join(parts)
+                path_flag_values.extend(parts)
+            else:
+                resolved = _resolve(cwd, value)
+                flags[flag_name] = resolved
+                path_flag_values.append(resolved)
 
     return ParsedArgs(
         flags=flags,
@@ -199,10 +205,13 @@ def parse_command(
     )
 
 
+def flag_kwarg_name(flag: str) -> str:
+    clean = flag.lstrip("-").replace("-", "_")
+    return AMBIGUOUS_NAMES.get(clean, clean)
+
+
 def parse_to_kwargs(parsed: ParsedArgs) -> dict[str, str | bool]:
     result: dict[str, str | bool] = {}
     for key, value in parsed.flags.items():
-        clean = key.lstrip("-").replace("-", "_")
-        clean = AMBIGUOUS_NAMES.get(clean, clean)
-        result[clean] = value
+        result[flag_kwarg_name(key)] = value
     return result

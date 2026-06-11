@@ -27,7 +27,7 @@ async def grep(
     read_stream: Callable[..., AsyncIterator[bytes]] | None,
     accessor: object = None,
     stdin: AsyncIterator[bytes] | bytes | None = None,
-    pattern_file: PathSpec | None = None,
+    pattern_file: PathSpec | list[PathSpec] | None = None,
     ignore_case: bool = False,
     invert: bool = False,
     line_numbers: bool = False,
@@ -60,8 +60,8 @@ async def grep(
         accessor (object): Backend accessor passed through wrapper helpers.
         stdin (AsyncIterator[bytes] | bytes | None): Input used when paths is
             empty.
-        pattern_file (PathSpec | None): `-f`, file holding newline-separated
-            patterns, read via the backend.
+        pattern_file (PathSpec | list[PathSpec] | None): `-f`, file(s)
+            holding newline-separated patterns, read via the backend.
         ignore_case (bool): `-i`, case-insensitive matching.
         invert (bool): `-v`, select non-matching lines.
         line_numbers (bool): `-n`, prefix line numbers.
@@ -86,12 +86,15 @@ async def grep(
         tuple[ByteSource | None, IOResult]: Output stream and exit metadata.
     """
     if pattern_file is not None:
-        file_data = await call_read_bytes(read_bytes,
-                                          accessor,
-                                          pattern_file,
-                                          index=index,
-                                          prefix=pattern_file.prefix)
-        pattern = merge_pattern_list(pattern, file_data)
+        files = (pattern_file
+                 if isinstance(pattern_file, list) else [pattern_file])
+        for pf in files:
+            file_data = await call_read_bytes(read_bytes,
+                                              accessor,
+                                              pf,
+                                              index=index,
+                                              prefix=pf.prefix)
+            pattern = merge_pattern_list(pattern, file_data)
         if pattern is None:
             pattern = NEVER_MATCH
             fixed_string = False

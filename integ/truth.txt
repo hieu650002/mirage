@@ -238,6 +238,7 @@ a.txt
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -265,6 +266,7 @@ a.txt
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -294,6 +296,7 @@ no_nl.txt
 numbers.txt
 one_byte.txt
 patterns.txt
+patterns2.txt
 prefix_dup.txt
 repeats.txt
 sections.txt
@@ -322,6 +325,7 @@ no_nl.txt
 numbers.txt
 one_byte.txt
 patterns.txt
+patterns2.txt
 prefix_dup.txt
 repeats.txt
 sections.txt
@@ -430,6 +434,7 @@ baz
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -459,6 +464,7 @@ baz
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -518,7 +524,7 @@ world
       2 b
       1 c
 === find_pipe_wc ===
-21
+22
 === jq_pipe_wc ===
 3
 === cat_tr_sort ===
@@ -606,6 +612,7 @@ world
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -655,6 +662,7 @@ world
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -902,6 +910,10 @@ bar
 hello
 world
 bar
+=== grep_f_multi ===
+world
+bar
+baz
 === rg_e_flag ===
 world
 === rg_e_multi ===
@@ -936,6 +948,7 @@ baz,
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -962,6 +975,7 @@ baz,
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -975,6 +989,7 @@ baz,
 === find_size_lt ===
 /data/empty.txt
 /data/one_byte.txt
+/data/patterns2.txt
 /data/sub
 /data/sub/deep
 /data/sub/deep/deeper.txt
@@ -995,6 +1010,7 @@ baz,
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -1024,6 +1040,7 @@ baz,
 /data/numbers.txt
 /data/one_byte.txt
 /data/patterns.txt
+/data/patterns2.txt
 /data/prefix_dup.txt
 /data/repeats.txt
 /data/sections.txt
@@ -1075,7 +1092,7 @@ baz,
 === du_file ===
 24	/data/a.txt
 === du_dir ===
-612	/data
+616	/data
 === du_h ===
 24B	/data/a.txt
 === tree ===

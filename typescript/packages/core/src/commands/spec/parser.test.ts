@@ -304,6 +304,14 @@ describe('parseCommand — grep -f pattern file', () => {
     expect(p.flags['-f']).toBe('/p.txt')
     expect(p.paths()).toEqual(['/a.txt'])
   })
+
+  it('repeated -f accumulates and routes each file', () => {
+    const p = parseCommand(specOf('grep'), ['-f', 'p1.txt', '-f', 'p2.txt', 'a.txt'], '/data')
+    expect(p.flags['-f']).toBe('/data/p1.txt\n/data/p2.txt')
+    expect(p.paths()).toEqual(['/data/a.txt'])
+    expect(p.routingPaths()).toContain('/data/p1.txt')
+    expect(p.routingPaths()).toContain('/data/p2.txt')
+  })
 })
 
 describe('parseToKwargs', () => {

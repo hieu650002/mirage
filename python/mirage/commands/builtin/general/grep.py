@@ -111,7 +111,7 @@ async def grep(
     B: str | None = None,
     C: str | None = None,
     e: str | None = None,
-    f: PathSpec | None = None,
+    f: PathSpec | list[PathSpec] | None = None,
     prefix: str = "",
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
@@ -129,8 +129,10 @@ async def grep(
         if ops is None or "read_stream" not in ops:
             raise ValueError(
                 "grep: -f: pattern file requires filesystem context")
-        chunks = [chunk async for chunk in ops["read_stream"](f)]
-        pattern = merge_pattern_list(pattern, b"".join(chunks))
+        files = f if isinstance(f, list) else [f]
+        for pf in files:
+            chunks = [chunk async for chunk in ops["read_stream"](pf)]
+            pattern = merge_pattern_list(pattern, b"".join(chunks))
         if pattern is None:
             pattern = NEVER_MATCH
             F = False

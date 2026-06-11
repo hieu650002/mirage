@@ -32,6 +32,8 @@ async function makeWs(): Promise<Workspace> {
   r.store.dirs.add('/data')
   r.store.files.set('/data/a.txt', ENC.encode('orange line\nplain line\nlast line\n'))
   r.store.files.set('/data/pats.txt', ENC.encode('orange\nlast\n'))
+  r.store.files.set('/data/p1.txt', ENC.encode('orange\n'))
+  r.store.files.set('/data/p2.txt', ENC.encode('last\n'))
   r.store.files.set('/data/empty.txt', new Uint8Array())
   const registry = new OpsRegistry()
   registry.registerResource(r)
@@ -74,6 +76,22 @@ describe('grep -e pattern flag', () => {
   it('-e and -f union', async () => {
     const ws = await makeWs()
     const io = await ws.execute('grep -e plain -f /data/pats.txt /data/a.txt')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('orange line\nplain line\nlast line\n')
+    await ws.close()
+  })
+
+  it('repeated -f unions pattern files', async () => {
+    const ws = await makeWs()
+    const io = await ws.execute('grep -f /data/p1.txt -f /data/p2.txt /data/a.txt')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('orange line\nlast line\n')
+    await ws.close()
+  })
+
+  it('-e with repeated -f unions everything', async () => {
+    const ws = await makeWs()
+    const io = await ws.execute('grep -e plain -f /data/p1.txt -f /data/p2.txt /data/a.txt')
     expect(io.exitCode).toBe(0)
     expect(stdoutStr(io)).toBe('orange line\nplain line\nlast line\n')
     await ws.close()
