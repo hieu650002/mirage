@@ -29,7 +29,8 @@ export const MountKey = Object.freeze({
   INDEX: 'index',
   PREFIX: 'prefix',
   MODE: 'mode',
-  CONSISTENCY: 'consistency',
+  READ_POLICY: 'read_policy',
+  WRITE_POLICY: 'write_policy',
   RESOURCE_CLASS: 'resource_class',
   RESOURCE_STATE: 'resource_state',
 } as const)

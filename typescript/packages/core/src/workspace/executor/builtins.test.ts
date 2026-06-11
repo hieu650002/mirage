@@ -18,7 +18,7 @@ import { IOResult, materialize } from '../../io/types.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { RAMResource } from '../../resource/ram/ram.ts'
 import { CallStack } from '../../shell/call_stack.ts'
-import { FileStat, FileType, MountMode } from '../../types.ts'
+import { FileStat, FileType, MountMode, ReadPolicy, WritePolicy } from '../../types.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import type { Mount } from '../mount/mount.ts'
 import { Session } from '../session/session.ts'
@@ -444,7 +444,13 @@ describe('handleSource', () => {
 
 describe('handleMan', () => {
   it('renders header, description, and RESOURCES list for a known command', async () => {
-    const reg = new MountRegistry({ '/ram/': new RAMResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram/': new RAMResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     wireRegistry(reg)
     const s = new Session({ sessionId: 'test', cwd: '/' })
     const [out, io] = handleMan(['date'], s, reg)
@@ -456,7 +462,13 @@ describe('handleMan', () => {
   })
 
   it('renders OPTIONS table when the spec has options', async () => {
-    const reg = new MountRegistry({ '/ram/': new RAMResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram/': new RAMResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     wireRegistry(reg)
     const s = new Session({ sessionId: 'test', cwd: '/' })
     const [out, io] = handleMan(['date'], s, reg)
@@ -469,6 +481,9 @@ describe('handleMan', () => {
     const reg = new MountRegistry(
       { '/ram-a/': new RAMResource(), '/ram-b/': new RAMResource() },
       MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     wireRegistry(reg)
     const s = new Session({ sessionId: 'test', cwd: '/' })
@@ -480,7 +495,13 @@ describe('handleMan', () => {
   })
 
   it('exits 1 with a clear error for unknown commands', () => {
-    const reg = new MountRegistry({ '/ram/': new RAMResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram/': new RAMResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     wireRegistry(reg)
     const s = new Session({ sessionId: 'test', cwd: '/' })
     const [, io] = handleMan(['definitely-not-a-real-command-xyz'], s, reg)
@@ -490,7 +511,13 @@ describe('handleMan', () => {
   })
 
   it('groups commands by resource kind, cwd resource first, general last', async () => {
-    const reg = new MountRegistry({ '/ram/': new RAMResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram/': new RAMResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     wireRegistry(reg)
     const s = new Session({ sessionId: 'test', cwd: '/ram/' })
     const [body, io] = handleMan([], s, reg)
@@ -506,6 +533,9 @@ describe('handleMan', () => {
     const reg = new MountRegistry(
       { '/ram-a/': new RAMResource(), '/ram-b/': new RAMResource() },
       MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     wireRegistry(reg)
     const s = new Session({ sessionId: 'test', cwd: '/' })

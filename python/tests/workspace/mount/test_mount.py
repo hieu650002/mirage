@@ -17,7 +17,7 @@ import asyncio
 import pytest
 
 from mirage.resource.ram import RAMResource
-from mirage.types import MountMode, PathSpec
+from mirage.types import MountMode, PathSpec, ReadPolicy, WritePolicy
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.mount import Mount
 
@@ -30,27 +30,32 @@ def _run(coro):
 
 
 def test_mount_accepts_root_prefix():
-    m = Mount("/", RAMResource())
+    m = Mount("/", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     assert m.prefix == "/"
 
 
 def test_mount_rejects_no_leading_slash():
     with pytest.raises(ValueError, match="must start with /"):
-        Mount("data/", RAMResource())
+        Mount("data/", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
 
 
 def test_mount_rejects_no_trailing_slash():
     with pytest.raises(ValueError, match="must end with /"):
-        Mount("/data", RAMResource())
+        Mount("/data", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
 
 
 def test_mount_rejects_double_slash():
     with pytest.raises(ValueError, match="must not contain //"):
-        Mount("/data//sub/", RAMResource())
+        Mount("/data//sub/", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
 
 
 def test_mount_valid_prefix():
-    m = Mount("/data/", RAMResource())
+    m = Mount("/data/", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     assert m.prefix == "/data/"
 
 
@@ -59,7 +64,8 @@ def test_mount_valid_prefix():
 
 def test_read_only_blocks_write_ops():
     reg = MountRegistry()
-    reg.mount("/ro/", RAMResource(), MountMode.READ)
+    reg.mount("/ro/", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     mount = reg.mount_for("/ro/file.txt")
     with pytest.raises(PermissionError, match="read-only"):
         _run(mount.execute_op("write", "/file.txt", data=b"x"))
@@ -67,14 +73,16 @@ def test_read_only_blocks_write_ops():
 
 def test_write_mode_allows_write_ops():
     reg = MountRegistry()
-    reg.mount("/rw/", RAMResource(), MountMode.WRITE)
+    reg.mount("/rw/", RAMResource(), MountMode.WRITE, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     mount = reg.mount_for("/rw/file.txt")
     _run(mount.execute_op("write", "/new.txt", data=b"hello"))
 
 
 def test_read_only_blocks_write_cmd():
     reg = MountRegistry()
-    reg.mount("/ro/", RAMResource(), MountMode.READ)
+    reg.mount("/ro/", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     mount = reg.mount_for("/ro/file.txt")
     scope = PathSpec(original="/ro/newdir", directory="/ro/", resolved=True)
     stdout, io = _run(mount.execute_cmd("mkdir", [scope], [], {}))
@@ -84,7 +92,8 @@ def test_read_only_blocks_write_cmd():
 
 def test_write_mode_allows_write_cmd():
     reg = MountRegistry()
-    reg.mount("/rw/", RAMResource(), MountMode.WRITE)
+    reg.mount("/rw/", RAMResource(), MountMode.WRITE, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     mount = reg.mount_for("/rw/file.txt")
     scope = PathSpec(original="/rw/newdir", directory="/rw/", resolved=True)
     stdout, io = _run(mount.execute_cmd("mkdir", [scope], [], {}))
@@ -93,7 +102,8 @@ def test_write_mode_allows_write_cmd():
 
 def test_read_only_allows_read_cmd():
     reg = MountRegistry()
-    reg.mount("/ro/", RAMResource(), MountMode.READ)
+    reg.mount("/ro/", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     mount = reg.mount_for("/ro/")
     scope = PathSpec(original="/ro/", directory="/ro/", resolved=False)
     stdout, io = _run(mount.execute_cmd("ls", [scope], [], {}))

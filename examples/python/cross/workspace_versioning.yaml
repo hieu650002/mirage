@@ -1,5 +1,5 @@
 mode: WRITE
-consistency: LAZY
+read_policy: CACHED
 
 # A standalone scratch workspace for the versioning walkthrough. Versioning is
 # backend-agnostic (it tracks the workspace tree, not the mount type), so this

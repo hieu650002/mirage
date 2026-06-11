@@ -23,7 +23,7 @@ from pathlib import Path
 from mirage import MountMode, Workspace
 from mirage.resource.disk import DiskResource
 from mirage.resource.ram import RAMResource
-from mirage.types import ConsistencyPolicy
+from mirage.types import ReadPolicy
 
 try:
     from mirage.resource.redis import RedisResource
@@ -38,8 +38,8 @@ def _banner(title: str) -> None:
 
 
 async def disk_demo() -> None:
-    """Disk has mtime fingerprints. ALWAYS detects external mutation."""
-    _banner("disk + LAZY — external mutation NOT detected (cached stale)")
+    """Disk has mtime fingerprints. FRESH detects external mutation."""
+    _banner("disk + CACHED — external mutation NOT detected (cached stale)")
     lazy_root = Path(tempfile.mkdtemp(prefix="mirage-disk-lazy-"))
     try:
         (lazy_root / "file.txt").write_bytes(b"v1")
@@ -47,7 +47,7 @@ async def disk_demo() -> None:
         ws = Workspace(
             {"/data": (resource, MountMode.WRITE)},
             mode=MountMode.WRITE,
-            consistency=ConsistencyPolicy.LAZY,
+            read_policy=ReadPolicy.CACHED,
         )
         io1 = await ws.execute("cat /data/file.txt")
         print(f"  first  read (v1 expected)        : "
@@ -56,11 +56,11 @@ async def disk_demo() -> None:
         (lazy_root / "file.txt").write_bytes(b"v2-external")
         io2 = await ws.execute("cat /data/file.txt")
         print(f"  second read after external write : "
-              f"{(await io2.materialize_stdout())!r}  <-- LAZY, stale")
+              f"{(await io2.materialize_stdout())!r}  <-- CACHED, stale")
     finally:
         shutil.rmtree(lazy_root, ignore_errors=True)
 
-    _banner("disk + ALWAYS — external mutation detected (fresh)")
+    _banner("disk + FRESH — external mutation detected (fresh)")
     always_root = Path(tempfile.mkdtemp(prefix="mirage-disk-always-"))
     try:
         (always_root / "file.txt").write_bytes(b"v1")
@@ -68,7 +68,7 @@ async def disk_demo() -> None:
         ws = Workspace(
             {"/data": (resource, MountMode.WRITE)},
             mode=MountMode.WRITE,
-            consistency=ConsistencyPolicy.ALWAYS,
+            read_policy=ReadPolicy.FRESH,
         )
         io1 = await ws.execute("cat /data/file.txt")
         print(f"  first  read (v1 expected)        : "
@@ -77,23 +77,23 @@ async def disk_demo() -> None:
         (always_root / "file.txt").write_bytes(b"v2-external")
         io2 = await ws.execute("cat /data/file.txt")
         print(f"  second read after external write : "
-              f"{(await io2.materialize_stdout())!r}  <-- ALWAYS, fresh")
+              f"{(await io2.materialize_stdout())!r}  <-- FRESH, fresh")
     finally:
         shutil.rmtree(always_root, ignore_errors=True)
 
 
 async def ram_demo() -> None:
-    """RAM has no fingerprint. ALWAYS falls back to LAZY.
+    """RAM has no fingerprint. FRESH falls back to CACHED.
 
     Workspace-originated writes still invalidate the cache.
     """
-    _banner("RAM + ALWAYS — no fingerprint, LAZY fallback serves stale")
+    _banner("RAM + FRESH — no fingerprint, CACHED fallback serves stale")
     resource = RAMResource()
     resource._store.files["/file.txt"] = b"v1"
     ws = Workspace(
         {"/data": (resource, MountMode.WRITE)},
         mode=MountMode.WRITE,
-        consistency=ConsistencyPolicy.ALWAYS,
+        read_policy=ReadPolicy.FRESH,
     )
     io1 = await ws.execute("cat /data/file.txt")
     print(f"  first  read (v1 expected)              : "
@@ -101,7 +101,7 @@ async def ram_demo() -> None:
     resource._store.files["/file.txt"] = b"v2-external"
     io2 = await ws.execute("cat /data/file.txt")
     print(f"  second read after external mutation    : "
-          f"{(await io2.materialize_stdout())!r}  <-- ALWAYS→LAZY, stale")
+          f"{(await io2.materialize_stdout())!r}  <-- FRESH→CACHED, stale")
 
     _banner("RAM — workspace-originated write invalidates cache (fresh)")
     resource2 = RAMResource()
@@ -109,7 +109,7 @@ async def ram_demo() -> None:
     ws2 = Workspace(
         {"/data": (resource2, MountMode.WRITE)},
         mode=MountMode.WRITE,
-        consistency=ConsistencyPolicy.ALWAYS,
+        read_policy=ReadPolicy.FRESH,
     )
     io3 = await ws2.execute("cat /data/file.txt")
     print(f"  first read (v1 expected)               : "
@@ -127,7 +127,7 @@ async def redis_demo() -> None:
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
     prefix = f"mirage_consistency_demo_{uuid.uuid4().hex[:8]}"
 
-    _banner("redis + ALWAYS — no fingerprint, LAZY fallback serves stale")
+    _banner("redis + FRESH — no fingerprint, CACHED fallback serves stale")
     try:
         resource = RedisResource(url=redis_url, key_prefix=prefix)
     except Exception as exc:
@@ -138,14 +138,14 @@ async def redis_demo() -> None:
     ws_primer = Workspace(
         {"/data": (resource, MountMode.WRITE)},
         mode=MountMode.WRITE,
-        consistency=ConsistencyPolicy.LAZY,
+        read_policy=ReadPolicy.CACHED,
     )
     await ws_primer.execute('echo -n "v1" > /data/file.txt')
     try:
         ws = Workspace(
             {"/data": (resource, MountMode.WRITE)},
             mode=MountMode.WRITE,
-            consistency=ConsistencyPolicy.ALWAYS,
+            read_policy=ReadPolicy.FRESH,
         )
         io1 = await ws.execute("cat /data/file.txt")
         print(f"  first  read (v1 expected)              : "
@@ -153,7 +153,7 @@ async def redis_demo() -> None:
 
         # Simulate external mutation: write directly through another workspace
         # instance. The target cache (ws._cache) never sees the other write,
-        # so it still serves v1 under ALWAYS (no fingerprint to compare).
+        # so it still serves v1 under FRESH (no fingerprint to compare).
         ws_other = Workspace(
             {
                 "/data": (RedisResource(url=redis_url,
@@ -165,7 +165,7 @@ async def redis_demo() -> None:
 
         io2 = await ws.execute("cat /data/file.txt")
         print(f"  second read after external mutation    : "
-              f"{(await io2.materialize_stdout())!r}  <-- ALWAYS→LAZY, stale")
+              f"{(await io2.materialize_stdout())!r}  <-- FRESH→CACHED, stale")
 
         # Workspace-owned write invalidates the local cache
         _banner("redis — workspace-originated write invalidates cache (fresh)")

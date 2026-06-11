@@ -1,5 +1,6 @@
 mode: WRITE
-consistency: LAZY
+read_policy: CACHED
+write_policy: THROUGH
 default_session_id: default
 default_agent_id: default
 fuse: false

@@ -16,7 +16,8 @@ export const VERSION = '0.0.0'
 export {
   CommandSafeguard,
   type CommandSafeguardInit,
-  ConsistencyPolicy,
+  ReadPolicy,
+  WritePolicy,
   DEFAULT_AGENT_ID,
   DEFAULT_SESSION_ID,
   DriftPolicy,

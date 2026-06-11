@@ -17,7 +17,7 @@ import time
 
 from mirage.resource.disk import DiskResource
 from mirage.resource.ram import RAMResource
-from mirage.types import ConsistencyPolicy, MountMode
+from mirage.types import MountMode, ReadPolicy
 from mirage.workspace import Workspace
 
 
@@ -30,7 +30,7 @@ def test_disk_always_refetches_after_external_mutation(tmp_path):
     ws = Workspace(
         {"/data": (resource, MountMode.WRITE)},
         mode=MountMode.WRITE,
-        consistency=ConsistencyPolicy.ALWAYS,
+        read_policy=ReadPolicy.FRESH,
     )
 
     async def run() -> tuple[bytes, bytes]:
@@ -57,7 +57,7 @@ def test_disk_lazy_keeps_stale_cache_after_external_mutation(tmp_path):
     ws = Workspace(
         {"/data": (resource, MountMode.WRITE)},
         mode=MountMode.WRITE,
-        consistency=ConsistencyPolicy.LAZY,
+        read_policy=ReadPolicy.CACHED,
     )
 
     async def run() -> tuple[bytes, bytes]:
@@ -81,7 +81,7 @@ def test_ram_falls_back_to_lazy_when_fingerprint_absent():
     ws = Workspace(
         {"/data": (resource, MountMode.WRITE)},
         mode=MountMode.WRITE,
-        consistency=ConsistencyPolicy.ALWAYS,
+        read_policy=ReadPolicy.FRESH,
     )
 
     async def run() -> bytes:

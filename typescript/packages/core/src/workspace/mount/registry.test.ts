@@ -17,7 +17,7 @@ import { command, type CommandFn } from '../../commands/config.ts'
 import { CommandSpec } from '../../commands/spec/types.ts'
 import { IOResult } from '../../io/types.ts'
 import type { Resource } from '../../resource/base.ts'
-import { MountMode, PathSpec } from '../../types.ts'
+import { MountMode, PathSpec, ReadPolicy, WritePolicy } from '../../types.ts'
 import { MountRegistry } from './registry.ts'
 
 class StubResource implements Resource {
@@ -46,7 +46,13 @@ const EMPTY_SPEC = new CommandSpec()
 describe('MountRegistry.resolve', () => {
   it('resolves a nested path to the matching mount; PathSpec keeps original + sets prefix', () => {
     const ram = new StubResource()
-    const reg = new MountRegistry({ '/data': ram }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/data': ram },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const [r, p, mode] = reg.resolve('/data/foo.txt')
     expect(r).toBe(ram)
     expect(p.original).toBe('/data/foo.txt')
@@ -57,7 +63,13 @@ describe('MountRegistry.resolve', () => {
 
   it('resolves the mount root exactly', () => {
     const ram = new StubResource()
-    const reg = new MountRegistry({ '/data': ram }, MountMode.READ)
+    const reg = new MountRegistry(
+      { '/data': ram },
+      MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const [, p] = reg.resolve('/data')
     expect(p.original).toBe('/data')
     expect(p.stripPrefix).toBe('/')
@@ -66,7 +78,13 @@ describe('MountRegistry.resolve', () => {
   it('picks the longest matching prefix', () => {
     const root = new StubResource()
     const logs = new StubResource()
-    const reg = new MountRegistry({ '/data': root, '/data/logs': logs }, MountMode.READ)
+    const reg = new MountRegistry(
+      { '/data': root, '/data/logs': logs },
+      MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const [picked, p] = reg.resolve('/data/logs/2026.log')
     expect(picked).toBe(logs)
     expect(p.original).toBe('/data/logs/2026.log')
@@ -76,14 +94,26 @@ describe('MountRegistry.resolve', () => {
   it('falls back to the shorter mount when longer does not match', () => {
     const root = new StubResource()
     const logs = new StubResource()
-    const reg = new MountRegistry({ '/data': root, '/data/logs': logs }, MountMode.READ)
+    const reg = new MountRegistry(
+      { '/data': root, '/data/logs': logs },
+      MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const [picked] = reg.resolve('/data/other')
     expect(picked).toBe(root)
   })
 
   it('uses a root mount when nothing more specific matches', () => {
     const rootRes = new StubResource()
-    const reg = new MountRegistry({ '/': rootRes }, MountMode.READ)
+    const reg = new MountRegistry(
+      { '/': rootRes },
+      MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const [r, p] = reg.resolve('/anywhere/deep/file')
     expect(r).toBe(rootRes)
     expect(p.original).toBe('/anywhere/deep/file')
@@ -91,23 +121,42 @@ describe('MountRegistry.resolve', () => {
 
   it('preserves a trailing slash on the resolved path', () => {
     const ram = new StubResource()
-    const reg = new MountRegistry({ '/data': ram }, MountMode.READ)
+    const reg = new MountRegistry(
+      { '/data': ram },
+      MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const [, p] = reg.resolve('/data/logs/')
     expect(p.original).toBe('/data/logs/')
     expect(p.stripPrefix).toBe('/logs/')
   })
 
   it('throws when no mount matches the path', () => {
-    const reg = new MountRegistry({ '/data': new StubResource() }, MountMode.READ)
+    const reg = new MountRegistry(
+      { '/data': new StubResource() },
+      MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     expect(() => reg.resolve('/elsewhere')).toThrow(/no mount matches/)
   })
 
   it('normalizes mount prefixes so "/data", "data", and "/data/" collide', () => {
     const a = new StubResource()
     const b = new StubResource()
-    expect(() => new MountRegistry({ '/data': a, 'data/': b }, MountMode.READ)).toThrow(
-      /duplicate mount prefix/,
-    )
+    expect(
+      () =>
+        new MountRegistry(
+          { '/data': a, 'data/': b },
+          MountMode.READ,
+          {},
+          ReadPolicy.CACHED,
+          WritePolicy.THROUGH,
+        ),
+    ).toThrow(/duplicate mount prefix/)
   })
 })
 
@@ -116,6 +165,9 @@ describe('MountRegistry.descendantMounts', () => {
     return new MountRegistry(
       { '/': new StubResource(), '/r2': new StubResource(), '/ram': new StubResource() },
       MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
   }
 
@@ -127,6 +179,9 @@ describe('MountRegistry.descendantMounts', () => {
         '/data/inner': new StubResource(),
       },
       MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
   }
 
@@ -146,13 +201,25 @@ describe('MountRegistry.descendantMounts', () => {
   })
 
   it('returns empty when the path is exactly a mount root with no nested mount', () => {
-    const reg = new MountRegistry({ '/data': new StubResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/data': new StubResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     expect(reg.descendantMounts('/data')).toEqual([])
     expect(reg.descendantMounts('/data/')).toEqual([])
   })
 
   it('returns empty for a path inside a mount with no nested mount', () => {
-    const reg = new MountRegistry({ '/data': new StubResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/data': new StubResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     expect(reg.descendantMounts('/data/sub')).toEqual([])
   })
 
@@ -181,6 +248,9 @@ describe('MountRegistry.resolveMount: cross-mount fallback', () => {
     const reg = new MountRegistry(
       { '/a': new RAMStubResource(), '/b': new RAMStubResource() },
       MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     const b = reg.mountForPrefix('/b')
     if (b === null) throw new Error('missing /b mount')
@@ -195,6 +265,9 @@ describe('MountRegistry.resolveMount: cross-mount fallback', () => {
     const reg = new MountRegistry(
       { '/a': new RAMStubResource(), '/b': new RAMStubResource() },
       MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     const b = reg.mountForPrefix('/b')
     if (b === null) throw new Error('missing /b mount')
@@ -209,6 +282,9 @@ describe('MountRegistry.resolveMount: cross-mount fallback', () => {
     const reg = new MountRegistry(
       { '/home': new RAMStubResource(), '/home/zecheng/linear': new RAMStubResource() },
       MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     const linear = reg.mountForPrefix('/home/zecheng/linear')
     if (linear === null) throw new Error('missing /home/zecheng/linear mount')
@@ -228,13 +304,22 @@ describe('MountRegistry.resolveMount: cross-mount fallback', () => {
     const reg = new MountRegistry(
       { '/a': new RAMStubResource(), '/b': new RAMStubResource() },
       MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     const mount = await reg.resolveMount('nonexistent-cmd', [], '/a/x')
     expect(mount).toBeNull()
   })
 
   it('returns null when cwd matches no mount and no mount has the command', async () => {
-    const reg = new MountRegistry({ '/a': new RAMStubResource() }, MountMode.READ)
+    const reg = new MountRegistry(
+      { '/a': new RAMStubResource() },
+      MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const mount = await reg.resolveMount('linear-search', [], '/somewhere/else')
     expect(mount).toBeNull()
   })
@@ -243,6 +328,9 @@ describe('MountRegistry.resolveMount: cross-mount fallback', () => {
     const reg = new MountRegistry(
       { '/a': new RAMStubResource(), '/b': new RAMStubResource() },
       MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     const a = reg.mountForPrefix('/a')
     const b = reg.mountForPrefix('/b')
@@ -260,6 +348,9 @@ describe('MountRegistry.resolveMount: cross-mount fallback', () => {
     const reg = new MountRegistry(
       { '/a': new RAMStubResource(), '/b': new RAMStubResource() },
       MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     const b = reg.mountForPrefix('/b')
     if (b === null) throw new Error('missing /b mount')
@@ -275,6 +366,9 @@ describe('MountRegistry.resolveMount: cross-mount fallback', () => {
     const reg = new MountRegistry(
       { '/a': new RAMStubResource(), '/b': new RAMStubResource() },
       MountMode.READ,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     const b = reg.mountForPrefix('/b')
     if (b === null) throw new Error('missing /b mount')

@@ -17,7 +17,7 @@ import pytest
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.resource.ram import RAMResource
 from mirage.resource.ssh import SSHConfig, SSHResource
-from mirage.types import MountMode, PathSpec
+from mirage.types import MountMode, PathSpec, ReadPolicy, WritePolicy
 from mirage.workspace.mount import MountRegistry
 
 # ── mount_for ──────────────────────────────────
@@ -186,20 +186,23 @@ def test_multi_mount_resource_paths(multi_registry):
 def test_mount_returns_mount_object():
     reg = MountRegistry()
     p = RAMResource()
-    m = reg.mount("/test/", p, MountMode.READ)
+    m = reg.mount("/test/", p, MountMode.READ, ReadPolicy.CACHED,
+                  WritePolicy.THROUGH)
     assert m.prefix == "/test/"
     assert m.resource is p
 
 
 def test_mount_normalizes_prefix():
     reg = MountRegistry()
-    m = reg.mount("/test/", RAMResource(), MountMode.READ)
+    m = reg.mount("/test/", RAMResource(), MountMode.READ, ReadPolicy.CACHED,
+                  WritePolicy.THROUGH)
     assert m.prefix == "/test/"
 
 
 def test_mount_duplicate_raises(registry):
     with pytest.raises(ValueError, match="duplicate"):
-        registry.mount("/data/", RAMResource())
+        registry.mount("/data/", RAMResource(), MountMode.READ,
+                       ReadPolicy.CACHED, WritePolicy.THROUGH)
 
 
 # ── mounts listing ─────────────────────────────
@@ -309,7 +312,7 @@ def test_mount_for_command_grep(multi_registry):
 def _remote_registry_with_cache():
     reg = MountRegistry()
     reg.mount("/ssh/", SSHResource(SSHConfig(host="example", root="/srv")),
-              MountMode.WRITE)
+              MountMode.WRITE, ReadPolicy.CACHED, WritePolicy.THROUGH)
     cache = RAMFileCacheStore()
     reg.set_default_mount(cache)
     return reg, cache

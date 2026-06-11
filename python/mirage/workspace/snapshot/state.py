@@ -18,9 +18,9 @@ import tempfile
 
 from mirage.resource.secrets import has_redacted_secret
 from mirage.shell.job_table import Job, JobStatus
-from mirage.types import (CacheKey, ConsistencyPolicy, JobKey, MountKey,
-                          MountMode, NodeKey, RecordKey, ResourceName,
-                          ResourceStateKey, SessionKey, StateKey)
+from mirage.types import (CacheKey, JobKey, MountKey, MountMode, NodeKey,
+                          ReadPolicy, RecordKey, ResourceName,
+                          ResourceStateKey, SessionKey, StateKey, WritePolicy)
 from mirage.workspace.snapshot.config import MountArgs
 from mirage.workspace.snapshot.drift import (capture_fingerprints,
                                              live_only_mount_prefixes)
@@ -47,7 +47,8 @@ def to_state_dict(ws) -> dict:
             MountKey.INDEX: idx,
             MountKey.PREFIX: m.prefix,
             MountKey.MODE: m.mode.value,
-            MountKey.CONSISTENCY: m.consistency.value,
+            MountKey.READ_POLICY: m.read_policy.value,
+            MountKey.WRITE_POLICY: m.write_policy.value,
             MountKey.RESOURCE_CLASS:
             f"{type(m.resource).__module__}.{type(m.resource).__name__}",
             MountKey.RESOURCE_STATE: m.resource.get_state(),
@@ -133,7 +134,8 @@ def build_mount_args(state: dict, resources: dict | None = None) -> MountArgs:
 
     return MountArgs(
         mount_args=mount_args,
-        consistency=ConsistencyPolicy.LAZY,
+        read_policy=ReadPolicy.CACHED,
+        write_policy=WritePolicy.THROUGH,
         default_session_id=state.get(StateKey.DEFAULT_SESSION_ID, "default"),
         default_agent_id=state.get(StateKey.DEFAULT_AGENT_ID, "default"),
     )

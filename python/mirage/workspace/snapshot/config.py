@@ -14,7 +14,7 @@
 
 from dataclasses import dataclass
 
-from mirage.types import ConsistencyPolicy
+from mirage.types import ReadPolicy, WritePolicy
 
 
 @dataclass
@@ -25,6 +25,7 @@ class MountArgs:
     code never constructs Workspace itself.
     """
     mount_args: dict
-    consistency: ConsistencyPolicy
+    read_policy: ReadPolicy
+    write_policy: WritePolicy
     default_session_id: str
     default_agent_id: str

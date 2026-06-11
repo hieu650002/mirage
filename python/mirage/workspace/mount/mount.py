@@ -28,7 +28,7 @@ from mirage.observe.context import (push_mount_prefix, push_revisions,
                                     with_revisions)
 from mirage.ops.registry import RegisteredOp
 from mirage.resource.base import BaseResource
-from mirage.types import ConsistencyPolicy, MountMode, PathSpec
+from mirage.types import MountMode, PathSpec, ReadPolicy, WritePolicy
 
 
 def _wrap_cmd_streams(
@@ -92,8 +92,9 @@ class Mount:
         self,
         prefix: str,
         resource: BaseResource,
-        mode: MountMode = MountMode.READ,
-        consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY,
+        mode: MountMode,
+        read_policy: ReadPolicy,
+        write_policy: WritePolicy,
     ) -> None:
         if not prefix.startswith("/"):
             raise ValueError(f"prefix must start with /: {prefix!r}")
@@ -104,7 +105,8 @@ class Mount:
         self.prefix = prefix
         self.resource = resource
         self.mode = mode
-        self.consistency = consistency
+        self.read_policy = read_policy
+        self.write_policy = write_policy
         # Per-path revision pins installed at Workspace.load time. Read
         # functions consult these via the ``revision_for`` contextvar
         # lookup; on a hit, the backend GET pins to the recorded

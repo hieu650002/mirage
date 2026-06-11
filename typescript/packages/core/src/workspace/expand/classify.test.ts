@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Resource } from '../../resource/base.ts'
-import { MountMode, PathSpec } from '../../types.ts'
+import { MountMode, PathSpec, ReadPolicy, WritePolicy } from '../../types.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import {
   classifyBarePath,
@@ -36,7 +36,13 @@ class StubResource implements Resource {
 }
 
 function setup(): MountRegistry {
-  return new MountRegistry({ '/ram': new StubResource() }, MountMode.WRITE)
+  return new MountRegistry(
+    { '/ram': new StubResource() },
+    MountMode.WRITE,
+    {},
+    ReadPolicy.CACHED,
+    WritePolicy.THROUGH,
+  )
 }
 
 describe('posixNormpath', () => {

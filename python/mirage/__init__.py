@@ -19,14 +19,15 @@ from mirage.commands.registry import command
 from mirage.types import FileStat, MountMode
 from mirage.workspace import (ExecutionHistory, ExecutionNode, ExecutionRecord,
                               Workspace, WorkspaceRunner)
-from mirage.types import ConsistencyPolicy
+from mirage.types import ReadPolicy, WritePolicy
 
 __all__ = [
     "Workspace",
     "WorkspaceRunner",
     "RAMResource",
     "DiskResource",
-    "ConsistencyPolicy",
+    "ReadPolicy",
+    "WritePolicy",
     "ExecutionHistory",
     "ExecutionNode",
     "ExecutionRecord",

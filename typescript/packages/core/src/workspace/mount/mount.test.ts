@@ -20,7 +20,7 @@ import type { Accessor } from '../../accessor/base.ts'
 import { revisionFor } from '../../observe/context.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import type { Resource } from '../../resource/base.ts'
-import { MountMode, PathSpec } from '../../types.ts'
+import { MountMode, PathSpec, ReadPolicy, WritePolicy } from '../../types.ts'
 import { Mount } from './mount.ts'
 
 class StubResource implements Resource {
@@ -39,25 +39,43 @@ const OK_CMD: CommandFn = () => [null, new IOResult({ exitCode: 0 })]
 const OK_CMD_STDOUT: CommandFn = () => [new TextEncoder().encode('ok'), new IOResult()]
 
 function makeMount(mode: MountMode = MountMode.WRITE): Mount {
-  return new Mount({ prefix: '/ram/', resource: new StubResource(), mode })
+  return new Mount({
+    prefix: '/ram/',
+    resource: new StubResource(),
+    mode,
+    readPolicy: ReadPolicy.CACHED,
+    writePolicy: WritePolicy.THROUGH,
+  })
+}
+
+function init(prefix: string) {
+  return {
+    prefix,
+    resource: new StubResource(),
+    mode: MountMode.READ,
+    readPolicy: ReadPolicy.CACHED,
+    writePolicy: WritePolicy.THROUGH,
+  }
 }
 
 describe('Mount constructor validation', () => {
   it('requires prefix to start with /', () => {
-    expect(() => new Mount({ prefix: 'ram/', resource: new StubResource() })).toThrow(/start with/)
+    expect(() => new Mount(init('ram/'))).toThrow(/start with/)
   })
 
   it('requires prefix to end with /', () => {
-    expect(() => new Mount({ prefix: '/ram', resource: new StubResource() })).toThrow(/end with/)
+    expect(() => new Mount(init('/ram'))).toThrow(/end with/)
   })
 
   it('rejects double-slash prefixes', () => {
-    expect(() => new Mount({ prefix: '//ram/', resource: new StubResource() })).toThrow(/\/\//)
+    expect(() => new Mount(init('//ram/'))).toThrow(/\/\//)
   })
 
-  it('defaults mode to READ', () => {
-    const m = new Mount({ prefix: '/ram/', resource: new StubResource() })
+  it('records the explicit mode and policies', () => {
+    const m = new Mount(init('/ram/'))
     expect(m.mode).toBe(MountMode.READ)
+    expect(m.readPolicy).toBe(ReadPolicy.CACHED)
+    expect(m.writePolicy).toBe(WritePolicy.THROUGH)
   })
 })
 

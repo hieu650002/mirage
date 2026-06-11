@@ -14,14 +14,15 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  ConsistencyPolicy,
   DEFAULT_AGENT_ID,
   DEFAULT_SESSION_ID,
   FileStat,
   FileType,
   MountMode,
   PathSpec,
+  ReadPolicy,
   ResourceName,
+  WritePolicy,
 } from './types.ts'
 
 describe('MountMode', () => {
@@ -36,14 +37,24 @@ describe('MountMode', () => {
   })
 })
 
-describe('ConsistencyPolicy', () => {
-  it('exposes LAZY/ALWAYS with matching string values', () => {
-    expect(ConsistencyPolicy.LAZY).toBe('lazy')
-    expect(ConsistencyPolicy.ALWAYS).toBe('always')
+describe('ReadPolicy', () => {
+  it('exposes CACHED/FRESH with matching string values', () => {
+    expect(ReadPolicy.CACHED).toBe('cached')
+    expect(ReadPolicy.FRESH).toBe('fresh')
   })
 
   it('is frozen at runtime', () => {
-    expect(Object.isFrozen(ConsistencyPolicy)).toBe(true)
+    expect(Object.isFrozen(ReadPolicy)).toBe(true)
+  })
+})
+
+describe('WritePolicy', () => {
+  it('exposes THROUGH with matching string value', () => {
+    expect(WritePolicy.THROUGH).toBe('through')
+  })
+
+  it('is frozen at runtime', () => {
+    expect(Object.isFrozen(WritePolicy)).toBe(true)
   })
 })
 

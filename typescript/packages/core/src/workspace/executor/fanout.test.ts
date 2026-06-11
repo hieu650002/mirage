@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../io/types.ts'
 import { RAMResource } from '../../resource/ram/ram.ts'
-import { MountMode } from '../../types.ts'
+import { MountMode, ReadPolicy, WritePolicy } from '../../types.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import type { Mount } from '../mount/mount.ts'
 import { Session } from '../session/session.ts'
@@ -51,6 +51,9 @@ describe('fanOutTraversal glob matching', () => {
     const reg = new MountRegistry(
       { '/data/': new RAMResource(), '/data/sub/': new RAMResource() },
       MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     wireRegistry(reg)
     const s = new Session({ sessionId: 'test', cwd: '/' })
@@ -68,6 +71,9 @@ describe('fanOutTraversal glob matching', () => {
     const reg = new MountRegistry(
       { '/data/': new RAMResource(), '/data/sub1/': new RAMResource() },
       MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     wireRegistry(reg)
     const s = new Session({ sessionId: 'test', cwd: '/' })

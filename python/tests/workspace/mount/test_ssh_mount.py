@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.resource.ssh import SSHConfig, SSHResource
-from mirage.types import MountMode
+from mirage.types import MountMode, ReadPolicy, WritePolicy
 from mirage.workspace.mount.registry import MountRegistry
 
 
@@ -21,7 +21,8 @@ def test_ssh_mount_registration():
     registry = MountRegistry()
     cfg = SSHConfig(host="dev", root="/home/ubuntu")
     resource = SSHResource(cfg)
-    registry.mount("/ssh/", resource, mode=MountMode.WRITE)
+    registry.mount("/ssh/", resource, MountMode.WRITE, ReadPolicy.CACHED,
+                   WritePolicy.THROUGH)
     mount = registry.mount_for("/ssh/some/file.txt")
     assert mount is not None
     assert mount.resource.name == "ssh"
@@ -31,7 +32,8 @@ def test_ssh_mount_command_resolution():
     registry = MountRegistry()
     cfg = SSHConfig(host="dev")
     resource = SSHResource(cfg)
-    registry.mount("/remote/", resource, mode=MountMode.WRITE)
+    registry.mount("/remote/", resource, MountMode.WRITE, ReadPolicy.CACHED,
+                   WritePolicy.THROUGH)
     mount = registry.mount_for("/remote/test.py")
     assert mount is not None
     cmd = mount.resolve_command("cat", None)

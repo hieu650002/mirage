@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { ConsistencyPolicy, MountMode } from './types.ts'
+import { MountMode, ReadPolicy, WritePolicy } from './types.ts'
 
 const VAR_RE = /\$\{([A-Z_][A-Z0-9_]*)\}/g
 
@@ -41,7 +41,8 @@ export interface MountBlock {
 export interface WorkspaceConfig {
   mounts: Record<string, MountBlock>
   mode?: MountMode
-  consistency?: ConsistencyPolicy
+  readPolicy?: ReadPolicy
+  writePolicy?: WritePolicy
   defaultSessionId?: string
   defaultAgentId?: string
   fuse?: boolean
@@ -141,7 +142,8 @@ function validateConfig(raw: Record<string, unknown>): WorkspaceConfig {
   const out: WorkspaceConfig = {
     mounts: mounts as Record<string, MountBlock>,
     mode: (raw.mode as MountMode | undefined) ?? MountMode.WRITE,
-    consistency: (raw.consistency as ConsistencyPolicy | undefined) ?? ConsistencyPolicy.LAZY,
+    readPolicy: (raw.readPolicy as ReadPolicy | undefined) ?? ReadPolicy.CACHED,
+    writePolicy: (raw.writePolicy as WritePolicy | undefined) ?? WritePolicy.THROUGH,
     defaultSessionId: (raw.defaultSessionId as string | undefined) ?? 'default',
     defaultAgentId: (raw.defaultAgentId as string | undefined) ?? 'default',
     fuse: (raw.fuse as boolean | undefined) ?? false,

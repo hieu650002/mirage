@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { loadConfigFromObject, mergeOverride } from './config.ts'
-import { ConsistencyPolicy, MountMode } from './types.ts'
+import { MountMode, ReadPolicy, WritePolicy } from './types.ts'
 
 describe('loadConfigFromObject', () => {
   it('accepts a dict source', () => {
@@ -23,10 +23,11 @@ describe('loadConfigFromObject', () => {
     expect(cfg.mounts['/']?.resource).toBe('ram')
   })
 
-  it('fills workspace-level defaults (mode/consistency/history)', () => {
+  it('fills workspace-level defaults (mode/policies/history)', () => {
     const cfg = loadConfigFromObject({ mounts: { '/': { resource: 'ram' } } })
     expect(cfg.mode).toBe(MountMode.WRITE)
-    expect(cfg.consistency).toBe(ConsistencyPolicy.LAZY)
+    expect(cfg.readPolicy).toBe(ReadPolicy.CACHED)
+    expect(cfg.writePolicy).toBe(WritePolicy.THROUGH)
     expect(cfg.history).toBe(100)
     expect(cfg.cache).toBe(null)
   })

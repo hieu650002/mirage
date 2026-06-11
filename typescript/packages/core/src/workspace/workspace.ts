@@ -59,6 +59,8 @@ import {
   FileType,
   MountMode,
   type PathSpec,
+  ReadPolicy,
+  WritePolicy,
 } from '../types.ts'
 import type { TSNodeLike } from './expand/variable.ts'
 import type { ExecuteFn } from './expand/node.ts'
@@ -134,6 +136,8 @@ const VALID_MODES: readonly string[] = [MountMode.READ, MountMode.WRITE, MountMo
 
 export interface WorkspaceOptions {
   mode?: MountMode
+  readPolicy?: ReadPolicy
+  writePolicy?: WritePolicy
   modeOverrides?: Record<string, MountMode>
   commandSafeguards?: Record<string, Record<string, CommandSafeguard>>
   /**
@@ -233,6 +237,8 @@ export class Workspace {
   private readonly openOrder: Resource[] = []
   readonly jobTable = new JobTable()
   private readonly agentId: string
+  private readonly readPolicy: ReadPolicy
+  private readonly writePolicy: WritePolicy
   readonly cache: FileCache & Resource
   private readonly dispatcher: Dispatcher
   readonly history: ExecutionHistory = new ExecutionHistory()
@@ -270,10 +276,18 @@ export class Workspace {
     const observerPrefix = options.observerPrefix ?? '/.sessions'
     this.observer = new Observer(observerResource, observerPrefix)
     const withObserver = { ...resources, [observerPrefix]: observerResource }
-    this.registry = new MountRegistry(withObserver, options.mode ?? MountMode.READ, {
-      ...(options.modeOverrides ?? {}),
-      [observerPrefix]: MountMode.READ,
-    })
+    this.readPolicy = options.readPolicy ?? ReadPolicy.CACHED
+    this.writePolicy = options.writePolicy ?? WritePolicy.THROUGH
+    this.registry = new MountRegistry(
+      withObserver,
+      options.mode ?? MountMode.READ,
+      {
+        ...(options.modeOverrides ?? {}),
+        [observerPrefix]: MountMode.READ,
+      },
+      this.readPolicy,
+      this.writePolicy,
+    )
     if (options.index !== undefined) {
       for (const resource of Object.values(resources)) {
         resource.setIndex?.(options.index)
@@ -455,7 +469,7 @@ export class Workspace {
    */
   addMount(prefix: string, resource: Resource, mode: MountMode = MountMode.READ): Mount {
     if (this.closed) throw new Error('Workspace is closed')
-    const m = this.registry.mount(prefix, resource, mode)
+    const m = this.registry.mount(prefix, resource, mode, this.readPolicy, this.writePolicy)
     this.opsRegistry.registerResource(resource)
     const resourceOps = resource.ops?.()
     if (resourceOps !== undefined) {

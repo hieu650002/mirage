@@ -17,7 +17,7 @@ from mirage.commands.builtin.general import COMMANDS as GENERAL_COMMANDS
 from mirage.ops.config import OpsMount
 from mirage.resource.base import BaseResource
 from mirage.resource.dev import DevResource
-from mirage.types import ConsistencyPolicy, MountMode, PathSpec
+from mirage.types import MountMode, PathSpec, ReadPolicy, WritePolicy
 from mirage.workspace.mount.mount import Mount
 
 DEV_PREFIX = "/dev/"
@@ -34,11 +34,8 @@ class MountRegistry:
     def __init__(self) -> None:
         self._mounts: list[Mount] = []
         self._default_mount: Mount | None = None
-        self._consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY
-        self.mount(DEV_PREFIX, DevResource(), MountMode.WRITE)
-
-    def set_consistency(self, consistency: ConsistencyPolicy) -> None:
-        self._consistency = consistency
+        self.mount(DEV_PREFIX, DevResource(), MountMode.WRITE,
+                   ReadPolicy.CACHED, WritePolicy.THROUGH)
 
     def set_default_mount(self, resource: BaseResource) -> None:
         """Set a default fallback mount (cache resource).
@@ -46,7 +43,8 @@ class MountRegistry:
         Used when a command has no path args and cwd
         doesn't match any mount.
         """
-        m = Mount("/_default/", resource, MountMode.WRITE)
+        m = Mount("/_default/", resource, MountMode.WRITE, ReadPolicy.CACHED,
+                  WritePolicy.THROUGH)
         for cmd in resource.commands():
             m.register(cmd)
         for cmd in GENERAL_COMMANDS:
@@ -59,8 +57,9 @@ class MountRegistry:
         self,
         prefix: str,
         resource: BaseResource,
-        mode: MountMode = MountMode.READ,
-        consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY,
+        mode: MountMode,
+        read_policy: ReadPolicy,
+        write_policy: WritePolicy,
     ) -> Mount:
         """Mount a resource and return the Mount object."""
         stripped = prefix.strip("/")
@@ -69,7 +68,7 @@ class MountRegistry:
             if existing.prefix == norm_prefix:
                 raise ValueError(f"duplicate mount prefix: "
                                  f"{norm_prefix!r}")
-        m = Mount(norm_prefix, resource, mode, consistency)
+        m = Mount(norm_prefix, resource, mode, read_policy, write_policy)
         for cmd in resource.commands():
             m.register(cmd)
         for cmd in GENERAL_COMMANDS:
@@ -259,7 +258,7 @@ class MountRegistry:
                 and isinstance(default.resource, FileCacheMixin)
                 and mount.resource.is_remote is True):
             keys = [p.original for p in path_scopes]
-            if self._consistency == ConsistencyPolicy.ALWAYS:
+            if mount.read_policy == ReadPolicy.FRESH:
                 await self._evict_stale(mount, default.resource, path_scopes)
             if await default.resource.all_cached(keys):
                 mount = default
@@ -274,9 +273,9 @@ class MountRegistry:
     ) -> None:
         """Evict cached entries whose remote fingerprint has changed.
 
-        Only used when ConsistencyPolicy.ALWAYS is active. Backends that
-        return stat.fingerprint=None silently fall back to LAZY behavior
-        (no eviction, cache serves whatever it has).
+        Only used when the mount's ReadPolicy is FRESH. Backends that
+        return stat.fingerprint=None silently fall back to CACHED
+        behavior (no eviction, cache serves whatever it has).
         """
         for scope in path_scopes:
             key = scope.original

@@ -12,12 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { ConsistencyPolicy, MountMode } from '../../types.ts'
+import type { MountMode, ReadPolicy, WritePolicy } from '../../types.ts'
 import type { Resource } from '../../resource/base.ts'
 
 export interface MountArgs {
   mountArgs: Record<string, [Resource, MountMode]>
-  consistency: ConsistencyPolicy
+  readPolicy: ReadPolicy
+  writePolicy: WritePolicy
   defaultSessionId: string
   defaultAgentId: string
 }

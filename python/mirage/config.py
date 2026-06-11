@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from mirage.cache.file.config import CacheConfig, RedisCacheConfig
 from mirage.cache.index.config import IndexConfig, RedisIndexConfig
 from mirage.resource.registry import build_resource
-from mirage.types import CommandSafeguard, ConsistencyPolicy, MountMode
+from mirage.types import CommandSafeguard, MountMode, ReadPolicy, WritePolicy
 
 
 def _coerce_mount_mode(value):
@@ -34,11 +34,19 @@ def _coerce_mount_mode(value):
     return value
 
 
-def _coerce_consistency(value):
-    if isinstance(value, ConsistencyPolicy):
+def _coerce_read_policy(value):
+    if isinstance(value, ReadPolicy):
         return value
     if isinstance(value, str):
-        return ConsistencyPolicy(value.lower())
+        return ReadPolicy(value.lower())
+    return value
+
+
+def _coerce_write_policy(value):
+    if isinstance(value, WritePolicy):
+        return value
+    if isinstance(value, str):
+        return WritePolicy(value.lower())
     return value
 
 
@@ -169,7 +177,8 @@ class WorkspaceConfig(BaseModel):
 
     mounts: dict[str, MountBlock]
     mode: MountMode = MountMode.WRITE
-    consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY
+    read_policy: ReadPolicy = ReadPolicy.CACHED
+    write_policy: WritePolicy = WritePolicy.THROUGH
     default_session_id: str = "default"
     default_agent_id: str = "default"
     fuse: bool = False
@@ -184,10 +193,15 @@ class WorkspaceConfig(BaseModel):
     def _v_mode(cls, v):
         return _coerce_mount_mode(v)
 
-    @field_validator("consistency", mode="before")
+    @field_validator("read_policy", mode="before")
     @classmethod
-    def _v_cons(cls, v):
-        return _coerce_consistency(v)
+    def _v_read(cls, v):
+        return _coerce_read_policy(v)
+
+    @field_validator("write_policy", mode="before")
+    @classmethod
+    def _v_write(cls, v):
+        return _coerce_write_policy(v)
 
     def to_workspace_kwargs(self) -> dict[str, Any]:
         """Produce kwargs ready to splat into ``Workspace(**kwargs)``.
@@ -208,7 +222,8 @@ class WorkspaceConfig(BaseModel):
         kwargs: dict[str, Any] = {
             "resources": resources,
             "mode": self.mode,
-            "consistency": self.consistency,
+            "read_policy": self.read_policy,
+            "write_policy": self.write_policy,
             "session_id": self.default_session_id,
             "agent_id": self.default_agent_id,
             "fuse": self.fuse,

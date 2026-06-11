@@ -22,7 +22,7 @@ from mirage.config import (RamCacheBlock, RedisCacheBlock, WorkspaceConfig,
                            load_config, merge_override)
 from mirage.resource.ram import RAMResource
 from mirage.resource.s3 import S3Resource
-from mirage.types import ConsistencyPolicy
+from mirage.types import ReadPolicy, WritePolicy
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -44,7 +44,8 @@ def test_load_full_yaml_with_env_interpolation():
     }
     cfg = load_config(FIXTURES / "full.yaml", env=env)
     assert cfg.mode == MountMode.WRITE
-    assert cfg.consistency == ConsistencyPolicy.LAZY
+    assert cfg.read_policy == ReadPolicy.CACHED
+    assert cfg.write_policy == WritePolicy.THROUGH
     assert cfg.history == 50
     assert isinstance(cfg.cache, RamCacheBlock)
     assert cfg.cache.limit == "256MB"

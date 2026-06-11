@@ -73,8 +73,10 @@ def tree_inputs_from_state(state: dict) -> tuple[dict[str, bytes], dict]:
             prefix,
             MountKey.MODE:
             mount[MountKey.MODE],
-            MountKey.CONSISTENCY:
-            mount[MountKey.CONSISTENCY],
+            MountKey.READ_POLICY:
+            mount[MountKey.READ_POLICY],
+            MountKey.WRITE_POLICY:
+            mount[MountKey.WRITE_POLICY],
             MountKey.RESOURCE_CLASS:
             mount[MountKey.RESOURCE_CLASS],
             MountKey.RESOURCE_STATE:
@@ -128,7 +130,8 @@ def to_state(entries: dict[str, bytes], meta: dict) -> dict:
             MountKey.INDEX: mount[MountKey.INDEX],
             MountKey.PREFIX: prefix,
             MountKey.MODE: mount[MountKey.MODE],
-            MountKey.CONSISTENCY: mount[MountKey.CONSISTENCY],
+            MountKey.READ_POLICY: mount[MountKey.READ_POLICY],
+            MountKey.WRITE_POLICY: mount[MountKey.WRITE_POLICY],
             MountKey.RESOURCE_CLASS: mount[MountKey.RESOURCE_CLASS],
             MountKey.RESOURCE_STATE: resource_state,
         })

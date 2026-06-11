@@ -1,5 +1,5 @@
 mode: WRITE
-consistency: LAZY
+read_policy: CACHED
 
 # Same /s3 mount as workspace.yaml, plus per-mount command_safeguards so the
 # guards can be observed firing from the CLI. Python-only: the TS config

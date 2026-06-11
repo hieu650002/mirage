@@ -1,5 +1,5 @@
 mode: WRITE
-consistency: LAZY
+read_policy: CACHED
 
 mounts:
   /s3:

@@ -19,7 +19,7 @@ from mirage.io.types import materialize
 from mirage.resource.ram import RAMResource
 from mirage.shell.job_table import JobTable
 from mirage.shell.parse import parse
-from mirage.types import MountMode
+from mirage.types import MountMode, ReadPolicy, WritePolicy
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.node import run_command_tree
 from mirage.workspace.session import Session
@@ -31,7 +31,8 @@ def registry():
     reg = MountRegistry()
     res = RAMResource()
     reg.set_default_mount(res)
-    reg.mount("/", res, MountMode.WRITE)
+    reg.mount("/", res, MountMode.WRITE, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     return reg
 
 

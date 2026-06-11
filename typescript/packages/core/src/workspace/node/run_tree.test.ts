@@ -20,7 +20,7 @@ import { OpsRegistry } from '../../ops/registry.ts'
 import { RAMResource } from '../../resource/ram/ram.ts'
 import type { JobTable } from '../../shell/job_table.ts'
 import { createShellParser, type ShellParser } from '../../shell/parse.ts'
-import { MountMode } from '../../types.ts'
+import { MountMode, ReadPolicy, WritePolicy } from '../../types.ts'
 import type { TSNodeLike } from '../expand/variable.ts'
 import type { DispatchFn } from '../executor/cross_mount.ts'
 import { MountRegistry } from '../mount/registry.ts'
@@ -57,7 +57,13 @@ function registry(): MountRegistry {
   const ram = new RAMResource()
   const ops = new OpsRegistry()
   ops.registerResource(ram)
-  return new MountRegistry({ '/': ram }, MountMode.WRITE)
+  return new MountRegistry(
+    { '/': ram },
+    MountMode.WRITE,
+    {},
+    ReadPolicy.CACHED,
+    WritePolicy.THROUGH,
+  )
 }
 
 function parse(command: string): TSNodeLike {

@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Resource } from '../../resource/base.ts'
-import { MountMode, PathSpec } from '../../types.ts'
+import { MountMode, PathSpec, ReadPolicy, WritePolicy } from '../../types.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import { resolveGlobs, type ResourceWithGlob } from './resolve_globs.ts'
 
@@ -44,20 +44,38 @@ class GlobResource implements ResourceWithGlob {
 
 describe('resolveGlobs', () => {
   it('passes through plain strings', async () => {
-    const reg = new MountRegistry({ '/ram': new PlainResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': new PlainResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const out = await resolveGlobs(['-l', 'text'], reg)
     expect(out).toEqual(['-l', 'text'])
   })
 
   it('passes through non-glob PathSpecs', async () => {
-    const reg = new MountRegistry({ '/ram': new PlainResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': new PlainResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const p = PathSpec.fromStrPath('/ram/x.txt')
     const out = await resolveGlobs([p], reg)
     expect(out).toEqual([p])
   })
 
   it('passes through glob PathSpecs when the resource lacks glob', async () => {
-    const reg = new MountRegistry({ '/ram': new PlainResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': new PlainResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const p = new PathSpec({
       original: '/ram/*.txt',
       directory: '/ram/',
@@ -74,7 +92,13 @@ describe('resolveGlobs', () => {
       PathSpec.fromStrPath('/ram/a.txt'),
       PathSpec.fromStrPath('/ram/b.txt'),
     ])
-    const reg = new MountRegistry({ '/ram': res }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': res },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const p = new PathSpec({
       original: '/ram/*.txt',
       directory: '/ram/',
@@ -89,7 +113,13 @@ describe('resolveGlobs', () => {
   })
 
   it('skips glob expansion for args in textArgs', async () => {
-    const reg = new MountRegistry({ '/ram': new PlainResource() }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': new PlainResource() },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const p = new PathSpec({
       original: '*.txt',
       directory: '',

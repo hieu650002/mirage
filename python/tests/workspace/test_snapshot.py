@@ -255,7 +255,8 @@ def test_load_rejects_path_traversal_in_blob_ref(tmp_path):
             "index": 0,
             "prefix": "/m",
             "mode": "WRITE",
-            "consistency": "LAZY",
+            "read_policy": "cached",
+            "write_policy": "through",
             "resource_class": "mirage.resource.ram.RAMResource",
             "resource_state": {
                 "type": "ram",

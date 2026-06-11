@@ -22,12 +22,29 @@ export const MountMode = Object.freeze({
 
 export type MountMode = (typeof MountMode)[keyof typeof MountMode]
 
-export const ConsistencyPolicy = Object.freeze({
-  LAZY: 'lazy',
-  ALWAYS: 'always',
+/**
+ * When a cached copy may serve a read on a remote mount. CACHED trusts
+ * the cache outright; FRESH fingerprint-checks the backend before
+ * serving and evicts on mismatch or deletion.
+ */
+export const ReadPolicy = Object.freeze({
+  CACHED: 'cached',
+  FRESH: 'fresh',
 } as const)
 
-export type ConsistencyPolicy = (typeof ConsistencyPolicy)[keyof typeof ConsistencyPolicy]
+export type ReadPolicy = (typeof ReadPolicy)[keyof typeof ReadPolicy]
+
+/**
+ * When writes and deletes reach the backend. THROUGH applies them
+ * immediately. A staged (write-back) value will join once the staging
+ * overlay exists; it is deliberately absent until the behavior is
+ * implemented.
+ */
+export const WritePolicy = Object.freeze({
+  THROUGH: 'through',
+} as const)
+
+export type WritePolicy = (typeof WritePolicy)[keyof typeof WritePolicy]
 
 /**
  * Behaviour when a remote resource's live fingerprint differs from the

@@ -19,7 +19,7 @@ from moto import mock_aws
 from mirage.resource.disk import DiskResource
 from mirage.resource.ram import RAMResource
 from mirage.resource.s3.s3 import S3Config, S3Resource
-from mirage.types import MountMode
+from mirage.types import MountMode, ReadPolicy, WritePolicy
 from mirage.workspace.mount import MountRegistry
 
 
@@ -85,7 +85,8 @@ def s3_resource():
 def registry(ram_resource):
     """MountRegistry with /data/ mounted to RAMResource."""
     reg = MountRegistry()
-    reg.mount("/data/", ram_resource, MountMode.WRITE)
+    reg.mount("/data/", ram_resource, MountMode.WRITE, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     return reg
 
 
@@ -93,9 +94,12 @@ def registry(ram_resource):
 def multi_registry(s3_resource, disk_resource, ram_resource):
     """MountRegistry with S3, disk, and RAM mounts."""
     reg = MountRegistry()
-    reg.mount("/s3/", s3_resource, MountMode.READ)
-    reg.mount("/disk/", disk_resource, MountMode.WRITE)
-    reg.mount("/ram/", ram_resource, MountMode.WRITE)
+    reg.mount("/s3/", s3_resource, MountMode.READ, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
+    reg.mount("/disk/", disk_resource, MountMode.WRITE, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
+    reg.mount("/ram/", ram_resource, MountMode.WRITE, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     return reg
 
 
@@ -108,6 +112,8 @@ def nested_registry():
     p2._store.files["/deep.txt"] = b"inner\n"
 
     reg = MountRegistry()
-    reg.mount("/data/", p1, MountMode.WRITE)
-    reg.mount("/data/sub/", p2, MountMode.WRITE)
+    reg.mount("/data/", p1, MountMode.WRITE, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
+    reg.mount("/data/sub/", p2, MountMode.WRITE, ReadPolicy.CACHED,
+              WritePolicy.THROUGH)
     return reg

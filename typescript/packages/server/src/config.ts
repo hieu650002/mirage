@@ -139,7 +139,8 @@ export interface RedisIndexBlock {
 export interface WorkspaceConfigRaw {
   mounts: Record<string, MountBlock>
   mode?: string
-  consistency?: string
+  readPolicy?: string
+  writePolicy?: string
   defaultSessionId?: string
   defaultAgentId?: string
   history?: number | null

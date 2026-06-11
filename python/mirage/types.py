@@ -90,9 +90,24 @@ class MountMode(str, Enum):
     EXEC = "exec"
 
 
-class ConsistencyPolicy(str, Enum):
-    LAZY = "lazy"
-    ALWAYS = "always"
+class ReadPolicy(str, Enum):
+    """When a cached copy may serve a read on a remote mount.
+
+    CACHED trusts the cache outright; FRESH fingerprint-checks the
+    backend before serving and evicts on mismatch or deletion.
+    """
+    CACHED = "cached"
+    FRESH = "fresh"
+
+
+class WritePolicy(str, Enum):
+    """When writes and deletes reach the backend.
+
+    THROUGH applies them immediately. A staged (write-back) value will
+    join once the staging overlay exists; it is deliberately absent
+    until the behavior is implemented.
+    """
+    THROUGH = "through"
 
 
 class OnExceed(str, Enum):
@@ -287,7 +302,8 @@ class MountKey(StrEnum):
     INDEX = "index"
     PREFIX = "prefix"
     MODE = "mode"
-    CONSISTENCY = "consistency"
+    READ_POLICY = "read_policy"
+    WRITE_POLICY = "write_policy"
     RESOURCE_CLASS = "resource_class"
     RESOURCE_STATE = "resource_state"
 

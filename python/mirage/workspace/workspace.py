@@ -45,9 +45,9 @@ from mirage.resource.base import BaseResource
 from mirage.resource.ram import RAMResource
 from mirage.shell.job_table import JobTable
 from mirage.shell.parse import find_syntax_error, parse
-from mirage.types import (DEFAULT_AGENT_ID, DEFAULT_SESSION_ID,
-                          ConsistencyPolicy, DriftPolicy, FileStat, MountMode,
-                          PathSpec, StateKey)
+from mirage.types import (DEFAULT_AGENT_ID, DEFAULT_SESSION_ID, DriftPolicy,
+                          FileStat, MountMode, PathSpec, ReadPolicy, StateKey,
+                          WritePolicy)
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.dispatcher import Dispatcher
 from mirage.workspace.file_prompt import build_file_prompt
@@ -84,7 +84,8 @@ class Workspace:
         cache: CacheConfig | None = None,
         index: IndexConfig | None = None,
         mode: MountMode = MountMode.READ,
-        consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY,
+        read_policy: ReadPolicy = ReadPolicy.CACHED,
+        write_policy: WritePolicy = WritePolicy.THROUGH,
         history: int | None = 100,
         history_path: str | None = None,
         session_id: str = DEFAULT_SESSION_ID,
@@ -124,9 +125,7 @@ class Workspace:
         self._default_session_id = session_id
         self._default_agent_id = agent_id
         self._session_mgr = SessionManager(session_id)
-        self._consistency = consistency
-        self._registry.set_consistency(consistency)
-        self._dispatcher = Dispatcher(self._registry, self._cache, consistency)
+        self._dispatcher = Dispatcher(self._registry, self._cache)
 
         for prefix, value in resources.items():
             mount_safeguards: dict = {}
@@ -140,7 +139,8 @@ class Workspace:
                 mount_mode = mode
             if index is not None:
                 prov.set_index(index)
-            mount_obj = self._registry.mount(prefix, prov, mount_mode)
+            mount_obj = self._registry.mount(prefix, prov, mount_mode,
+                                             read_policy, write_policy)
             if mount_safeguards:
                 mount_obj.command_safeguards.update(mount_safeguards)
 
@@ -154,7 +154,8 @@ class Workspace:
         observe_resource = (observe if observe is not None else RAMResource())
         self.observer = Observer(resource=observe_resource,
                                  prefix=observe_prefix)
-        self._registry.mount(observe_prefix, observe_resource, MountMode.READ)
+        self._registry.mount(observe_prefix, observe_resource, MountMode.READ,
+                             ReadPolicy.CACHED, WritePolicy.THROUGH)
 
         self._ops = Ops(self._registry.ops_mounts(),
                         on_write=self._invalidate_after_write_by_path,
@@ -438,7 +439,8 @@ class Workspace:
                     resources: dict | None = None) -> "Workspace":
         args = build_mount_args(state, resources)
         ws = cls(args.mount_args,
-                 consistency=args.consistency,
+                 read_policy=args.read_policy,
+                 write_policy=args.write_policy,
                  session_id=args.default_session_id,
                  agent_id=args.default_agent_id)
         apply_state_dict(ws, state)

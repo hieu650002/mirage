@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ConsistencyPolicy, MountMode, RAMResource } from '@struktoai/mirage-core'
+import { MountMode, RAMResource, ReadPolicy } from '@struktoai/mirage-core'
 import { DiskResource } from '../resource/disk/disk.ts'
 import { Workspace } from '../workspace.ts'
 
@@ -26,7 +26,7 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-describe('fingerprint spike (ConsistencyPolicy port of test_fingerprint_spike.py)', () => {
+describe('fingerprint spike (ReadPolicy port of test_fingerprint_spike.py)', () => {
   let root: string
 
   beforeEach(() => {
@@ -36,11 +36,13 @@ describe('fingerprint spike (ConsistencyPolicy port of test_fingerprint_spike.py
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('Disk + ALWAYS refetches after external mtime change', async () => {
+  it('Disk + FRESH refetches after external mtime change', async () => {
     writeFileSync(join(root, 'file.txt'), 'v1')
     const resource = new DiskResource({ root })
-    const ws = new Workspace({ '/data': resource }, { mode: MountMode.WRITE })
-    ws.registry.setConsistency(ConsistencyPolicy.ALWAYS)
+    const ws = new Workspace(
+      { '/data': resource },
+      { mode: MountMode.WRITE, readPolicy: ReadPolicy.FRESH },
+    )
 
     const io1 = await ws.execute('cat /data/file.txt')
     const first = DEC.decode(io1.stdout)
@@ -54,11 +56,13 @@ describe('fingerprint spike (ConsistencyPolicy port of test_fingerprint_spike.py
     await ws.close()
   })
 
-  it('Disk + LAZY may serve stale cache (no crash guaranteed)', async () => {
+  it('Disk + CACHED may serve stale cache (no crash guaranteed)', async () => {
     writeFileSync(join(root, 'file.txt'), 'v1')
     const resource = new DiskResource({ root })
-    const ws = new Workspace({ '/data': resource }, { mode: MountMode.WRITE })
-    ws.registry.setConsistency(ConsistencyPolicy.LAZY)
+    const ws = new Workspace(
+      { '/data': resource },
+      { mode: MountMode.WRITE, readPolicy: ReadPolicy.CACHED },
+    )
 
     const io1 = await ws.execute('cat /data/file.txt')
     const first = DEC.decode(io1.stdout)
@@ -72,11 +76,13 @@ describe('fingerprint spike (ConsistencyPolicy port of test_fingerprint_spike.py
     await ws.close()
   })
 
-  it('RAM + ALWAYS falls back gracefully when fingerprint absent', async () => {
+  it('RAM + FRESH falls back gracefully when fingerprint absent', async () => {
     const resource = new RAMResource()
     resource.store.files.set('/file.txt', new TextEncoder().encode('v1'))
-    const ws = new Workspace({ '/data': resource }, { mode: MountMode.WRITE })
-    ws.registry.setConsistency(ConsistencyPolicy.ALWAYS)
+    const ws = new Workspace(
+      { '/data': resource },
+      { mode: MountMode.WRITE, readPolicy: ReadPolicy.FRESH },
+    )
 
     const io1 = await ws.execute('cat /data/file.txt')
     expect(DEC.decode(io1.stdout)).toBe('v1')

@@ -17,7 +17,7 @@ import type { RAMFileCacheStore } from '../../cache/file/ram.ts'
 import type { Resource } from '../../resource/base.ts'
 import type { RAMResourceState } from '../../resource/ram/ram.ts'
 import { resourceStateRequiresOverride } from '../../resource/secrets.ts'
-import { ConsistencyPolicy, ResourceName, type MountMode } from '../../types.ts'
+import { ReadPolicy, ResourceName, WritePolicy, type MountMode } from '../../types.ts'
 import type { MountArgs } from './config.ts'
 import { CacheKey, MountKey, ResourceStateKey, StateKey } from './keys.ts'
 import { FORMAT_VERSION, normMountPrefix } from './utils.ts'
@@ -30,7 +30,13 @@ interface WorkspaceLike {
   readonly observer: { readonly prefix: string } | null
   readonly cache: RAMFileCacheStore
   readonly records: unknown
-  listMounts(): { prefix: string; mode: MountMode; resource: Resource }[]
+  listMounts(): {
+    prefix: string
+    mode: MountMode
+    readPolicy: ReadPolicy
+    writePolicy: WritePolicy
+    resource: Resource
+  }[]
   snapshotSessions(): AnyDict[]
   snapshotDefaultSessionId(): string
   snapshotDefaultAgentId(): string
@@ -54,7 +60,8 @@ export function toStateDict(ws: WorkspaceLike): AnyDict {
       [MountKey.INDEX]: idx,
       [MountKey.PREFIX]: m.prefix,
       [MountKey.MODE]: m.mode,
-      [MountKey.CONSISTENCY]: ConsistencyPolicy.LAZY,
+      [MountKey.READ_POLICY]: m.readPolicy,
+      [MountKey.WRITE_POLICY]: m.writePolicy,
       [MountKey.RESOURCE_CLASS]: resource.kind,
       [MountKey.RESOURCE_STATE]: resState,
     })
@@ -130,7 +137,8 @@ export function buildMountArgs(
 
   return {
     mountArgs,
-    consistency: ConsistencyPolicy.LAZY,
+    readPolicy: ReadPolicy.CACHED,
+    writePolicy: WritePolicy.THROUGH,
     defaultSessionId: (state[StateKey.DEFAULT_SESSION_ID] as string | undefined) ?? 'default',
     defaultAgentId: (state[StateKey.DEFAULT_AGENT_ID] as string | undefined) ?? 'default',
   }

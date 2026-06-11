@@ -16,7 +16,7 @@ import type { FileCache } from '../../cache/file/mixin.ts'
 import { GENERAL_COMMANDS } from '../../commands/builtin/general/index.ts'
 import type { Resource } from '../../resource/base.ts'
 import { DevResource } from '../../resource/dev/dev.ts'
-import { ConsistencyPolicy, MountMode, PathSpec } from '../../types.ts'
+import { MountMode, PathSpec, ReadPolicy, WritePolicy } from '../../types.ts'
 import { Mount } from './mount.ts'
 import { rstripSlash, stripSlash } from '../../util/slash.ts'
 
@@ -38,13 +38,14 @@ export interface OpsMountInfo {
 export class MountRegistry {
   private readonly mountList: Mount[]
   private defaultMountRef: Mount | null = null
-  private consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY
   private readonly defaultMode: MountMode
 
   constructor(
     resources: Record<string, Resource>,
     defaultMode: MountMode,
-    modeOverrides: Record<string, MountMode> = {},
+    modeOverrides: Record<string, MountMode>,
+    readPolicy: ReadPolicy,
+    writePolicy: WritePolicy,
   ) {
     this.defaultMode = defaultMode
     const mounts: Mount[] = []
@@ -54,7 +55,13 @@ export class MountRegistry {
       overrides[normalizePrefix(k)] = v
     }
     mounts.push(
-      new Mount({ prefix: DEV_PREFIX, resource: new DevResource(), mode: MountMode.WRITE }),
+      new Mount({
+        prefix: DEV_PREFIX,
+        resource: new DevResource(),
+        mode: MountMode.WRITE,
+        readPolicy: ReadPolicy.CACHED,
+        writePolicy: WritePolicy.THROUGH,
+      }),
     )
     seen.add(DEV_PREFIX)
     for (const [rawPrefix, resource] of Object.entries(resources)) {
@@ -64,18 +71,10 @@ export class MountRegistry {
       }
       seen.add(prefix)
       const mode = overrides[prefix] ?? defaultMode
-      mounts.push(new Mount({ prefix, resource, mode }))
+      mounts.push(new Mount({ prefix, resource, mode, readPolicy, writePolicy }))
     }
     mounts.sort((a, b) => b.prefix.length - a.prefix.length)
     this.mountList = mounts
-  }
-
-  setConsistency(consistency: ConsistencyPolicy): void {
-    this.consistency = consistency
-  }
-
-  getConsistency(): ConsistencyPolicy {
-    return this.consistency
   }
 
   /**
@@ -86,8 +85,9 @@ export class MountRegistry {
   mount(
     prefix: string,
     resource: Resource,
-    mode: MountMode = MountMode.READ,
-    consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY,
+    mode: MountMode,
+    readPolicy: ReadPolicy,
+    writePolicy: WritePolicy,
   ): Mount {
     const norm = normalizePrefix(prefix)
     for (const existing of this.mountList) {
@@ -95,7 +95,7 @@ export class MountRegistry {
         throw new Error(`duplicate mount prefix: ${norm}`)
       }
     }
-    const m = new Mount({ prefix: norm, resource, mode, consistency })
+    const m = new Mount({ prefix: norm, resource, mode, readPolicy, writePolicy })
     const cmds = resource.commands?.()
     if (cmds !== undefined) {
       for (const cmd of cmds) {
@@ -225,7 +225,13 @@ export class MountRegistry {
   }
 
   setDefaultMount(resource: Resource): Mount {
-    const mount = new Mount({ prefix: '/_default/', resource, mode: MountMode.WRITE })
+    const mount = new Mount({
+      prefix: '/_default/',
+      resource,
+      mode: MountMode.WRITE,
+      readPolicy: ReadPolicy.CACHED,
+      writePolicy: WritePolicy.THROUGH,
+    })
     const ops = resource.ops?.()
     if (ops !== undefined) {
       for (const op of ops) {
@@ -314,7 +320,7 @@ export class MountRegistry {
     ) {
       const baseCmd = mount.resolveCommand(cmdName)
       if (!baseCmd?.write) {
-        if (this.consistency === ConsistencyPolicy.ALWAYS) {
+        if (mount.readPolicy === ReadPolicy.FRESH) {
           await this.evictStale(mount, defaultMount.resource, pathScopes)
         }
         const keys = pathScopes.map((p) => p.original)

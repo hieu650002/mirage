@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.resource.ram import RAMResource
-from mirage.types import MountMode, PathSpec
+from mirage.types import MountMode, PathSpec, ReadPolicy, WritePolicy
 from mirage.workspace.expand.classify import _unescape_path, classify_word
 from mirage.workspace.mount import MountRegistry
 
@@ -34,7 +34,8 @@ def test_classify_backslash_escaped_absolute():
     registry = MountRegistry()
     resource = RAMResource()
     resource._store.dirs.add("/")
-    registry.mount("/ram/", resource, MountMode.WRITE)
+    registry.mount("/ram/", resource, MountMode.WRITE, ReadPolicy.CACHED,
+                   WritePolicy.THROUGH)
     result = classify_word(r"/ram/Zecheng\'s\ Server/", registry, "/")
     assert isinstance(result, PathSpec)
     assert result.original == "/ram/Zecheng's Server"
@@ -44,7 +45,8 @@ def test_classify_quoted_path():
     registry = MountRegistry()
     resource = RAMResource()
     resource._store.dirs.add("/")
-    registry.mount("/ram/", resource, MountMode.WRITE)
+    registry.mount("/ram/", resource, MountMode.WRITE, ReadPolicy.CACHED,
+                   WritePolicy.THROUGH)
     result = classify_word("/ram/Zecheng's Server/", registry, "/")
     assert isinstance(result, PathSpec)
     assert result.original == "/ram/Zecheng's Server"

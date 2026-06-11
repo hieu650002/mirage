@@ -15,7 +15,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { IOResult } from '../../io/types.ts'
 import type { Resource } from '../../resource/base.ts'
-import { MountMode, PathSpec } from '../../types.ts'
+import { MountMode, PathSpec, ReadPolicy, WritePolicy } from '../../types.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import { handleCrossMount, isCrossMount } from './cross_mount.ts'
 
@@ -35,7 +35,13 @@ function decode(b: Uint8Array | null): string {
 }
 
 describe('isCrossMount', () => {
-  const reg = new MountRegistry({ '/ram': new Stub(), '/disk': new Stub() }, MountMode.WRITE)
+  const reg = new MountRegistry(
+    { '/ram': new Stub(), '/disk': new Stub() },
+    MountMode.WRITE,
+    {},
+    ReadPolicy.CACHED,
+    WritePolicy.THROUGH,
+  )
 
   it('returns true when 2 paths live in different mounts and command is allowed', () => {
     const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]

@@ -16,7 +16,7 @@ from typing import Any
 
 from mirage.cache.file import io as cache_io
 from mirage.io import IOResult
-from mirage.types import ConsistencyPolicy, FileStat, PathSpec
+from mirage.types import FileStat, PathSpec, ReadPolicy
 from mirage.workspace.mount import Mount, MountRegistry
 from mirage.workspace.session import assert_mount_allowed
 
@@ -31,17 +31,15 @@ class Dispatcher:
 
     Owns the cache/IO coordination that used to live on Workspace: cache
     lookups for remote reads, post-write file-cache eviction, and parent
-    index invalidation. Constructed with the registry, cache store, and
-    consistency policy; holds no other workspace state. Drift checking
+    index invalidation. Constructed with the registry and cache store;
+    read freshness comes from each mount's policy. Drift checking
     stays on Workspace (it reads/writes snapshot-owned state), which guards
     its own dispatch wrapper before delegating here.
     """
 
-    def __init__(self, registry: MountRegistry, cache,
-                 consistency: ConsistencyPolicy) -> None:
+    def __init__(self, registry: MountRegistry, cache) -> None:
         self._registry = registry
         self._cache = cache
-        self._consistency = consistency
 
     async def dispatch(self, op: str, path: PathSpec,
                        **kwargs: Any) -> tuple[Any, IOResult]:
@@ -52,7 +50,7 @@ class Dispatcher:
         if cacheable and op in _DISPATCH_READ_OPS:
             cached = await self._cache.get(path.original)
             if cached is not None:
-                if self._consistency == ConsistencyPolicy.ALWAYS:
+                if mount.read_policy == ReadPolicy.FRESH:
                     try:
                         remote_stat = await mount.execute_op(
                             "stat", path.original)

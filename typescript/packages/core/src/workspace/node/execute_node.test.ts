@@ -18,7 +18,7 @@ import { OpsRegistry } from '../../ops/registry.ts'
 import { RAMResource } from '../../resource/ram/ram.ts'
 import type { JobTable } from '../../shell/job_table.ts'
 import { NodeType as NT } from '../../shell/types.ts'
-import { MountMode } from '../../types.ts'
+import { MountMode, ReadPolicy, WritePolicy } from '../../types.ts'
 import type { TSNodeLike } from '../expand/variable.ts'
 import type { DispatchFn } from '../executor/cross_mount.ts'
 import { MountRegistry } from '../mount/registry.ts'
@@ -50,7 +50,13 @@ function plainRegistry(): MountRegistry {
   const ram = new RAMResource()
   const ops = new OpsRegistry()
   ops.registerResource(ram)
-  return new MountRegistry({ '/ram': ram }, MountMode.WRITE)
+  return new MountRegistry(
+    { '/ram': ram },
+    MountMode.WRITE,
+    {},
+    ReadPolicy.CACHED,
+    WritePolicy.THROUGH,
+  )
 }
 
 describe('executeNode dispatcher', () => {

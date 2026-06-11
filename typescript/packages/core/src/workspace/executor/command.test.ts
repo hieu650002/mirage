@@ -18,7 +18,7 @@ import { CommandSpec, Operand, OperandKind, Option } from '../../commands/spec/t
 import { IOResult } from '../../io/types.ts'
 import { JobTable } from '../../shell/job_table.ts'
 import type { Resource } from '../../resource/base.ts'
-import { MountMode, PathSpec } from '../../types.ts'
+import { MountMode, PathSpec, ReadPolicy, WritePolicy } from '../../types.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import { Session } from '../session/session.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
@@ -50,7 +50,13 @@ function decode(b: Uint8Array | null): string {
 
 describe('handleCommand — command not found', () => {
   it('returns exit 127 when no mount has the command', async () => {
-    const reg = new MountRegistry({ '/ram': new StubResource('ram') }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': new StubResource('ram') },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const [, io, exec] = await handleCommand(
       NEVER_EXECUTE,
       NEVER_DISPATCH,
@@ -69,7 +75,13 @@ describe('handleCommand — dispatches to mount that has the command', () => {
 
   it('routes to a mount whose resource registered the command', async () => {
     const ram = new StubResource('ram')
-    const reg = new MountRegistry({ '/ram': ram }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': ram },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const mount = reg.mountFor('/ram/x')
     if (mount === null) throw new Error('mount missing')
     const [cmd] = command({
@@ -95,7 +107,13 @@ describe('handleCommand — dispatches to mount that has the command', () => {
 
   it('parses flags through the spec and forwards them', async () => {
     const ram = new StubResource('ram')
-    const reg = new MountRegistry({ '/ram': ram }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': ram },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const mount = reg.mountFor('/ram')
     if (mount === null) throw new Error('mount missing')
     const spec = new CommandSpec({
@@ -131,6 +149,9 @@ describe('handleCommand — cross-mount', () => {
     const reg = new MountRegistry(
       { '/ram': new StubResource('ram'), '/disk': new StubResource('disk') },
       MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
     )
     const [, io, exec] = await handleCommand(
       NEVER_EXECUTE,
@@ -147,7 +168,13 @@ describe('handleCommand — cross-mount', () => {
 
 describe('handleCommand — job builtins', () => {
   it('routes "jobs" to handleJobs when jobTable provided', async () => {
-    const reg = new MountRegistry({ '/ram': new StubResource('ram') }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': new StubResource('ram') },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const jt = new JobTable()
     const [, io] = await handleCommand(
       NEVER_EXECUTE,
@@ -163,7 +190,13 @@ describe('handleCommand — job builtins', () => {
   })
 
   it('routes "kill N" to handleKill', async () => {
-    const reg = new MountRegistry({ '/ram': new StubResource('ram') }, MountMode.WRITE)
+    const reg = new MountRegistry(
+      { '/ram': new StubResource('ram') },
+      MountMode.WRITE,
+      {},
+      ReadPolicy.CACHED,
+      WritePolicy.THROUGH,
+    )
     const jt = new JobTable()
     const [, io] = await handleCommand(
       NEVER_EXECUTE,

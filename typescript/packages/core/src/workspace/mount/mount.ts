@@ -32,7 +32,8 @@ import { IOResult } from '../../io/types.ts'
 import { runWithRevisions, setVirtualPrefix } from '../../observe/context.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import type { Resource } from '../../resource/base.ts'
-import { type CommandSafeguard, ConsistencyPolicy, MountMode, PathSpec } from '../../types.ts'
+import type { ReadPolicy, WritePolicy } from '../../types.ts'
+import { type CommandSafeguard, MountMode, PathSpec } from '../../types.ts'
 import type { PyodideRuntime } from '../executor/python/runtime.ts'
 import { rstripSlash } from '../../util/slash.ts'
 
@@ -58,15 +59,17 @@ function crossKey(name: string, targetResource: string): string {
 export interface MountInit {
   prefix: string
   resource: Resource
-  mode?: MountMode
-  consistency?: ConsistencyPolicy
+  mode: MountMode
+  readPolicy: ReadPolicy
+  writePolicy: WritePolicy
 }
 
 export class Mount {
   readonly prefix: string
   readonly resource: Resource
   readonly mode: MountMode
-  readonly consistency: ConsistencyPolicy
+  readonly readPolicy: ReadPolicy
+  readonly writePolicy: WritePolicy
 
   /**
    * Per-path revision pins installed at Workspace.load time. Read
@@ -98,8 +101,9 @@ export class Mount {
     }
     this.prefix = prefix
     this.resource = init.resource
-    this.mode = init.mode ?? MountMode.READ
-    this.consistency = init.consistency ?? ConsistencyPolicy.LAZY
+    this.mode = init.mode
+    this.readPolicy = init.readPolicy
+    this.writePolicy = init.writePolicy
   }
 
   // ── command registration ──────────────────────────
