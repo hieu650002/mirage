@@ -1,5 +1,6 @@
 from functools import partial
 
+from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
@@ -16,9 +17,9 @@ async def grep(
     accessor,
     paths: list[PathSpec],
     *texts: str,
+    index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    index = flags.get("index")
     paths = await resolve_glob(accessor, paths, index)
     return await generic_grep(
         paths,

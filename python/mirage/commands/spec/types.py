@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -71,6 +72,43 @@ class CommandSpec:
     rest: Operand | None = None
     ignore_tokens: frozenset[str] = frozenset()
     description: str | None = None
+
+
+class FlagView:
+    """Typed read-only view over raw flag kwargs.
+
+    Commands receive flags as an untyped mapping from the dispatcher; this
+    view is the one sanctioned way to read them, replacing ad-hoc
+    `flags.get(...) is True` and isinstance chains.
+
+    Args:
+        flags (Mapping[str, object] | None): raw flag kwargs.
+    """
+
+    def __init__(self, flags: Mapping[str, object] | None) -> None:
+        self._flags = flags or {}
+
+    def bool(self, name: str) -> bool:
+        return self._flags.get(name) is True
+
+    def int(self, name: str) -> int | None:
+        value = self._flags.get(name)
+        return int(value) if isinstance(value, str) else None
+
+    def str(self, name: str) -> str | None:
+        value = self._flags.get(name)
+        return value if isinstance(value, str) else None
+
+    def list(self, name: str) -> list[str]:
+        value = self._flags.get(name)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, str)]
+        if isinstance(value, str):
+            return [value]
+        return []
+
+    def raw(self, name: str) -> object:
+        return self._flags.get(name)
 
 
 @dataclass

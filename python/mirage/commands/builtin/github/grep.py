@@ -21,6 +21,7 @@ from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.grep_helper import classify_pattern, pattern_arg
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
 from mirage.core.github.constants import SCOPE_ERROR, SCOPE_WARN
 from mirage.core.github.glob import resolve_glob
 from mirage.core.github.read import read as github_read
@@ -98,8 +99,9 @@ async def grep(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    pattern = pattern_arg(texts, flags)
-    recursive = flags.get("r") is True or flags.get("R") is True
+    fl = FlagView(flags)
+    pattern = pattern_arg(texts, fl)
+    recursive = fl.bool("r") or fl.bool("R")
 
     resolved: list[PathSpec] = []
     if paths and index is not None:
@@ -107,9 +109,8 @@ async def grep(
         file_count = count_scope_files(index._entries, key)
         # -f-only invocations have no literal yet (files are read inside the
         # generic); treat as regex so the search narrowing is skipped.
-        is_regex = (pattern is None or classify_pattern(
-            pattern,
-            flags.get("F") is True) == PatternType.REGEX)
+        is_regex = (pattern is None or classify_pattern(pattern, fl.bool("F"))
+                    == PatternType.REGEX)
         use_search = (should_use_search(
             is_regex=is_regex,
             recursive=recursive,

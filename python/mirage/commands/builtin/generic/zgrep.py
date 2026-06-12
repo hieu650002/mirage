@@ -4,10 +4,11 @@ from collections.abc import (AsyncIterator, Awaitable, Callable, Mapping,
                              Sequence)
 from functools import partial
 
-from mirage.commands.builtin.generic.grep import _int_flag, resolve_pattern
+from mirage.commands.builtin.generic.grep import resolve_pattern
 from mirage.commands.builtin.grep_helper import build_pattern_str
 from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.stream import _read_stdin_async
+from mirage.commands.spec.types import FlagView
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -90,22 +91,22 @@ async def zgrep(
     stdin: AsyncIterator[bytes] | bytes | None = None,
     index: object = None,
 ) -> tuple[ByteSource | None, IOResult]:
-    fl: Mapping[str, object] = flags or {}
+    fl = FlagView(flags)
     pattern, never_match = await resolve_pattern(
         texts, fl, partial(_read_plain, read_bytes), accessor, index,
         "zgrep: usage: zgrep [flags] pattern [path]")
-    ignore_case = fl.get("i") is True
-    invert = fl.get("v") is True
-    count = fl.get("c") is True
-    files_only = fl.get("args_l") is True
-    line_numbers = fl.get("n") is True
-    fixed = fl.get("F") is True and not never_match
-    force_filename = fl.get("H") is True
-    suppress_filename = fl.get("h") is True
-    only_matching = fl.get("o") is True
-    quiet = fl.get("q") is True
-    whole_word = fl.get("w") is True
-    max_count = _int_flag(fl.get("m"))
+    ignore_case = fl.bool("i")
+    invert = fl.bool("v")
+    count = fl.bool("c")
+    files_only = fl.bool("args_l")
+    line_numbers = fl.bool("n")
+    fixed = fl.bool("F") and not never_match
+    force_filename = fl.bool("H")
+    suppress_filename = fl.bool("h")
+    only_matching = fl.bool("o")
+    quiet = fl.bool("q")
+    whole_word = fl.bool("w")
+    max_count = fl.int("m")
     compiled = build_pattern_str(pattern, fixed, whole_word)
     multi = len(paths) > 1
     show_filename = force_filename or (multi and not suppress_filename)

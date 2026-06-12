@@ -21,6 +21,7 @@ from mirage.commands.builtin.grep_helper import pattern_arg
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
 from mirage.core.mongodb._client import list_databases
 from mirage.core.mongodb.glob import resolve_glob
 from mirage.core.mongodb.read import read as mongodb_read
@@ -44,7 +45,8 @@ async def rg(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    pattern_str = pattern_arg(texts, flags)
+    fl = FlagView(flags)
+    pattern_str = pattern_arg(texts, fl)
     if pattern_str is None:
         raise ValueError("rg: usage: rg [flags] pattern [path]")
 

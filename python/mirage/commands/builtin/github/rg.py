@@ -21,6 +21,7 @@ from mirage.commands.builtin.generic.rg import rg as generic_rg
 from mirage.commands.builtin.grep_helper import classify_pattern, pattern_arg
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
 from mirage.core.github.constants import SCOPE_ERROR, SCOPE_WARN
 from mirage.core.github.glob import resolve_glob
 from mirage.core.github.read import read as github_read
@@ -42,7 +43,8 @@ async def rg(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    pattern_str = pattern_arg(texts, flags)
+    fl = FlagView(flags)
+    pattern_str = pattern_arg(texts, fl)
     if pattern_str is None:
         raise ValueError("rg: usage: rg [flags] pattern [path]")
 
@@ -51,7 +53,7 @@ async def rg(
     if paths:
         key = scope_relative_key(paths[0])
         file_count = count_scope_files(index._entries, key)
-        pt = classify_pattern(pattern_str, flags.get("F") is True)
+        pt = classify_pattern(pattern_str, fl.bool("F"))
         use_search = (should_use_search(
             is_regex=(pt == PatternType.REGEX),
             recursive=True,

@@ -3,7 +3,7 @@ from collections.abc import (AsyncIterator, Awaitable, Callable, Mapping,
 from functools import partial
 
 from mirage.cache.index import IndexCacheStore
-from mirage.commands.builtin.generic.grep import _int_flag, resolve_pattern
+from mirage.commands.builtin.generic.grep import resolve_pattern
 from mirage.commands.builtin.grep_helper import (compile_pattern,
                                                  grep_count_has_matches,
                                                  grep_lines, grep_stream,
@@ -15,6 +15,7 @@ from mirage.commands.builtin.utils.output import (format_optional_records,
 from mirage.commands.builtin.utils.stream import _resolve_source
 from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
                                                 call_stat)
+from mirage.commands.spec.types import FlagView
 from mirage.io.stream import exit_on_empty
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileStat, FileType, PathSpec
@@ -63,27 +64,25 @@ async def rg(
     Returns:
         tuple[ByteSource | None, IOResult]: Output stream and exit metadata.
     """
-    fl: Mapping[str, object] = flags or {}
+    fl = FlagView(flags)
     pattern, never_match = await resolve_pattern(
         texts, fl, read_bytes, accessor, index,
         "rg: usage: rg [flags] pattern [path]")
-    ignore_case = fl.get("i") is True
-    invert = fl.get("v") is True
-    line_numbers = fl.get("n") is True
-    count_only = fl.get("c") is True
-    files_only = fl.get("args_l") is True
-    whole_word = fl.get("w") is True
-    fixed_string = fl.get("F") is True and not never_match
-    only_matching = fl.get("o") is True
-    hidden = fl.get("hidden") is True
-    ft = fl.get("type")
-    file_type = ft if isinstance(ft, str) else None
-    gp = fl.get("glob")
-    glob_pattern = gp if isinstance(gp, str) else None
-    max_count = _int_flag(fl.get("m"))
-    a_ctx = _int_flag(fl.get("A"))
-    b_ctx = _int_flag(fl.get("B"))
-    c_ctx = _int_flag(fl.get("C"))
+    ignore_case = fl.bool("i")
+    invert = fl.bool("v")
+    line_numbers = fl.bool("n")
+    count_only = fl.bool("c")
+    files_only = fl.bool("args_l")
+    whole_word = fl.bool("w")
+    fixed_string = fl.bool("F") and not never_match
+    only_matching = fl.bool("o")
+    hidden = fl.bool("hidden")
+    file_type = fl.str("type")
+    glob_pattern = fl.str("glob")
+    max_count = fl.int("m")
+    a_ctx = fl.int("A")
+    b_ctx = fl.int("B")
+    c_ctx = fl.int("C")
     context_after = a_ctx if a_ctx is not None else 0
     context_before = b_ctx if b_ctx is not None else 0
     if c_ctx is not None:

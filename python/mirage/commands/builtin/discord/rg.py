@@ -22,6 +22,7 @@ from mirage.commands.builtin.grep_helper import pattern_arg
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
 from mirage.core.discord.channels import list_channels
 from mirage.core.discord.entry import channel_dirname
 from mirage.core.discord.formatters import format_grep_results
@@ -47,11 +48,11 @@ async def rg(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    pattern_str = pattern_arg(texts, flags)
+    fl = FlagView(flags)
+    pattern_str = pattern_arg(texts, fl)
     if pattern_str is None:
         raise ValueError("rg: usage: rg [flags] pattern [path]")
-    m = flags.get("m")
-    max_count = int(m) if isinstance(m, str) else None
+    max_count = fl.int("m")
 
     pushdown_warnings: list[str] = []
     if paths:

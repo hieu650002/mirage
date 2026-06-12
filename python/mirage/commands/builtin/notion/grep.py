@@ -22,6 +22,7 @@ from mirage.commands.builtin.notion._provision import file_read_provision
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
 from mirage.core.notion.glob import resolve_glob
 from mirage.core.notion.read import read as notion_read
 from mirage.core.notion.readdir import readdir as _readdir
@@ -56,9 +57,9 @@ async def grep(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    pattern = pattern_arg(texts, flags)
-    m = flags.get("m")
-    max_count = int(m) if isinstance(m, str) else None
+    fl = FlagView(flags)
+    pattern = pattern_arg(texts, fl)
+    max_count = fl.int("m")
 
     if paths and pattern is not None:
         scope = detect_scope(paths[0])

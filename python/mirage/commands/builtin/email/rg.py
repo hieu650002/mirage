@@ -24,6 +24,7 @@ from mirage.commands.builtin.grep_helper import (compile_pattern,
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
 from mirage.core.email._client import fetch_message
 from mirage.core.email.read import read as email_read
 from mirage.core.email.readdir import readdir as _readdir
@@ -44,19 +45,19 @@ async def rg(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    pattern_str = pattern_arg(texts, flags)
+    fl = FlagView(flags)
+    pattern_str = pattern_arg(texts, fl)
     if pattern_str is None:
         raise ValueError("rg: usage: rg [flags] pattern [path]")
-    i = flags.get("i") is True
-    v = flags.get("v") is True
-    n = flags.get("n") is True
-    c = flags.get("c") is True
-    args_l = flags.get("args_l") is True
-    w = flags.get("w") is True
-    F = flags.get("F") is True
-    o = flags.get("o") is True
-    m = flags.get("m")
-    max_count = int(m) if isinstance(m, str) else None
+    i = fl.bool("i")
+    v = fl.bool("v")
+    n = fl.bool("n")
+    c = fl.bool("c")
+    args_l = fl.bool("args_l")
+    w = fl.bool("w")
+    F = fl.bool("F")
+    o = fl.bool("o")
+    max_count = fl.int("m")
     pat = compile_pattern(pattern_str, i, F, w)
 
     if paths:

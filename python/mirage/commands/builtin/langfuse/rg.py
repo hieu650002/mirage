@@ -24,6 +24,7 @@ from mirage.commands.builtin.langfuse.grep import (_filter_traces,
                                                    _format_session_results)
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
 from mirage.core.langfuse._client import (fetch_datasets, fetch_prompts,
                                           fetch_sessions, fetch_traces)
 from mirage.core.langfuse.glob import resolve_glob
@@ -45,19 +46,13 @@ async def rg(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    pattern_str = pattern_arg(texts, flags)
+    fl = FlagView(flags)
+    pattern_str = pattern_arg(texts, fl)
     if pattern_str is None:
         raise ValueError("rg: usage: rg [flags] pattern [path]")
-    i = flags.get("i") is True
-    flags.get("v") is True
-    flags.get("n") is True
-    flags.get("c") is True
-    flags.get("args_l") is True
-    w = flags.get("w") is True
-    F = flags.get("F") is True
-    flags.get("o") is True
-    m = flags.get("m")
-    int(m) if isinstance(m, str) else None
+    i = fl.bool("i")
+    w = fl.bool("w")
+    F = fl.bool("F")
     pat = compile_pattern(pattern_str, i, F, w)
 
     config = accessor.config

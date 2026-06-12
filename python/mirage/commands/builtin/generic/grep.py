@@ -14,18 +14,15 @@ from mirage.commands.builtin.utils.output import (format_optional_records,
 from mirage.commands.builtin.utils.stream import _resolve_source
 from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
                                                 call_stat)
+from mirage.commands.spec.types import FlagView
 from mirage.io.stream import exit_on_empty, quiet_match
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileStat, FileType, PathSpec
 
 
-def _int_flag(value: object) -> int | None:
-    return int(value) if isinstance(value, str) else None
-
-
 async def resolve_pattern(
     texts: Sequence[str],
-    flags: Mapping[str, object],
+    flags: FlagView,
     read_bytes: Callable[..., Awaitable[bytes]],
     accessor: object,
     index: IndexCacheStore | None,
@@ -35,7 +32,7 @@ async def resolve_pattern(
 
     Args:
         texts (Sequence[str]): positional TEXT operands.
-        flags (Mapping[str, object]): raw flag kwargs (TS-style record).
+        flags (FlagView): typed view over raw flag kwargs.
         read_bytes (Callable[..., Awaitable[bytes]]): whole-file reader used
             for -f pattern files.
         accessor (object): backend accessor for read_bytes.
@@ -49,7 +46,7 @@ async def resolve_pattern(
     """
     pattern = pattern_arg(texts, flags)
 
-    pattern_file = flags.get("f")
+    pattern_file = flags.raw("f")
     if isinstance(pattern_file, (PathSpec, list)):
         files = (pattern_file
                  if isinstance(pattern_file, list) else [pattern_file])
@@ -113,24 +110,24 @@ async def grep(
     Returns:
         tuple[ByteSource | None, IOResult]: Output stream and exit metadata.
     """
-    fl: Mapping[str, object] = flags or {}
+    fl = FlagView(flags)
     pattern, never_match = await resolve_pattern(
         texts, fl, read_bytes, accessor, index,
         "grep: usage: grep [flags] pattern [path]")
-    ignore_case = fl.get("i") is True
-    invert = fl.get("v") is True
-    line_numbers = fl.get("n") is True
-    count_only = fl.get("c") is True
-    files_only = fl.get("args_l") is True
-    whole_word = fl.get("w") is True
-    fixed_string = fl.get("F") is True and not never_match
-    only_matching = fl.get("o") is True
-    quiet = fl.get("q") is True
-    recursive = fl.get("r") is True or fl.get("R") is True
-    max_count = _int_flag(fl.get("m"))
-    a_ctx = _int_flag(fl.get("A"))
-    b_ctx = _int_flag(fl.get("B"))
-    c_ctx = _int_flag(fl.get("C"))
+    ignore_case = fl.bool("i")
+    invert = fl.bool("v")
+    line_numbers = fl.bool("n")
+    count_only = fl.bool("c")
+    files_only = fl.bool("args_l")
+    whole_word = fl.bool("w")
+    fixed_string = fl.bool("F") and not never_match
+    only_matching = fl.bool("o")
+    quiet = fl.bool("q")
+    recursive = fl.bool("r") or fl.bool("R")
+    max_count = fl.int("m")
+    a_ctx = fl.int("A")
+    b_ctx = fl.int("B")
+    c_ctx = fl.int("C")
     after_context = a_ctx if a_ctx is not None else (c_ctx or 0)
     before_context = b_ctx if b_ctx is not None else (c_ctx or 0)
 

@@ -19,6 +19,7 @@ from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
 from mirage.core.github_ci.glob import is_cross_run_root, resolve_glob
 from mirage.core.github_ci.read import read as ci_read
 from mirage.core.github_ci.readdir import readdir as _readdir
@@ -36,8 +37,9 @@ async def grep(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
+    fl = FlagView(flags)
     resolved = await resolve_glob(accessor, paths, index) if paths else []
-    recursive = flags.get("r") is True or flags.get("R") is True
+    recursive = fl.bool("r") or fl.bool("R")
     if recursive and any(is_cross_run_root(p) for p in resolved):
         raise ValueError("grep: recursive search across runs is disabled; "
                          "target a specific run (e.g. /ci/runs/<run>/jobs)")

@@ -37,10 +37,6 @@ async def rg(
     index: IndexCacheStore = None,
     **flags: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    e = flags.get("e")
-    if not isinstance(e, str) and not texts:
-        raise ValueError("rg: usage: rg [flags] pattern [path]")
-    e if isinstance(e, str) else texts[0]
     if paths:
         paths = await resolve_glob(accessor, paths, index=index)
     return await generic_rg(
