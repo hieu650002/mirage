@@ -24,7 +24,6 @@ from typing import Any
 from mirage.cache.file.config import CacheConfig, RedisCacheConfig
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import IndexConfig
-from mirage.commands.builtin.general import HISTORY_COMMANDS
 from mirage.commands.builtin.utils.safeguard import (CommandTimeoutError,
                                                      run_with_timeout)
 from mirage.commands.safeguard import resolve_safeguard
@@ -42,6 +41,7 @@ from mirage.ops.open import make_open
 from mirage.ops.os_patch import make_os_module
 from mirage.provision import ProvisionResult
 from mirage.resource.base import BaseResource
+from mirage.resource.history import HISTORY_PREFIX, HistoryViewResource
 from mirage.resource.ram import RAMResource
 from mirage.shell.job_table import JobTable
 from mirage.shell.parse import find_syntax_error, parse
@@ -52,7 +52,6 @@ from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.dispatcher import Dispatcher
 from mirage.workspace.file_prompt import build_file_prompt
 from mirage.workspace.fuse import FuseManager
-from mirage.workspace.history import ExecutionHistory
 from mirage.workspace.mount import Mount, MountRegistry
 from mirage.workspace.native import native_exec
 from mirage.workspace.node import provision_node, run_command_tree
@@ -85,14 +84,11 @@ class Workspace:
         index: IndexConfig | None = None,
         mode: MountMode = MountMode.READ,
         consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY,
-        history: int | None = 100,
-        history_path: str | None = None,
         session_id: str = DEFAULT_SESSION_ID,
         agent_id: str = DEFAULT_AGENT_ID,
         fuse: bool = False,
         native: bool = False,
         observe: BaseResource | None = None,
-        observe_prefix: str = "/.sessions",
     ) -> None:
         self._registry = MountRegistry()
         if isinstance(cache, RedisCacheConfig):
@@ -146,15 +142,12 @@ class Workspace:
 
         self._fuse = FuseManager()
         self._native = native
-        self.history: ExecutionHistory | None = (ExecutionHistory(
-            max_entries=history,
-            persist_path=history_path,
-        ) if history is not None else None)
 
         observe_resource = (observe if observe is not None else RAMResource())
-        self.observer = Observer(resource=observe_resource,
-                                 prefix=observe_prefix)
-        self._registry.mount(observe_prefix, observe_resource, MountMode.READ)
+        self.observer = Observer(resource=observe_resource)
+        self._registry.mount(HISTORY_PREFIX,
+                             HistoryViewResource(self.observer),
+                             MountMode.READ)
 
         self._ops = Ops(self._registry.ops_mounts(),
                         on_write=self._invalidate_after_write_by_path,
@@ -162,17 +155,17 @@ class Workspace:
                         agent_id=agent_id,
                         session_id=session_id)
 
-        if self.history is not None:
-            for m in self._registry.mounts():
-                for rc in HISTORY_COMMANDS:
-                    m.register_general(rc)
-            default = self._registry.default_mount
-            if default is not None:
-                for rc in HISTORY_COMMANDS:
-                    default.register_general(rc)
-
         if fuse:
             self._fuse.setup(self)
+
+    @property
+    def history(self) -> list[dict]:
+        """Command events recorded by the hidden recorder.
+
+        Returns:
+            list[dict]: All sessions' command events, timestamp order.
+        """
+        return self.observer.command_events()
 
     @property
     def ops(self) -> Ops:
@@ -226,11 +219,9 @@ class Workspace:
             raise ValueError(f"cannot unmount cache root: {prefix!r}")
         if norm == "/dev/":
             raise ValueError("cannot unmount reserved prefix: '/dev/'")
-        observer_norm = ("/" + self.observer.prefix.strip("/") +
-                         "/" if self.observer.prefix.strip("/") else "/")
-        if norm == observer_norm:
-            raise ValueError(f"cannot unmount observer prefix: "
-                             f"{self.observer.prefix!r}")
+        if norm == HISTORY_PREFIX + "/":
+            raise ValueError(f"cannot unmount history view: "
+                             f"{HISTORY_PREFIX!r}")
         removed = self._registry.unmount(prefix)
         self._ops.unmount(prefix)
         still_mounted = any(m.resource is removed.resource
@@ -417,9 +408,7 @@ class Workspace:
         # material. Local content resources (RAM, Disk) are reconstructed
         # fresh so the copy's writes don't clobber the original's data.
         state = to_state_dict(self)
-        auto_prefixes = {"/dev/"}
-        if self.observer is not None:
-            auto_prefixes.add(norm_mount_prefix(self.observer.prefix))
+        auto_prefixes = {"/dev/", norm_mount_prefix(HISTORY_PREFIX)}
         prefix_to_resource = {
             m.prefix: m.resource
             for m in self._registry.mounts() if m.prefix not in auto_prefixes
@@ -471,16 +460,14 @@ class Workspace:
 
         The cache mount (where text-processing commands like ``wc``
         without a path argument resolve), the device mount, and the
-        observer log are infrastructure: they hold no user
+        history view are infrastructure: they hold no user
         credentials, and rejecting them would break common shell
-        idioms or audit logging.
+        idioms or the history builtin.
         """
-        prefixes = {"/dev"}
+        prefixes = {"/dev", HISTORY_PREFIX}
         default_mount = self._registry.default_mount
         if default_mount is not None:
             prefixes.add("/" + default_mount.prefix.strip("/"))
-        if self.observer is not None:
-            prefixes.add("/" + self.observer.prefix.strip("/"))
         return prefixes
 
     def get_session(self, session_id: str) -> Session:
@@ -565,25 +552,24 @@ class Workspace:
             session_cwd = self._session_mgr.get(session_id).cwd
         except KeyError:
             session_cwd = None
-        if not provision and self.observer is not None and exec_node.records:
+        if provision:
+            return
+        if exec_node.records:
             for rec in exec_node.records:
                 await self.observer.log_op(rec, agent_id, session_id,
                                            session_cwd)
-        if self.history is not None and not provision:
-            stdin_bytes = stdin if isinstance(stdin, bytes) else None
-            exec_record = ExecutionRecord(
-                agent=agent_id,
-                command=command,
-                stdout=await io.materialize_stdout(),
-                stdin=stdin_bytes,
-                exit_code=io.exit_code,
-                tree=exec_node,
-                timestamp=time.time(),
-                session_id=session_id,
-            )
-            self.history.append(exec_record)
-            if self.observer is not None:
-                await self.observer.log_command(exec_record, session_cwd)
+        stdin_bytes = stdin if isinstance(stdin, bytes) else None
+        exec_record = ExecutionRecord(
+            agent=agent_id,
+            command=command,
+            stdout=await io.materialize_stdout(),
+            stdin=stdin_bytes,
+            exit_code=io.exit_code,
+            tree=exec_node,
+            timestamp=time.time(),
+            session_id=session_id,
+        )
+        await self.observer.log_command(exec_record, session_cwd)
 
     async def _exec_recursion(self, cancel: asyncio.Event | None, cmd: str,
                               **opts: Any) -> Any:
@@ -701,7 +687,6 @@ class Workspace:
                 ast,
                 effective_session,
                 stdin,
-                self.history,
                 cancel,
             )
             session.last_exit_code = io.exit_code

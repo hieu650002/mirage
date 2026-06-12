@@ -17,8 +17,8 @@ from mirage.resource.disk import DiskResource
 from mirage.resource.ram import RAMResource
 from mirage.commands.registry import command
 from mirage.types import FileStat, MountMode
-from mirage.workspace import (ExecutionHistory, ExecutionNode, ExecutionRecord,
-                              Workspace, WorkspaceRunner)
+from mirage.workspace import (ExecutionNode, ExecutionRecord, Workspace,
+                              WorkspaceRunner)
 from mirage.types import ConsistencyPolicy
 
 __all__ = [
@@ -27,7 +27,6 @@ __all__ = [
     "RAMResource",
     "DiskResource",
     "ConsistencyPolicy",
-    "ExecutionHistory",
     "ExecutionNode",
     "ExecutionRecord",
     "FileStat",

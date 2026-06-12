@@ -17,13 +17,11 @@ import json
 
 from mirage import MountMode, Workspace
 from mirage.resource.ram import RAMResource
-from mirage.utils.dates import utc_date_folder
 
 
 def test_workspace_creates_default_observer():
     ws = Workspace({"/data/": RAMResource()}, mode=MountMode.WRITE)
     assert ws.observer is not None
-    assert ws.observer.prefix == "/.sessions"
 
 
 def test_workspace_custom_observe_resource():
@@ -34,15 +32,6 @@ def test_workspace_custom_observe_resource():
         observe=obs_resource,
     )
     assert ws.observer.resource is obs_resource
-
-
-def test_workspace_custom_observe_prefix():
-    ws = Workspace(
-        {"/data/": RAMResource()},
-        mode=MountMode.WRITE,
-        observe_prefix="/audit",
-    )
-    assert ws.observer.prefix == "/audit"
 
 
 def test_logs_populated_after_execute():
@@ -71,22 +60,10 @@ def test_logs_contain_op_records():
     assert "command" in types
 
 
-def test_logs_mount_readable_via_execute():
+def test_observer_store_not_mounted():
     ws = Workspace({"/data/": RAMResource()}, mode=MountMode.WRITE)
     asyncio.run(ws.execute("echo hi > /data/f.txt"))
-
-    async def _run():
-        day_res = await ws.execute("ls /.sessions")
-        assert day_res.exit_code == 0
-        assert utc_date_folder() in await day_res.stdout_str()
-        result = await ws.execute(f"ls /.sessions/{utc_date_folder()}")
-        assert result.exit_code == 0
-        assert ".jsonl" in await result.stdout_str()
-
-    asyncio.run(_run())
-
-
-def test_logs_mount_read_only():
-    ws = Workspace({"/data/": RAMResource()}, mode=MountMode.WRITE)
-    result = asyncio.run(ws.execute("echo test > /.sessions/hack.txt"))
+    result = asyncio.run(ws.execute("ls /.sessions"))
     assert result.exit_code != 0
+    mounted = {m.resource for m in ws._registry.mounts()}
+    assert ws.observer.resource not in mounted

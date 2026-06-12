@@ -15,6 +15,7 @@
 from typing import Any
 
 from mirage import Workspace
+from mirage.resource.history import HISTORY_PREFIX
 from mirage.resource.registry import build_resource
 from mirage.workspace.snapshot import requires_resource_override, to_state_dict
 from mirage.workspace.snapshot.utils import norm_mount_prefix
@@ -39,9 +40,7 @@ def _build_override_resources(override: dict[str, Any] | None) -> dict:
 
 def _existing_redacted_resources(ws: Workspace, state: dict,
                                  skip: set[str]) -> dict:
-    auto_prefixes = {"/dev/"}
-    if ws.observer is not None:
-        auto_prefixes.add(norm_mount_prefix(ws.observer.prefix))
+    auto_prefixes = {"/dev/", norm_mount_prefix(HISTORY_PREFIX)}
     prefix_to_resource = {
         m.prefix: m.resource
         for m in ws._registry.mounts() if m.prefix not in auto_prefixes

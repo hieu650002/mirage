@@ -159,14 +159,14 @@ def test_history_round_trip(tmp_path):
     asyncio.run(src.execute("echo a > /m/a.txt"))
     asyncio.run(src.execute("echo b > /m/b.txt"))
     asyncio.run(src.execute("cat /m/a.txt"))
-    expected_commands = [e.command for e in src.history.entries()]
+    expected_commands = [e["command"] for e in src.history]
     assert len(expected_commands) == 3
 
     snap = tmp_path / "ws.tar"
     asyncio.run(src.snapshot(snap))
     dst = Workspace.load(snap)
 
-    got_commands = [e.command for e in dst.history.entries()]
+    got_commands = [e["command"] for e in dst.history]
     assert got_commands == expected_commands
 
 

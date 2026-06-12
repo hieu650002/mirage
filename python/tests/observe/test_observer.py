@@ -82,10 +82,58 @@ def test_multiple_entries_appended():
     assert len(lines) == 3
 
 
-def test_observer_prefix():
+def _command_record(command: str, session: str, ts: float) -> ExecutionRecord:
+    return ExecutionRecord(
+        agent="a",
+        command=command,
+        stdout=b"",
+        stdin=None,
+        exit_code=0,
+        tree=ExecutionNode(command=command),
+        timestamp=ts,
+        session_id=session,
+    )
+
+
+def test_log_clear_appends_tombstone():
     resource = RAMResource()
-    obs = Observer(resource=resource, prefix="/audit")
-    assert obs.prefix == "/audit"
+    obs = Observer(resource=resource)
+    asyncio.run(obs.log_clear(session="s1", agent="a1"))
+    events = obs.events()
+    assert events[-1]["type"] == "clear"
+    assert events[-1]["session"] == "s1"
+
+
+def test_command_events_all_sessions_ordered():
+    resource = RAMResource()
+    obs = Observer(resource=resource)
+    asyncio.run(obs.log_command(_command_record("ls /a", "s2", 2.0)))
+    asyncio.run(obs.log_command(_command_record("ls /b", "s1", 1.0)))
+    op = OpRecord(
+        op="read",
+        path="/f",
+        source="ram",
+        bytes=0,
+        timestamp=1500,
+        duration_ms=1,
+    )
+    asyncio.run(obs.log_op(op, agent="a", session="s1"))
+    events = obs.command_events()
+    assert [e["command"] for e in events] == ["ls /b", "ls /a"]
+    assert all(e["type"] == "command" for e in events)
+
+
+def test_session_command_events_respects_last_clear():
+    resource = RAMResource()
+    obs = Observer(resource=resource)
+    asyncio.run(obs.log_command(_command_record("cmd A", "s1", 1.0)))
+    asyncio.run(obs.log_clear(session="s1", agent="a"))
+    asyncio.run(obs.log_command(_command_record("cmd B", "s1", 2.0)))
+    asyncio.run(obs.log_command(_command_record("cmd C", "s2", 3.0)))
+    s1 = obs.session_command_events("s1")
+    s2 = obs.session_command_events("s2")
+    assert [e["command"] for e in s1] == ["cmd B"]
+    assert [e["command"] for e in s2] == ["cmd C"]
 
 
 def test_observer_sessions_tracked():

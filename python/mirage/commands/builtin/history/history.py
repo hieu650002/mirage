@@ -15,33 +15,28 @@
 from mirage.accessor.base import Accessor, NOOPAccessor
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.core.history.render import render_history_listing
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
-from mirage.workspace.history import ExecutionHistory
+
+DEFAULT_SESSION = "default"
 
 
-@command("history", resource=None, spec=SPECS["history"])
+@command("history", resource="history", spec=SPECS["history"])
 async def history_cmd(
     accessor: Accessor = NOOPAccessor(),
     paths: list[PathSpec] | None = None,
     *texts: str,
     stdin: bytes | None = None,
     c: bool = False,
-    history: ExecutionHistory | None = None,
     session_id: str | None = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    if history is None:
-        return None, IOResult(
-            exit_code=1,
-            stderr=b"history: not enabled for this workspace\n",
-        )
+    observer = accessor.observer
+    session = session_id if session_id is not None else DEFAULT_SESSION
     if c:
-        history.clear()
+        await observer.log_clear(session=session)
         return None, IOResult()
-    all_entries = history.entries()
-    scoped = ([r for r in all_entries if r.session_id == session_id]
-              if session_id is not None else all_entries)
     n = None
     if texts:
         try:
@@ -49,13 +44,6 @@ async def history_cmd(
         except ValueError:
             err = f"history: {texts[0]}: numeric argument required\n".encode()
             return None, IOResult(exit_code=1, stderr=err)
-    entries = scoped[-n:] if n is not None and n >= 0 else scoped
-    total = len(scoped)
-    width = len(str(total))
-    start_idx = total - len(entries) + 1
-    lines = [
-        f"{str(start_idx + i).rjust(width)}  {rec.command}"
-        for i, rec in enumerate(entries)
-    ]
-    output = "\n".join(lines) + ("\n" if lines else "")
+    events = observer.session_command_events(session)
+    output = render_history_listing(events, n=n)
     return output.encode(), IOResult()
