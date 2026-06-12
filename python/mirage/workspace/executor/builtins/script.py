@@ -138,7 +138,7 @@ async def handle_bash(
 # divergence). The regex also keeps Python/TypeScript parsing identical:
 # float() alone would accept "inf", "nan", "1_0", and surrounding whitespace
 # that Number() rejects, and Number() accepts hex that float() rejects.
-SLEEP_INTERVAL = re.compile(r"\+?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?")
+SLEEP_INTERVAL = re.compile(r"\+?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?")
 
 
 async def handle_sleep(

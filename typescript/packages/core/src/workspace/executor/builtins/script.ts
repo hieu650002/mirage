@@ -166,7 +166,7 @@ export async function handleSource(
 // divergence). The regex also keeps Python/TypeScript parsing identical:
 // Number() alone would accept "0x10", "Infinity", and the empty string that
 // float() rejects, and float() accepts "inf", "nan", and "1_0".
-const SLEEP_INTERVAL = /^\+?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/
+const SLEEP_INTERVAL = /^\+?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 
 export async function handleSleep(args: string[], signal?: AbortSignal): Promise<Result> {
   const raw = args[0]
