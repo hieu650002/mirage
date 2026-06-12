@@ -14,13 +14,13 @@
 
 import asyncio
 import json
-import time
 
+from mirage.io import IOResult
 from mirage.observe import OpRecord
+from mirage.observe.log_entry import EVENT_COMMAND, LogEntry
 from mirage.observe.observer import Observer
 from mirage.observe.store import RAMObserverStore
 from mirage.utils.dates import utc_date_folder
-from mirage.workspace.types import ExecutionNode, ExecutionRecord
 
 
 def test_log_op_writes_jsonl():
@@ -43,25 +43,22 @@ def test_log_op_writes_jsonl():
     assert parsed["op"] == "read"
 
 
-def test_log_command_writes_jsonl():
+def test_log_execution_writes_jsonl():
     store = RAMObserverStore()
     obs = Observer(store=store)
-    rec = ExecutionRecord(
-        agent="agent-1",
-        command="ls /data",
-        stdout=b"file.csv\n",
-        stdin=None,
-        exit_code=0,
-        tree=ExecutionNode(command="ls /data"),
-        timestamp=time.time(),
-        session_id="sess-1",
-    )
-    asyncio.run(obs.log_command(rec))
+    io = IOResult(stdout=b"file.csv\n")
+    asyncio.run(
+        obs.log_execution("ls /data",
+                          io, [],
+                          agent="agent-1",
+                          session="sess-1"))
     data = store.files[f"/{utc_date_folder()}/sess-1.jsonl"]
     parsed = json.loads(data.decode().strip())
     assert parsed["type"] == "command"
     assert parsed["session"] == "sess-1"
     assert parsed["command"] == "ls /data"
+    assert parsed["stdout"] == "file.csv\n"
+    assert parsed["exit_code"] == 0
 
 
 def test_multiple_entries_appended():
@@ -82,17 +79,16 @@ def test_multiple_entries_appended():
     assert len(lines) == 3
 
 
-def _command_record(command: str, session: str, ts: float) -> ExecutionRecord:
-    return ExecutionRecord(
+def _log_command(obs: Observer, command: str, session: str, ts: float) -> None:
+    entry = LogEntry(
+        type=EVENT_COMMAND,
         agent="a",
+        session=session,
+        timestamp=int(ts * 1000),
         command=command,
-        stdout=b"",
-        stdin=None,
         exit_code=0,
-        tree=ExecutionNode(command=command),
-        timestamp=ts,
-        session_id=session,
     )
+    asyncio.run(obs._log(entry))
 
 
 def test_default_store_is_ram():
@@ -110,8 +106,8 @@ def test_log_clear_appends_tombstone():
 
 def test_command_events_all_sessions_append_order():
     obs = Observer()
-    asyncio.run(obs.log_command(_command_record("ls /a", "s2", 2.0)))
-    asyncio.run(obs.log_command(_command_record("ls /b", "s1", 1.0)))
+    _log_command(obs, "ls /a", "s2", 2.0)
+    _log_command(obs, "ls /b", "s1", 1.0)
     op = OpRecord(
         op="read",
         path="/f",
@@ -128,19 +124,19 @@ def test_command_events_all_sessions_append_order():
 
 def test_command_events_same_timestamp_keeps_append_order():
     obs = Observer()
-    asyncio.run(obs.log_command(_command_record("first", "s2", 1.0)))
-    asyncio.run(obs.log_command(_command_record("second", "s1", 1.0)))
-    asyncio.run(obs.log_command(_command_record("third", "s2", 1.0)))
+    _log_command(obs, "first", "s2", 1.0)
+    _log_command(obs, "second", "s1", 1.0)
+    _log_command(obs, "third", "s2", 1.0)
     events = asyncio.run(obs.command_events())
     assert [e["command"] for e in events] == ["first", "second", "third"]
 
 
 def test_session_command_events_respects_last_clear():
     obs = Observer()
-    asyncio.run(obs.log_command(_command_record("cmd A", "s1", 1.0)))
+    _log_command(obs, "cmd A", "s1", 1.0)
     asyncio.run(obs.log_clear(session="s1", agent="a"))
-    asyncio.run(obs.log_command(_command_record("cmd B", "s1", 2.0)))
-    asyncio.run(obs.log_command(_command_record("cmd C", "s2", 3.0)))
+    _log_command(obs, "cmd B", "s1", 2.0)
+    _log_command(obs, "cmd C", "s2", 3.0)
     s1 = asyncio.run(obs.session_command_events("s1"))
     s2 = asyncio.run(obs.session_command_events("s2"))
     assert [e["command"] for e in s1] == ["cmd B"]
@@ -149,11 +145,11 @@ def test_session_command_events_respects_last_clear():
 
 def test_load_events_restores_and_resumes_seq():
     obs = Observer()
-    asyncio.run(obs.log_command(_command_record("old", "s1", 1.0)))
+    _log_command(obs, "old", "s1", 1.0)
     events = asyncio.run(obs.events())
     restored = Observer()
     asyncio.run(restored.load_events(events))
-    asyncio.run(restored.log_command(_command_record("new", "s1", 2.0)))
+    _log_command(restored, "new", "s1", 2.0)
     out = asyncio.run(restored.command_events())
     assert [e["command"] for e in out] == ["old", "new"]
     assert out[1]["seq"] > out[0]["seq"]
@@ -169,9 +165,9 @@ def test_log_command_text_appends_single_entry():
 
 def test_delete_event_removes_entry_and_renumbers():
     obs = Observer()
-    asyncio.run(obs.log_command(_command_record("one", "s1", 1.0)))
-    asyncio.run(obs.log_command(_command_record("two", "s1", 2.0)))
-    asyncio.run(obs.log_command(_command_record("three", "s1", 3.0)))
+    _log_command(obs, "one", "s1", 1.0)
+    _log_command(obs, "two", "s1", 2.0)
+    _log_command(obs, "three", "s1", 3.0)
     asyncio.run(obs.log_delete(session="s1", offset=2))
     events = asyncio.run(obs.session_command_events("s1"))
     assert [e["command"] for e in events] == ["one", "three"]
@@ -179,8 +175,8 @@ def test_delete_event_removes_entry_and_renumbers():
 
 def test_delete_negative_offset_counts_from_end():
     obs = Observer()
-    asyncio.run(obs.log_command(_command_record("one", "s1", 1.0)))
-    asyncio.run(obs.log_command(_command_record("two", "s1", 2.0)))
+    _log_command(obs, "one", "s1", 1.0)
+    _log_command(obs, "two", "s1", 2.0)
     asyncio.run(obs.log_delete(session="s1", offset=-1))
     events = asyncio.run(obs.session_command_events("s1"))
     assert [e["command"] for e in events] == ["one"]
@@ -188,18 +184,37 @@ def test_delete_negative_offset_counts_from_end():
 
 def test_delete_applies_at_issue_time_position():
     obs = Observer()
-    asyncio.run(obs.log_command(_command_record("one", "s1", 1.0)))
+    _log_command(obs, "one", "s1", 1.0)
     asyncio.run(obs.log_delete(session="s1", offset=1))
-    asyncio.run(obs.log_command(_command_record("two", "s1", 2.0)))
+    _log_command(obs, "two", "s1", 2.0)
     events = asyncio.run(obs.session_command_events("s1"))
     assert [e["command"] for e in events] == ["two"]
 
 
 def test_clear_discards_earlier_deletes():
     obs = Observer()
-    asyncio.run(obs.log_command(_command_record("one", "s1", 1.0)))
+    _log_command(obs, "one", "s1", 1.0)
     asyncio.run(obs.log_delete(session="s1", offset=1))
     asyncio.run(obs.log_clear(session="s1"))
-    asyncio.run(obs.log_command(_command_record("two", "s1", 2.0)))
+    _log_command(obs, "two", "s1", 2.0)
     events = asyncio.run(obs.session_command_events("s1"))
     assert [e["command"] for e in events] == ["two"]
+
+
+def test_load_events_rewinds_pre_restore_timeline():
+    src = Observer()
+    _log_command(src, "snap-cmd", "snap", 2.0)
+    snapshot_events = asyncio.run(src.events())
+    obs = Observer()
+    _log_command(obs, "old-live", "live", 1.0)
+    asyncio.run(obs.load_events(snapshot_events))
+    out = asyncio.run(obs.command_events())
+    assert [e["command"] for e in out] == ["snap-cmd"]
+    assert {e["session"] for e in asyncio.run(obs.events())} == {"snap"}
+
+
+def test_load_events_empty_snapshot_still_clears():
+    obs = Observer()
+    _log_command(obs, "old", "s1", 1.0)
+    asyncio.run(obs.load_events([]))
+    assert asyncio.run(obs.events()) == []

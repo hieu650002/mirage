@@ -695,19 +695,28 @@ class Workspace:
         except UsageError as exc:
             msg = f"{exc}\n".encode()
             io = IOResult(exit_code=2, stderr=msg)
-            exec_node = ExecutionNode(command=command, stderr=msg, exit_code=2)
+            exec_node = ExecutionNode(command=command,
+                                      stderr=msg,
+                                      exit_code=2,
+                                      records=scope.records)
             return io
         except Exception as exc:
             io = IOResult(exit_code=1, stderr=str(exc).encode())
             exec_node = ExecutionNode(command=command,
                                       stderr=str(exc).encode(),
-                                      exit_code=1)
+                                      exit_code=1,
+                                      records=scope.records)
             return io
         finally:
+            # One rule on every path: an op that happened is always
+            # accounted — in the execution tree, in byte accounting
+            # (which feeds snapshot fingerprints/drift), and as
+            # observer op events. The command event's exit_code says
+            # whether the line that emitted them succeeded.
             scope.close()
             reset_current_session(session_token)
             self._ops.records.extend(scope.records)
             if is_line:
                 await self.observer.log_execution(
-                    command, io, exec_node.records, agent_id, session_id,
+                    command, io, scope.records, agent_id, session_id,
                     self._session_cwd(session_id))

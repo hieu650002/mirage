@@ -14,27 +14,25 @@
 
 import asyncio
 
+from mirage.observe.log_entry import EVENT_COMMAND, LogEntry
 from mirage.observe.observer import Observer
 from mirage.resource.history import HistoryViewResource
 from mirage.types import MountMode
 from mirage.workspace.mount.registry import MountRegistry
-from mirage.workspace.types import ExecutionNode, ExecutionRecord
 
 
 def _observer_with(commands: list[tuple[str, str]]) -> Observer:
     obs = Observer()
     for i, (cmd, session) in enumerate(commands):
-        rec = ExecutionRecord(
+        entry = LogEntry(
+            type=EVENT_COMMAND,
             agent="a",
+            session=session,
+            timestamp=(i + 1) * 1000,
             command=cmd,
-            stdout=b"",
-            stdin=None,
             exit_code=0,
-            tree=ExecutionNode(command=cmd),
-            timestamp=float(i + 1),
-            session_id=session,
         )
-        asyncio.run(obs.log_command(rec))
+        asyncio.run(obs._log(entry))
     return obs
 
 

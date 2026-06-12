@@ -17,7 +17,7 @@ import time
 
 from mirage.io.types import IOResult
 from mirage.observe.log_entry import (EVENT_CLEAR, EVENT_COMMAND, EVENT_DELETE,
-                                      LogEntry)
+                                      STDOUT_TRUNCATE, LogEntry)
 from mirage.observe.record import OpRecord
 from mirage.observe.store import ObserverStore, RAMObserverStore
 from mirage.utils.dates import utc_date_folder
@@ -84,15 +84,6 @@ class Observer:
         """
         await self._log(LogEntry.from_op_record(rec, agent, session, cwd))
 
-    async def log_command(self, rec, cwd: str | None = None) -> None:
-        """Persist an ExecutionRecord as a JSONL line.
-
-        Args:
-            rec (ExecutionRecord): The execution record.
-            cwd (str | None): Session cwd at log time.
-        """
-        await self._log(LogEntry.from_execution_record(rec, cwd))
-
     async def log_execution(
         self,
         command: str,
@@ -127,7 +118,7 @@ class Observer:
                 cwd=cwd,
                 command=command,
                 exit_code=io.exit_code,
-                stdout=stdout.decode(errors="replace")[:4096],
+                stdout=stdout.decode(errors="replace")[:STDOUT_TRUNCATE],
             ))
 
     async def log_command_text(self,
@@ -248,16 +239,22 @@ class Observer:
         return visible
 
     async def load_events(self, events: list[dict]) -> None:
-        """Load events back into the store (snapshot restore path).
+        """Rewind the recorder to a snapshot's events.
 
-        Groups by session and rewrites each session's JSONL under
-        today's date folder; original date folders are not preserved,
-        which the views never depend on (they filter by the session
-        field and sort by seq).
+        Clears the store first, mirroring ``ws._cache.clear()`` on the
+        checkout path: restoring means becoming the snapshot, so
+        events from the pre-restore timeline (including sessions the
+        snapshot doesn't know about) do not survive. With only the
+        snapshot's events left, their preserved seqs are collision
+        free and the counter resumes past their maximum. Events are
+        rewritten per session under today's date folder; original
+        date folders are not preserved, which the views never depend
+        on (they filter by the session field and sort by seq).
 
         Args:
             events (list[dict]): LogEntry dicts from StateKey.HISTORY.
         """
+        await self._store.clear()
         day = utc_date_folder()
         by_session: dict[str, list[str]] = {}
         max_seq = self._seq - 1

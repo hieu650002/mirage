@@ -208,10 +208,9 @@ def _restore_cache(ws, state: dict) -> None:
 
 
 async def _restore_history(ws, state: dict) -> None:
-    events = state.get(StateKey.HISTORY)
-    if not events:
-        return
-    await ws.observer.load_events(events)
+    # Always load (load_events clears first): a snapshot with empty
+    # history still rewinds the recorder, same as the cache clear.
+    await ws.observer.load_events(state.get(StateKey.HISTORY) or [])
 
 
 def _restore_jobs(ws, state: dict) -> None:

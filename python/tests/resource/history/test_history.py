@@ -16,27 +16,25 @@ import asyncio
 
 import pytest
 
+from mirage.observe.log_entry import EVENT_COMMAND, LogEntry
 from mirage.observe.observer import Observer
 from mirage.resource.history import HistoryViewResource
 from mirage.types import FileType, MountMode
 from mirage.workspace.mount.registry import MountRegistry
-from mirage.workspace.types import ExecutionNode, ExecutionRecord
 
 
 def _observer_with(commands: list[tuple[str, str]]) -> Observer:
     obs = Observer()
     for i, (cmd, session) in enumerate(commands):
-        rec = ExecutionRecord(
+        entry = LogEntry(
+            type=EVENT_COMMAND,
             agent="a",
+            session=session,
+            timestamp=(i + 1) * 1000,
             command=cmd,
-            stdout=b"",
-            stdin=None,
             exit_code=0,
-            tree=ExecutionNode(command=cmd),
-            timestamp=float(i + 1),
-            session_id=session,
         )
-        asyncio.run(obs.log_command(rec))
+        asyncio.run(obs._log(entry))
     return obs
 
 
@@ -57,16 +55,14 @@ def test_read_reflects_new_events_without_invalidation():
     mount = _mounted(obs)
     first = asyncio.run(mount.execute_op("read", "/.bash_history"))
     asyncio.run(
-        obs.log_command(
-            ExecutionRecord(
+        obs._log(
+            LogEntry(
+                type=EVENT_COMMAND,
                 agent="a",
+                session="s1",
+                timestamp=2000,
                 command="pwd",
-                stdout=b"",
-                stdin=None,
                 exit_code=0,
-                tree=ExecutionNode(command="pwd"),
-                timestamp=2.0,
-                session_id="s1",
             )))
     second = asyncio.run(mount.execute_op("read", "/.bash_history"))
     assert first != second

@@ -22,6 +22,7 @@ from mirage.commands.spec import SPECS
 from mirage.io.types import ByteSource, IOResult
 from mirage.resource.ram import RAMResource
 from mirage.types import MountMode, PathSpec
+from mirage.workspace.snapshot import apply_state_dict, read_tar
 from mirage.workspace.workspace import Workspace
 
 
@@ -322,3 +323,33 @@ def test_unrecorded_execute_skips_history_keeps_caller_ops():
     _exec(ws, "cat /data/f.txt", record=False)
     commands = [e["command"] for e in asyncio.run(ws.history())]
     assert commands == ["echo hi > /data/f.txt"]
+
+
+async def _raise_induced(io):
+    raise RuntimeError("induced")
+
+
+def test_in_place_restore_rewinds_history(tmp_path):
+    src = _ws()
+    _exec(src, "echo from-snapshot")
+    snap = tmp_path / "s.tar"
+    asyncio.run(src.snapshot(snap))
+    dst = _ws()
+    _exec(dst, "echo pre-restore")
+    asyncio.run(apply_state_dict(dst, read_tar(snap)))
+    cmds = [e["command"] for e in asyncio.run(dst.history())]
+    assert cmds == ["echo from-snapshot"]
+
+
+def test_failed_line_ops_still_in_audit(monkeypatch):
+    ws = _ws()
+    _exec(ws, "echo hi > /data/f.txt")
+    monkeypatch.setattr(ws, "apply_io", _raise_induced)
+    io = _exec(ws, "cat /data/f.txt")
+    assert io.exit_code == 1
+    events = asyncio.run(ws.observer.events())
+    reads = [e for e in events if e["type"] == "op" and e["op"] == "read"]
+    assert any(e["path"] == "/data/f.txt" for e in reads)
+    last_cmd = [e for e in events if e["type"] == "command"][-1]
+    assert last_cmd["command"] == "cat /data/f.txt"
+    assert last_cmd["exit_code"] == 1

@@ -21,6 +21,7 @@ EVENT_OP = "op"
 EVENT_COMMAND = "command"
 EVENT_CLEAR = "clear"
 EVENT_DELETE = "delete"
+STDOUT_TRUNCATE = 4096
 
 
 @dataclass
@@ -90,28 +91,6 @@ class LogEntry:
             source=rec.source,
             bytes=rec.bytes,
             duration_ms=rec.duration_ms,
-        )
-
-    @staticmethod
-    def from_execution_record(rec, cwd: str | None = None) -> "LogEntry":
-        """Create a LogEntry from an ExecutionRecord.
-
-        Args:
-            rec (ExecutionRecord): The execution record.
-            cwd (str | None): Session cwd at log time.
-
-        Returns:
-            LogEntry: Unified log entry.
-        """
-        return LogEntry(
-            type=EVENT_COMMAND,
-            agent=rec.agent,
-            session=rec.session_id,
-            timestamp=int(rec.timestamp * 1000),
-            cwd=cwd,
-            command=rec.command,
-            exit_code=rec.exit_code,
-            stdout=rec.stdout.decode(errors="replace")[:4096],
         )
 
     def to_json_line(self) -> str:

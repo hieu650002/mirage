@@ -93,7 +93,7 @@ class RedisObserverStore:
         return {p: v or b"" for p, v in zip(paths, values)}
 
     async def clear(self) -> None:
-        """Delete every stored file and the index (test/integ helper)."""
+        """Delete every stored file and the index (rewind/teardown)."""
         paths = await self._indexed_paths()
         keys = [f"{self._prefix}{p}" for p in paths] + [self._index_key]
         await self._client.delete(*keys)

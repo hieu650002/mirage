@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import os
+import shutil
 
 import aiofiles
 import aiofiles.os
@@ -74,6 +75,11 @@ class DiskObserverStore:
             dict[str, bytes]: Mapping of matching key to content.
         """
         return await self._read_files(suffix)
+
+    async def clear(self) -> None:
+        """Delete every stored file (snapshot-restore rewind)."""
+        if os.path.isdir(self._root):
+            shutil.rmtree(self._root)
 
     async def _read_files(self, suffix: str | None) -> dict[str, bytes]:
         out: dict[str, bytes] = {}

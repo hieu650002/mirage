@@ -66,6 +66,10 @@ class ObserverStore(Protocol):
         """
         ...
 
+    async def clear(self) -> None:
+        """Delete every stored file (snapshot-restore rewind)."""
+        ...
+
 
 class RAMObserverStore:
     """In-memory ObserverStore backed by a plain dict (the default)."""
@@ -109,3 +113,7 @@ class RAMObserverStore:
             dict[str, bytes]: Mapping of matching key to content.
         """
         return {k: v for k, v in self.files.items() if k.endswith(suffix)}
+
+    async def clear(self) -> None:
+        """Delete every stored file (snapshot-restore rewind)."""
+        self.files.clear()
