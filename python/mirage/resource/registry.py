@@ -53,6 +53,9 @@ REGISTRY: dict[str, ResourceEntry] = {
     "ceph":
     ResourceEntry("mirage.resource.ceph:CephResource",
                   "mirage.resource.ceph:CephConfig"),
+    "seaweedfs":
+    ResourceEntry("mirage.resource.seaweedfs:SeaweedFSResource",
+                  "mirage.resource.seaweedfs:SeaweedFSConfig"),
     "wasabi":
     ResourceEntry("mirage.resource.wasabi:WasabiResource",
                   "mirage.resource.wasabi:WasabiConfig"),

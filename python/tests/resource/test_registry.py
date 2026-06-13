@@ -28,6 +28,7 @@ EXPECTED_RESOURCES = {
     "gcs",
     "minio",
     "ceph",
+    "seaweedfs",
     "wasabi",
     "backblaze",
     "digitalocean",
