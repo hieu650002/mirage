@@ -19,7 +19,9 @@
     "overrides": {
       "shell-quote@<1.8.4": ">=1.8.4",
       "esbuild@<0.28.1": ">=0.28.1",
-      "protobufjs@>=8.0.0 <8.0.2": "8.0.2"
+      "protobufjs@>=8.0.0 <8.2.0": ">=8.2.0",
+      "@anthropic-ai/sdk@>=0.79.0 <0.91.1": ">=0.91.1",
+      "ip-address@<=10.1.0": ">=10.1.1"
     }
   },
   "devDependencies": {
