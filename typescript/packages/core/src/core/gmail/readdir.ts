@@ -34,8 +34,12 @@ const MULTI_UNDERSCORE = /_+/g
 
 export function sanitize(text: string): string {
   if (text.trim() === '') return 'No_Subject'
-  let cleaned = text.replace(UNSAFE, '_').replace(/ /g, '_')
-  cleaned = cleaned.replace(MULTI_UNDERSCORE, '_').replace(/^_+|_+$/g, '')
+  let cleaned = text.replace(UNSAFE, '_').replace(/ /g, '_').replace(MULTI_UNDERSCORE, '_')
+  let start = 0
+  let end = cleaned.length
+  while (start < end && cleaned.charCodeAt(start) === 95) start++
+  while (end > start && cleaned.charCodeAt(end - 1) === 95) end--
+  cleaned = cleaned.slice(start, end)
   if (cleaned.length > TITLE_MAX) cleaned = `${cleaned.slice(0, TITLE_MAX - 3)}...`
   return cleaned
 }
