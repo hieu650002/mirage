@@ -15,6 +15,11 @@
     "release": "pnpm build && changeset publish",
     "mirage": "node packages/cli/dist/bin/mirage.js"
   },
+  "pnpm": {
+    "overrides": {
+      "shell-quote@<1.8.4": ">=1.8.4"
+    }
+  },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1033.0",
     "@aws-sdk/s3-request-presigner": "^3.1033.0",
@@ -32,6 +37,6 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.6"
   }
 }
