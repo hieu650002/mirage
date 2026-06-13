@@ -104,10 +104,10 @@ def test_log_clear_appends_tombstone():
     assert events[-1]["session"] == "s1"
 
 
-def test_command_events_all_sessions_append_order():
+def test_command_events_all_sessions_timestamp_order():
     obs = Observer()
-    _log_command(obs, "ls /a", "s2", 2.0)
-    _log_command(obs, "ls /b", "s1", 1.0)
+    _log_command(obs, "ls /a", "s2", 1.0)
+    _log_command(obs, "ls /b", "s1", 2.0)
     op = OpRecord(
         op="read",
         path="/f",
@@ -122,12 +122,12 @@ def test_command_events_all_sessions_append_order():
     assert all(e["type"] == "command" for e in events)
 
 
-def test_command_events_same_timestamp_keeps_append_order():
+def test_session_same_timestamp_keeps_append_order():
     obs = Observer()
-    _log_command(obs, "first", "s2", 1.0)
+    _log_command(obs, "first", "s1", 1.0)
     _log_command(obs, "second", "s1", 1.0)
-    _log_command(obs, "third", "s2", 1.0)
-    events = asyncio.run(obs.command_events())
+    _log_command(obs, "third", "s1", 1.0)
+    events = asyncio.run(obs.session_command_events("s1"))
     assert [e["command"] for e in events] == ["first", "second", "third"]
 
 
@@ -143,7 +143,7 @@ def test_session_command_events_respects_last_clear():
     assert [e["command"] for e in s2] == ["cmd C"]
 
 
-def test_load_events_restores_and_resumes_seq():
+def test_load_events_restores_and_resumes():
     obs = Observer()
     _log_command(obs, "old", "s1", 1.0)
     events = asyncio.run(obs.events())
@@ -152,7 +152,6 @@ def test_load_events_restores_and_resumes_seq():
     _log_command(restored, "new", "s1", 2.0)
     out = asyncio.run(restored.command_events())
     assert [e["command"] for e in out] == ["old", "new"]
-    assert out[1]["seq"] > out[0]["seq"]
 
 
 def test_log_command_text_appends_single_entry():

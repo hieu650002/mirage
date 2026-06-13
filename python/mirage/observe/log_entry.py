@@ -50,7 +50,6 @@ class LogEntry:
     agent: str
     session: str
     timestamp: int
-    seq: int | None = None
     cwd: str | None = None
     op: str | None = None
     path: str | None = None

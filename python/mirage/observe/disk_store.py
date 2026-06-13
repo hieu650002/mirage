@@ -13,13 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import os
-import shutil
 
 import aiofiles
 import aiofiles.os
 
+from mirage.observe.store import ObserverStoreBase
 
-class DiskObserverStore:
+
+class DiskObserverStore(ObserverStoreBase):
     """ObserverStore backed by a directory of JSONL files.
 
     Args:
@@ -57,40 +58,51 @@ class DiskObserverStore:
         async with aiofiles.open(abs_path, "wb") as f:
             await f.write(data)
 
-    async def read_all(self) -> dict[str, bytes]:
-        """Read every stored file under root.
-
-        Returns:
-            dict[str, bytes]: Mapping of file key to content.
-        """
-        return await self._read_files(None)
-
     async def read_matching(self, suffix: str) -> dict[str, bytes]:
         """Read only the files whose key ends with suffix.
 
         Args:
-            suffix (str): File-key suffix.
+            suffix (str): File-key suffix; empty matches everything.
 
         Returns:
             dict[str, bytes]: Mapping of matching key to content.
         """
-        return await self._read_files(suffix)
+        out: dict[str, bytes] = {}
+        files, _dirs = await self._walk()
+        for abs_path in files:
+            rel = "/" + os.path.relpath(abs_path, self._root)
+            if not rel.endswith(suffix):
+                continue
+            async with aiofiles.open(abs_path, "rb") as f:
+                out[rel] = await f.read()
+        return out
 
     async def clear(self) -> None:
         """Delete every stored file (snapshot-restore rewind)."""
-        if os.path.isdir(self._root):
-            shutil.rmtree(self._root)
+        files, dirs = await self._walk()
+        for abs_path in files:
+            await aiofiles.os.remove(abs_path)
+        for d in reversed(dirs):
+            await aiofiles.os.rmdir(d)
 
-    async def _read_files(self, suffix: str | None) -> dict[str, bytes]:
-        out: dict[str, bytes] = {}
-        if not os.path.isdir(self._root):
-            return out
-        for dirpath, _dirs, files in os.walk(self._root):
-            for name in files:
-                abs_path = os.path.join(dirpath, name)
-                rel = "/" + os.path.relpath(abs_path, self._root)
-                if suffix is not None and not rel.endswith(suffix):
-                    continue
-                async with aiofiles.open(abs_path, "rb") as f:
-                    out[rel] = await f.read()
-        return out
+    async def _walk(self) -> tuple[list[str], list[str]]:
+        """List all file paths and directories under root.
+
+        Returns:
+            tuple[list[str], list[str]]: File paths, and directories
+            ordered parent before child (including root).
+        """
+        files: list[str] = []
+        dirs: list[str] = []
+        if not await aiofiles.os.path.isdir(self._root):
+            return files, dirs
+        stack = [self._root]
+        while stack:
+            d = stack.pop()
+            dirs.append(d)
+            for entry in await aiofiles.os.scandir(d):
+                if entry.is_dir():
+                    stack.append(entry.path)
+                else:
+                    files.append(entry.path)
+        return files, dirs

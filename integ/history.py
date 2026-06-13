@@ -29,7 +29,11 @@ CASES: list[tuple[str, str, str]] = [
     ("history_last_2", "default", "history 2"),
     ("history_s2_isolated", "s2", "history"),
     # ----- /.bash_history: GNU file across ALL sessions -----
-    ("bash_history_commands", "default", "grep -v '^#' /.bash_history"),
+    # sort: the merged view orders by timestamp, so sub-millisecond
+    # interleaving of different sessions is machine-dependent; sorting
+    # makes the cross-session content assertion deterministic. The
+    # per-session `history` cases above cover ordering deterministically.
+    ("bash_history_commands", "default", "grep -v '^#' /.bash_history | sort"),
     ("bash_history_grep_marker", "default", "grep marker-s2 /.bash_history"),
     ("bash_history_timestamp_lines", "default", "grep -c '^#' /.bash_history"),
     ("bash_history_pipe", "default",

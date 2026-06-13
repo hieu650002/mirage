@@ -51,6 +51,8 @@ async def history_cmd(
     shell has no `!` history expansion, so every word is its own
     expansion); unlike bash, the `history -p` invocation itself is
     still recorded, because the recorder is also the audit log.
+    When -s and -p are combined, -s wins and nothing is printed
+    (bash-verified for both -ps and -sp).
     """
     observer = accessor.observer
     session = session_id if session_id is not None else DEFAULT_SESSION_ID
@@ -71,7 +73,7 @@ async def history_cmd(
             " ".join(texts),
             session=session,
             cwd=cwd.original if cwd is not None else None)
-    if p:
+    if p and not s:
         out = "\n".join(texts) + "\n" if texts else ""
         return out.encode(), IOResult()
     if c or d is not None or s or a or r or w or n:

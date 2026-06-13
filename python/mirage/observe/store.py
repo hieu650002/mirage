@@ -70,12 +70,40 @@ class ObserverStore(Protocol):
         """Delete every stored file (snapshot-restore rewind)."""
         ...
 
+    async def close(self) -> None:
+        """Release any held connections or handles."""
+        ...
 
-class RAMObserverStore:
+
+class ObserverStoreBase:
+    """Shared ObserverStore behavior.
+
+    Implementations only provide ``append``/``write``/
+    ``read_matching``/``clear``; ``read_all`` is reading with the
+    empty suffix (every key matches), and ``close`` defaults to a
+    no-op for stores that hold no connections.
+    """
+
+    async def read_matching(self, suffix: str) -> dict[str, bytes]:
+        raise NotImplementedError
+
+    async def read_all(self) -> dict[str, bytes]:
+        """Read every stored file.
+
+        Returns:
+            dict[str, bytes]: Mapping of file key to content.
+        """
+        return await self.read_matching("")
+
+    async def close(self) -> None:
+        """Release any held connections or handles."""
+
+
+class RAMObserverStore(ObserverStoreBase):
     """In-memory ObserverStore backed by a plain dict (the default)."""
 
     def __init__(self) -> None:
-        self.files: dict[str, bytes] = {}
+        self.files: dict[str, bytearray] = {}
 
     async def append(self, path: str, data: bytes) -> None:
         """Append bytes to the file at path.
@@ -84,7 +112,9 @@ class RAMObserverStore:
             path (str): File key.
             data (bytes): Bytes to append.
         """
-        self.files[path] = self.files.get(path, b"") + data
+        if path not in self.files:
+            self.files[path] = bytearray()
+        self.files[path] += data
 
     async def write(self, path: str, data: bytes) -> None:
         """Overwrite the file at path.
@@ -93,15 +123,7 @@ class RAMObserverStore:
             path (str): File key.
             data (bytes): Full new content.
         """
-        self.files[path] = data
-
-    async def read_all(self) -> dict[str, bytes]:
-        """Read every stored file.
-
-        Returns:
-            dict[str, bytes]: Mapping of file key to content.
-        """
-        return dict(self.files)
+        self.files[path] = bytearray(data)
 
     async def read_matching(self, suffix: str) -> dict[str, bytes]:
         """Read only the files whose key ends with suffix.
@@ -112,7 +134,10 @@ class RAMObserverStore:
         Returns:
             dict[str, bytes]: Mapping of matching key to content.
         """
-        return {k: v for k, v in self.files.items() if k.endswith(suffix)}
+        return {
+            k: bytes(v)
+            for k, v in self.files.items() if k.endswith(suffix)
+        }
 
     async def clear(self) -> None:
         """Delete every stored file (snapshot-restore rewind)."""

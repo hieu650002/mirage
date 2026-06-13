@@ -54,15 +54,12 @@ class Observer:
 
     def __init__(self, store: ObserverStore | None = None) -> None:
         self._store = store if store is not None else RAMObserverStore()
-        self._seq = 0
 
     @property
     def store(self) -> ObserverStore:
         return self._store
 
     async def _log(self, entry: LogEntry) -> None:
-        entry.seq = self._seq
-        self._seq += 1
         line = (entry.to_json_line() + "\n").encode()
         await self._store.append(f"/{utc_date_folder()}/{entry.session}.jsonl",
                                  line)
@@ -106,6 +103,9 @@ class Observer:
             session (str): Session the line ran in.
             cwd (str | None): Session cwd at completion.
         """
+        # TODO: batch the op lines and the command line into a single
+        # store.append so one typed line costs one roundtrip and lands
+        # atomically in the store.
         for rec in op_records:
             await self.log_op(rec, agent, session, cwd)
         stdout = await io.materialize_stdout()
@@ -182,17 +182,19 @@ class Observer:
             ))
 
     async def events(self) -> list[dict]:
-        """All recorded events across sessions, in append order.
+        """All recorded events across sessions, in timestamp order.
 
-        Ordered by the monotonic per-recorder seq: a total order even
-        when millisecond timestamps tie, immune to clock steps.
-        load_events backfills seq, so every stored event has one.
+        Timestamps are UTC epoch milliseconds. The sort is stable over
+        the per-file line order, so events that share a millisecond
+        (one line's ops plus its command entry) keep the order they
+        were appended in; append order within a session file is the
+        contract.
 
         Returns:
             list[dict]: Parsed LogEntry dicts.
         """
         out = _parse_files(await self._store.read_all())
-        out.sort(key=lambda e: e.get("seq", 0))
+        out.sort(key=lambda e: e.get("timestamp", 0))
         return out
 
     async def command_events(self) -> list[dict]:
@@ -221,7 +223,6 @@ class Observer:
         """
         files = await self._store.read_matching(f"/{session}.jsonl")
         entries = _parse_files(files)
-        entries.sort(key=lambda e: e.get("seq", 0))
         last_clear = -1
         for i, e in enumerate(entries):
             if e.get("type") == EVENT_CLEAR:
@@ -244,12 +245,11 @@ class Observer:
         Clears the store first, mirroring ``ws._cache.clear()`` on the
         checkout path: restoring means becoming the snapshot, so
         events from the pre-restore timeline (including sessions the
-        snapshot doesn't know about) do not survive. With only the
-        snapshot's events left, their preserved seqs are collision
-        free and the counter resumes past their maximum. Events are
-        rewritten per session under today's date folder; original
-        date folders are not preserved, which the views never depend
-        on (they filter by the session field and sort by seq).
+        snapshot doesn't know about) do not survive. Events are
+        rewritten per session under today's date folder, preserving
+        their list order as line order; original date folders are not
+        preserved, which the views never depend on (they filter by
+        the session field).
 
         Args:
             events (list[dict]): LogEntry dicts from StateKey.HISTORY.
@@ -257,15 +257,10 @@ class Observer:
         await self._store.clear()
         day = utc_date_folder()
         by_session: dict[str, list[str]] = {}
-        max_seq = self._seq - 1
-        for i, e in enumerate(events):
-            if e.get("seq") is None:
-                e = {**e, "seq": i}
-            max_seq = max(max_seq, e["seq"])
+        for e in events:
             session = e.get("session", "default")
             by_session.setdefault(session, []).append(
                 json.dumps(e, separators=(",", ":")))
-        self._seq = max_seq + 1
         for session, lines in by_session.items():
             await self._store.write(f"/{day}/{session}.jsonl",
                                     ("\n".join(lines) + "\n").encode())

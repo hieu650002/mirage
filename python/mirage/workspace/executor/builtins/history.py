@@ -41,7 +41,9 @@ def _parse_args(
         succeeded). Any dash-leading token is option-parsed, digits
         included (`history -1` is an invalid option in bash); `--` or
         the first operand ends option parsing, so `history -s rm -rf`
-        stores "rm -rf" as text.
+        stores "rm -rf" as text. `-d` takes the rest of its token as
+        the offset when attached (`-d3`, and `-dc` deletes entry "c"),
+        otherwise the next token.
     """
     flags: dict[str, object] = {}
     texts: list[str] = []
@@ -55,16 +57,24 @@ def _parse_args(
         elif token == "--":
             options_done = True
         else:
-            for ch in token[1:]:
+            j = 1
+            while j < len(token):
+                ch = token[j]
                 if ch not in OPTION_CHARS:
                     return {}, [], f"history: -{ch}: invalid option\n"
                 flags[ch] = True
-            if flags.get("d") is True:
-                if i + 1 >= len(args):
-                    return ({}, [],
-                            "history: -d: option requires an argument\n")
-                i += 1
-                flags["d"] = args[i]
+                if ch == "d":
+                    rest = token[j + 1:]
+                    if rest:
+                        flags["d"] = rest
+                    elif i + 1 < len(args):
+                        i += 1
+                        flags["d"] = args[i]
+                    else:
+                        return ({}, [],
+                                "history: -d: option requires an argument\n")
+                    break
+                j += 1
         i += 1
     return flags, texts, None
 

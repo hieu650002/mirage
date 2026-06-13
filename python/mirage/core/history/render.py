@@ -56,7 +56,11 @@ def render_history_listing(
         str: Numbered listing, right-justified, two-space separated.
     """
     scoped = [e for e in events if e.get("type") == EVENT_COMMAND][-histsize:]
-    entries = scoped[-n:] if n is not None and n >= 0 else scoped
+    if n is None or n < 0:
+        entries = scoped
+    else:
+        # bash lists nothing for n=0; scoped[-0:] would list everything.
+        entries = scoped[-n:] if n > 0 else []
     total = len(scoped)
     width = len(str(total))
     start_idx = total - len(entries) + 1

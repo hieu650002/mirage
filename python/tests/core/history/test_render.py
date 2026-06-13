@@ -68,6 +68,11 @@ def test_render_history_listing_last_n():
     assert render_history_listing(events, n=2) == "4  c3\n5  c4\n"
 
 
+def test_render_history_listing_zero_lists_nothing():
+    events = [{"type": "command", "command": f"c{i}"} for i in range(5)]
+    assert render_history_listing(events, n=0) == ""
+
+
 def test_render_history_listing_caps_histsize():
     events = [{"type": "command", "command": f"c{i}"} for i in range(600)]
     lines = render_history_listing(events).splitlines()

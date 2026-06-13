@@ -63,7 +63,6 @@ from mirage.workspace.snapshot import (ContentDriftError, apply_state_dict,
                                        read_tar, requires_resource_override)
 from mirage.workspace.snapshot import snapshot as _write_snapshot
 from mirage.workspace.snapshot import to_state_dict
-from mirage.workspace.types import ExecutionNode
 
 logger = logging.getLogger(__name__)
 
@@ -614,6 +613,9 @@ class Workspace:
                     cwd=self._fuse.mountpoint,
                     timeout=native_timeout,
                     name=native_name)
+                # TODO: record native (FUSE) executions in history and
+                # the audit log; this path returns before the recording
+                # scope opens, so native commands are invisible to both.
                 return IOResult(exit_code=code, stderr=stderr, stdout=stdout)
 
         session = self._session_mgr.get(session_id)
@@ -629,7 +631,6 @@ class Workspace:
             effective_session = session
         self._current_agent_id = agent_id
         io = IOResult()
-        exec_node = ExecutionNode(command=command, exit_code=0)
         # The line-reader decision (GNU: history is appended where the
         # typed line is read, never inside the evaluator). Internal
         # evaluations and provision runs get an inert scope.
@@ -647,9 +648,6 @@ class Workspace:
                 err = (f"mirage: syntax error near {snippet!r}\n".encode()
                        if snippet else b"mirage: syntax error in command\n")
                 io = IOResult(exit_code=2, stderr=err)
-                exec_node = ExecutionNode(command=command,
-                                          stderr=err,
-                                          exit_code=2)
                 return io
             if provision:
                 prov_name = command.strip().split()[0] if command.strip(
@@ -662,7 +660,7 @@ class Workspace:
                     provision_node(self._registry, self.dispatch,
                                    exec_recursion, ast, effective_session),
                     prov_timeout, prov_name)
-            io, exec_node = await run_command_tree(
+            io, _ = await run_command_tree(
                 self.dispatch,
                 self._registry,
                 self.job_table,
@@ -674,7 +672,6 @@ class Workspace:
                 cancel,
             )
             session.last_exit_code = io.exit_code
-            exec_node.records = scope.records
             await self.apply_io(io)
             return io
         except CommandTimeoutError as exc:
@@ -684,10 +681,6 @@ class Workspace:
                 cancel.set()
             msg = (str(exc) + "\n").encode()
             io = IOResult(exit_code=124, stderr=msg)
-            exec_node = ExecutionNode(command=command,
-                                      stderr=msg,
-                                      exit_code=124,
-                                      records=scope.records)
             session.last_exit_code = 124
             return io
         except (MirageAbortError, ContentDriftError):
@@ -695,24 +688,16 @@ class Workspace:
         except UsageError as exc:
             msg = f"{exc}\n".encode()
             io = IOResult(exit_code=2, stderr=msg)
-            exec_node = ExecutionNode(command=command,
-                                      stderr=msg,
-                                      exit_code=2,
-                                      records=scope.records)
             return io
         except Exception as exc:
             io = IOResult(exit_code=1, stderr=str(exc).encode())
-            exec_node = ExecutionNode(command=command,
-                                      stderr=str(exc).encode(),
-                                      exit_code=1,
-                                      records=scope.records)
             return io
         finally:
             # One rule on every path: an op that happened is always
-            # accounted — in the execution tree, in byte accounting
-            # (which feeds snapshot fingerprints/drift), and as
-            # observer op events. The command event's exit_code says
-            # whether the line that emitted them succeeded.
+            # accounted, in byte accounting (which feeds snapshot
+            # fingerprints/drift) and as observer op events. The
+            # command event's exit_code says whether the line that
+            # emitted them succeeded.
             scope.close()
             reset_current_session(session_token)
             self._ops.records.extend(scope.records)

@@ -191,6 +191,16 @@ def test_history_d_deletes_and_renumbers():
     assert out.startswith("1  echo keep")
 
 
+def test_history_d_attached_offset_deletes():
+    ws = _ws()
+    _exec(ws, "pwd")
+    _exec(ws, "echo keep")
+    io = _exec(ws, "history -d1")
+    assert io.exit_code == 0
+    out = _stdout(_exec(ws, "history"))
+    assert out.startswith("1  echo keep")
+
+
 def test_history_d_out_of_range():
     ws = _ws()
     _exec(ws, "pwd")
@@ -241,6 +251,24 @@ def test_history_p_prints_without_storing_args():
     assert _stdout(io) == "hello\nworld\n"
     out = _stdout(_exec(ws, "history"))
     assert "1  history -p hello world" in out
+
+
+def test_history_ps_suppresses_print():
+    ws = _ws()
+    io = _exec(ws, "history -ps echo hi")
+    assert io.exit_code == 0
+    assert _stdout(io) == ""
+    out = _stdout(_exec(ws, "history"))
+    assert "echo hi" in out
+
+
+def test_history_zero_lists_nothing():
+    ws = _ws()
+    _exec(ws, "pwd")
+    _exec(ws, "echo two")
+    io = _exec(ws, "history 0")
+    assert io.exit_code == 0
+    assert _stdout(io) == ""
 
 
 def test_history_sync_flags_are_noops():

@@ -14,8 +14,10 @@
 
 import redis.asyncio as aioredis
 
+from mirage.observe.store import ObserverStoreBase
 
-class RedisObserverStore:
+
+class RedisObserverStore(ObserverStoreBase):
     """ObserverStore backed by Redis strings (one key per JSONL file).
 
     Appends use the atomic Redis APPEND command; an index set tracks
@@ -59,14 +61,6 @@ class RedisObserverStore:
         pipe.sadd(self._index_key, path)
         await pipe.execute()
 
-    async def read_all(self) -> dict[str, bytes]:
-        """Read every stored file.
-
-        Returns:
-            dict[str, bytes]: Mapping of file key to content.
-        """
-        return await self._read_paths(await self._indexed_paths())
-
     async def read_matching(self, suffix: str) -> dict[str, bytes]:
         """Read only the files whose key ends with suffix.
 
@@ -97,3 +91,7 @@ class RedisObserverStore:
         paths = await self._indexed_paths()
         keys = [f"{self._prefix}{p}" for p in paths] + [self._index_key]
         await self._client.delete(*keys)
+
+    async def close(self) -> None:
+        """Close the Redis client connection."""
+        await self._client.aclose()

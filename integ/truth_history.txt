@@ -19,14 +19,14 @@ marker-s2
 === history_s2_isolated ===
 1  echo marker-s2
 === bash_history_commands ===
+cat /data/h.txt
 echo marker-one
+echo marker-s2
 echo marker-two
 echo persisted > /data/h.txt
-cat /data/h.txt
-echo marker-s2
+history
 history
 history 2
-history
 === bash_history_grep_marker ===
 echo marker-s2
 === bash_history_timestamp_lines ===
