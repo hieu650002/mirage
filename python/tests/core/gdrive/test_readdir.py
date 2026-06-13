@@ -221,6 +221,41 @@ async def test_readdir_root_includes_shared_drives(accessor, index):
 
 
 @pytest.mark.asyncio
+async def test_readdir_inside_shared_drive_threads_drive_id(accessor, index):
+
+    async def fake_list_files(_tm, folder_id="root", drive_id=None):
+        if folder_id == "root":
+            return []
+        if folder_id == "drive1":
+            return [{
+                "id": "f2",
+                "name": "spec.pdf",
+                "mimeType": "application/pdf",
+                "driveId": "drive1",
+                "modifiedTime": "2026-04-01T00:00:00.000Z",
+                "owners": [],
+                "capabilities": {},
+            }]
+        raise AssertionError(f"unexpected folder_id={folder_id}")
+
+    drives = [{"id": "drive1", "name": "Team Drive"}]
+    with patch("mirage.core.gdrive.readdir.list_files",
+               new_callable=AsyncMock,
+               side_effect=fake_list_files) as mock_list, \
+         patch("mirage.core.gdrive.readdir.list_shared_drives",
+               new_callable=AsyncMock, return_value=drives):
+        await readdir(accessor, PathSpec(original="/", directory="/"), index)
+        result = await readdir(
+            accessor, PathSpec(original="/Team Drive",
+                               directory="/Team Drive"), index)
+
+    assert "/Team Drive/spec.pdf" in result
+    mock_list.assert_any_call(accessor.token_manager,
+                              folder_id="drive1",
+                              drive_id="drive1")
+
+
+@pytest.mark.asyncio
 async def test_readdir_root_uniquifies_duplicate_shared_drive_names(
         accessor, index):
     drives = [
