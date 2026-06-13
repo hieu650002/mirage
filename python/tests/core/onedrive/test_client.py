@@ -138,3 +138,32 @@ async def test_request_gives_up_after_max_retries():
         with pytest.raises(GraphError) as exc:
             await graph_get(_cfg(max_retries=2), _ROOT)
     assert exc.value.status == 429
+
+
+@pytest.mark.asyncio
+async def test_401_refreshes_callable_token_once_then_succeeds():
+    calls = {"n": 0}
+
+    def provider():
+        calls["n"] += 1
+        return "fresh" if calls["n"] > 1 else "stale"
+
+    with aioresponses() as m:
+        m.get(_ROOT,
+              status=401,
+              payload={"error": {
+                  "code": "InvalidAuthenticationToken"
+              }})
+        m.get(_ROOT, payload={"id": "ok"})
+        result = await graph_get(OneDriveConfig(access_token=provider), _ROOT)
+    assert result["id"] == "ok"
+    assert calls["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_401_with_static_token_does_not_retry():
+    with aioresponses() as m:
+        m.get(_ROOT, status=401, payload={"error": {"code": "x"}})
+        with pytest.raises(GraphError) as exc:
+            await graph_get(_cfg(), _ROOT)
+    assert exc.value.status == 401

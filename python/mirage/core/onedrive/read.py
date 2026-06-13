@@ -19,7 +19,7 @@ from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.onedrive._client import (GraphError, graph_get_bytes,
                                           item_url, split_path)
-from mirage.core.onedrive.versions import current_fingerprint_revision
+from mirage.core.onedrive.versions import capture_metadata
 from mirage.observe.context import active_recorder, record, revision_for
 from mirage.types import PathSpec
 
@@ -40,24 +40,33 @@ async def read_bytes(accessor: OneDriveAccessor,
     prefix, stripped = split_path(path)
     config = accessor.config
     pinned = revision_for(virtual)
-    if pinned:
-        action = f"/versions/{quote(pinned, safe='')}/content"
-    else:
-        action = "/content"
-    url = item_url(config, "/" + stripped, action=action)
     range_header = _range_header(offset, size)
     start_ms = int(time.monotonic() * 1000)
+    fingerprint = None
+    revision = pinned
     try:
-        data = await graph_get_bytes(config, url, range_header)
+        if pinned:
+            action = f"/versions/{quote(pinned, safe='')}/content"
+            url = item_url(config, "/" + stripped, action=action)
+            data = await graph_get_bytes(config, url, range_header)
+        elif active_recorder() is not None:
+            fingerprint, revision, download_url = await capture_metadata(
+                accessor, path)
+            if download_url:
+                data = await graph_get_bytes(config,
+                                             download_url,
+                                             range_header,
+                                             auth=False)
+            else:
+                url = item_url(config, "/" + stripped, action="/content")
+                data = await graph_get_bytes(config, url, range_header)
+        else:
+            url = item_url(config, "/" + stripped, action="/content")
+            data = await graph_get_bytes(config, url, range_header)
     except GraphError as exc:
         if exc.status == 404:
             raise FileNotFoundError(stripped)
         raise
-    fingerprint = None
-    revision = pinned
-    if pinned is None and active_recorder() is not None:
-        fingerprint, revision = await current_fingerprint_revision(
-            accessor, path)
     record("read",
            stripped,
            "onedrive",

@@ -36,8 +36,12 @@ async def _upload_session(accessor: OneDriveAccessor, stripped: str,
     start = 0
     while start < total:
         chunk = data[start:start + UPLOAD_CHUNK]
-        await upload_chunk(config, upload_url, chunk, start, total)
-        start += len(chunk)
+        result = await upload_chunk(config, upload_url, chunk, start, total)
+        ranges = result.get("nextExpectedRanges") if result else None
+        if ranges:
+            start = int(ranges[0].split("-", 1)[0])
+        else:
+            start += len(chunk)
 
 
 async def write_bytes(accessor: OneDriveAccessor, path: PathSpec,

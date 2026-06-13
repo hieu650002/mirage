@@ -136,13 +136,15 @@ async def _request(config: OneDriveConfig,
                    json_body: dict | None = None,
                    data: bytes | None = None,
                    extra_headers: dict | None = None,
+                   auth: bool = True,
                    read: str = "json"):
     own = session is None
     sess = session or aiohttp.ClientSession(timeout=_timeout(config))
     try:
         attempt = 0
+        refreshed = False
         while True:
-            hdrs = headers(config)
+            hdrs = headers(config) if auth else {}
             if extra_headers:
                 hdrs.update(extra_headers)
             async with sess.request(method,
@@ -154,6 +156,10 @@ async def _request(config: OneDriveConfig,
                 if _should_retry(resp.status, attempt, config):
                     await asyncio.sleep(_retry_delay(resp, attempt))
                     attempt += 1
+                    continue
+                if (resp.status == 401 and auth and not refreshed
+                        and callable(config.access_token)):
+                    refreshed = True
                     continue
                 await _raise_for_status(method, url, resp)
                 if read == "bytes":
@@ -206,30 +212,33 @@ async def graph_list(
     return items
 
 
-async def graph_get_bytes(
-        config: OneDriveConfig,
-        url: str,
-        range_header: str | None = None,
-        session: aiohttp.ClientSession | None = None) -> bytes:
+async def graph_get_bytes(config: OneDriveConfig,
+                          url: str,
+                          range_header: str | None = None,
+                          session: aiohttp.ClientSession | None = None,
+                          auth: bool = True) -> bytes:
     extra = {"Range": range_header} if range_header else None
     return await _request(config,
                           "GET",
                           url,
                           extra_headers=extra,
                           session=session,
+                          auth=auth,
                           read="bytes")
 
 
 async def graph_stream(config: OneDriveConfig,
                        url: str,
                        chunk_size: int = 8192,
-                       session: aiohttp.ClientSession | None = None):
+                       session: aiohttp.ClientSession | None = None,
+                       auth: bool = True):
     own = session is None
     sess = session or aiohttp.ClientSession(timeout=_timeout(config))
     try:
         attempt = 0
         while True:
-            async with sess.get(url, headers=headers(config)) as resp:
+            hdrs = headers(config) if auth else {}
+            async with sess.get(url, headers=hdrs) as resp:
                 if _should_retry(resp.status, attempt, config):
                     await asyncio.sleep(_retry_delay(resp, attempt))
                     attempt += 1
@@ -318,7 +327,7 @@ async def poll_monitor(url: str,
 
 
 async def upload_chunk(config: OneDriveConfig, upload_url: str, data: bytes,
-                       start: int, total: int) -> int:
+                       start: int, total: int) -> dict:
     end = start + len(data) - 1
     hdrs = {"Content-Range": f"bytes {start}-{end}/{total}"}
     async with aiohttp.ClientSession(timeout=_timeout(config)) as session:
@@ -331,4 +340,9 @@ async def upload_chunk(config: OneDriveConfig, upload_url: str, data: bytes,
                     attempt += 1
                     continue
                 await _raise_for_status("PUT", upload_url, resp)
-                return resp.status
+                if resp.status == 204 or resp.content_length == 0:
+                    return {}
+                try:
+                    return await resp.json()
+                except (aiohttp.ContentTypeError, ValueError):
+                    return {}

@@ -55,3 +55,28 @@ async def test_write_large_file_uses_upload_session(monkeypatch):
         await write_bytes(_accessor(), PathSpec.from_str_path("/Docs/a.txt"),
                           b"abcdef")
     assert ranges == ["bytes 0-3/6", "bytes 4-5/6"]
+
+
+@pytest.mark.asyncio
+async def test_upload_resumes_from_next_expected_ranges(monkeypatch):
+    monkeypatch.setattr(write_mod, "SIMPLE_UPLOAD_MAX", 4)
+    monkeypatch.setattr(write_mod, "UPLOAD_CHUNK", 4)
+    ranges = []
+
+    def _chunk_cb(url, **kwargs):
+        ranges.append(kwargs["headers"]["Content-Range"])
+        return CallbackResult(status=202,
+                              payload={"nextExpectedRanges": ["2-5"]})
+
+    def _final_cb(url, **kwargs):
+        ranges.append(kwargs["headers"]["Content-Range"])
+        return CallbackResult(status=201, payload={"id": "X"})
+
+    upload_url = "https://upload.example/session2"
+    with aioresponses() as m:
+        m.post(_SESSION, payload={"uploadUrl": upload_url})
+        m.put(upload_url, callback=_chunk_cb)
+        m.put(upload_url, callback=_final_cb)
+        await write_bytes(_accessor(), PathSpec.from_str_path("/Docs/a.txt"),
+                          b"abcdef")
+    assert ranges == ["bytes 0-3/6", "bytes 2-5/6"]

@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from aioresponses import CallbackResult, aioresponses
 
@@ -57,35 +59,62 @@ async def test_read_range_sends_range_header():
     assert data == b"llo"
 
 
+_META = re.compile(r".*/root:/Docs/a\.txt(\?.*)?$")
+_DOWNLOAD = "https://download.example/pinned-bytes"
+
+
+def _meta_payload():
+    return {
+        "id":
+        "01",
+        "cTag":
+        "ctag-xyz",
+        "@microsoft.graph.downloadUrl":
+        _DOWNLOAD,
+        "versions": [
+            {
+                "id": "1.0",
+                "lastModifiedDateTime": "2026-01-01T00:00:00Z"
+            },
+            {
+                "id": "2.0",
+                "lastModifiedDateTime": "2026-02-01T00:00:00Z"
+            },
+        ],
+    }
+
+
 @pytest.mark.asyncio
 async def test_read_captures_fingerprint_and_revision_when_recording():
-    meta = _BASE + "/root:/Docs/a.txt"
-    versions = _BASE + "/root:/Docs/a.txt:/versions"
     sink = start_recording()
     try:
         with aioresponses() as m:
-            m.get(_CONTENT, body=b"current bytes")
-            m.get(meta, payload={"id": "01", "cTag": "ctag-xyz"})
-            m.get(versions,
-                  payload={
-                      "value": [
-                          {
-                              "id": "1.0",
-                              "lastModifiedDateTime": "2026-01-01T00:00:00Z"
-                          },
-                          {
-                              "id": "2.0",
-                              "lastModifiedDateTime": "2026-02-01T00:00:00Z"
-                          },
-                      ]
-                  })
-            await read_bytes(_accessor(),
-                             PathSpec.from_str_path("/Docs/a.txt"))
+            m.get(_META, payload=_meta_payload())
+            m.get(_DOWNLOAD, body=b"old version bytes")
+            data = await read_bytes(_accessor(),
+                                    PathSpec.from_str_path("/Docs/a.txt"))
     finally:
         stop_recording()
     rec = sink[0]
     assert rec.fingerprint == "ctag-xyz"
     assert rec.revision == "2.0"
+    assert data == b"old version bytes"
+
+
+@pytest.mark.asyncio
+async def test_capture_reads_pinned_download_url_not_live_content():
+    sink = start_recording()
+    try:
+        with aioresponses() as m:
+            m.get(_META, payload=_meta_payload())
+            m.get(_DOWNLOAD, body=b"snapshot bytes")
+            m.get(_CONTENT, body=b"live mutated bytes")
+            data = await read_bytes(_accessor(),
+                                    PathSpec.from_str_path("/Docs/a.txt"))
+    finally:
+        stop_recording()
+    assert data == b"snapshot bytes"
+    assert sink[0].fingerprint == "ctag-xyz"
 
 
 @pytest.mark.asyncio

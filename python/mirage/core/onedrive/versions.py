@@ -40,15 +40,18 @@ async def current_version_id(accessor: OneDriveAccessor,
     return _current_version_id(versions)
 
 
-async def current_fingerprint_revision(
+async def capture_metadata(
         accessor: OneDriveAccessor,
-        path: PathSpec) -> tuple[str | None, str | None]:
+        path: PathSpec) -> tuple[str | None, str | None, str | None]:
     _, stripped = split_path(path)
     config = accessor.config
-    item = await graph_get(config, item_url(config, "/" + stripped))
-    versions = await graph_list(
-        config, item_url(config, "/" + stripped, action="/versions"))
-    return item.get("cTag"), _current_version_id(versions)
+    item = await graph_get(config,
+                           item_url(config, "/" + stripped),
+                           params={"$expand": "versions"})
+    fingerprint = item.get("cTag")
+    revision = _current_version_id(item.get("versions", []))
+    download_url = item.get("@microsoft.graph.downloadUrl")
+    return fingerprint, revision, download_url
 
 
 async def restore_version(accessor: OneDriveAccessor, path: PathSpec,

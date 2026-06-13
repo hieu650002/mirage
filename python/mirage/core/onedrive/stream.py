@@ -19,7 +19,7 @@ from mirage.accessor.onedrive import OneDriveAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.onedrive._client import graph_stream, item_url, split_path
 from mirage.core.onedrive.read import read_bytes
-from mirage.core.onedrive.versions import current_fingerprint_revision
+from mirage.core.onedrive.versions import capture_metadata
 from mirage.observe.context import record_stream, revision_for
 from mirage.types import PathSpec
 
@@ -34,19 +34,21 @@ async def read_stream(
     prefix, stripped = split_path(path)
     config = accessor.config
     pinned = revision_for(virtual)
-    if pinned:
-        action = f"/versions/{quote(pinned, safe='')}/content"
-    else:
-        action = "/content"
-    url = item_url(config, "/" + stripped, action=action)
     rec = record_stream("read", stripped, "onedrive")
-    if rec is not None:
-        if pinned is not None:
+    url = item_url(config, "/" + stripped, action="/content")
+    auth = True
+    if pinned is not None:
+        action = f"/versions/{quote(pinned, safe='')}/content"
+        url = item_url(config, "/" + stripped, action=action)
+        if rec is not None:
             rec.revision = pinned
-        else:
-            rec.fingerprint, rec.revision = await current_fingerprint_revision(
-                accessor, path)
-    async for chunk in graph_stream(config, url, chunk_size):
+    elif rec is not None:
+        rec.fingerprint, rec.revision, download_url = await capture_metadata(
+            accessor, path)
+        if download_url:
+            url = download_url
+            auth = False
+    async for chunk in graph_stream(config, url, chunk_size, auth=auth):
         if rec is not None:
             rec.bytes += len(chunk)
         yield chunk

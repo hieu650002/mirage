@@ -22,9 +22,11 @@ from mirage.commands.builtin.utils.stream import _resolve_source
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.core.onedrive.glob import resolve_glob
+from mirage.core.onedrive.read import read_bytes
 from mirage.core.onedrive.stat import stat
 from mirage.core.onedrive.stream import read_stream
 from mirage.io.cachable_iterator import CachableAsyncIterator
+from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -44,14 +46,25 @@ async def cat(
 ) -> tuple[ByteSource | None, IOResult]:
     if paths:
         paths = await resolve_glob(accessor, paths, index)
-        await stat(accessor, paths[0], index)
-        source = read_stream(accessor, paths[0])
-        cachable = CachableAsyncIterator(source)
-        key = paths[0].strip_prefix
-        io = IOResult(reads={key: cachable}, cache=[key])
+        if len(paths) == 1:
+            p = paths[0]
+            await stat(accessor, p, index)
+            cachable = CachableAsyncIterator(read_stream(accessor, p))
+            io = IOResult(reads={p.strip_prefix: cachable},
+                          cache=[p.strip_prefix])
+            source: ByteSource = cachable
+        else:
+            reads: dict[str, ByteSource] = {}
+            parts: list[bytes] = []
+            for p in paths:
+                data = await read_bytes(accessor, p, index)
+                reads[p.strip_prefix] = data
+                parts.append(data)
+            io = IOResult(reads=reads, cache=list(reads))
+            source = async_chain(*parts)
         if n:
-            return generic_cat(cachable, number_lines=True), io
-        return cachable, io
+            return generic_cat(source, number_lines=True), io
+        return source, io
     source = _resolve_source(stdin, "cat: missing operand")
     if n:
         return generic_cat(source, number_lines=True), IOResult()
