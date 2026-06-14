@@ -12,7 +12,23 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.utils.path import gnu_basename, gnu_dirname, resolve_path
+from mirage.utils.path import (gnu_basename, gnu_dirname, norm, parent,
+                               resolve_path)
+
+
+def test_norm_strips_and_adds_leading_slash():
+    assert norm("a/b") == "/a/b"
+    assert norm("/a/b/") == "/a/b"
+    assert norm("///a///") == "/a"
+    assert norm("") == "/"
+    assert norm("/") == "/"
+
+
+def test_parent_of_normalized_key():
+    assert parent("/a/b") == "/a"
+    assert parent("/a") == "/"
+    assert parent("/") == "/"
+    assert parent("/a/b/c") == "/a/b"
 
 
 def test_basename_simple():

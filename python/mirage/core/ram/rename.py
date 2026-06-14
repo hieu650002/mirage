@@ -15,10 +15,7 @@
 from mirage.accessor.ram import RAMAccessor
 from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def rename(accessor: RAMAccessor, src: PathSpec, dst: PathSpec) -> None:
@@ -31,7 +28,7 @@ async def rename(accessor: RAMAccessor, src: PathSpec, dst: PathSpec) -> None:
     if isinstance(dst, PathSpec):
         dst = dst.strip_prefix
     store = accessor.store
-    s, d = _norm(src), _norm(dst)
+    s, d = norm(src), norm(dst)
     now = now_iso()
     if s in store.files:
         store.files[d] = store.files.pop(s)

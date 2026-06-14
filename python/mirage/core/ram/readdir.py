@@ -15,10 +15,7 @@
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.index import IndexCacheStore, IndexEntry
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def readdir(accessor: RAMAccessor, path: PathSpec,
@@ -37,7 +34,7 @@ async def readdir(accessor: RAMAccessor, path: PathSpec,
     listing = await index.list_dir(virtual_key)
     if listing.entries is not None:
         return listing.entries
-    p = _norm(path)
+    p = norm(path)
     if p not in store.dirs:
         raise FileNotFoundError(p)
     dir_prefix = p.rstrip("/") + "/"

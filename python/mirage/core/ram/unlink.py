@@ -14,10 +14,7 @@
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def unlink(accessor: RAMAccessor, path: PathSpec) -> None:
@@ -26,7 +23,7 @@ async def unlink(accessor: RAMAccessor, path: PathSpec) -> None:
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     if p not in store.files:
         raise FileNotFoundError(p)
     del store.files[p]

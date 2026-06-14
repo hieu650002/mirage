@@ -19,10 +19,7 @@ from mirage.cache.index import IndexCacheStore
 from mirage.observe.context import record
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def read_bytes(accessor: RAMAccessor, path: PathSpec) -> bytes:
@@ -33,7 +30,7 @@ async def read_bytes(accessor: RAMAccessor, path: PathSpec) -> bytes:
         path = path.strip_prefix
     store = accessor.store
     start_ms = int(time.monotonic() * 1000)
-    key = _norm(path)
+    key = norm(path)
     if key not in store.files:
         raise enoent(virtual)
     data = store.files[key]

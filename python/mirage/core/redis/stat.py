@@ -17,10 +17,7 @@ from mirage.cache.index import IndexCacheStore
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import guess_type
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def stat(
@@ -39,7 +36,7 @@ async def stat(
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             path = rest or "/"
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     if await store.has_dir(p):
         return FileStat(
             name=p.rsplit("/", 1)[-1] or "/",

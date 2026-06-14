@@ -12,21 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { encodeBase64, rstripSlash } from '@struktoai/mirage-core'
+import { encodeBase64, gnuDirname } from '@struktoai/mirage-core'
 import type { Workspace } from '@struktoai/mirage-node'
 import { tool } from 'ai'
 import { z } from 'zod'
 
-function parentOf(path: string): string {
-  const trimmed = rstripSlash(path)
-  const idx = trimmed.lastIndexOf('/')
-  if (idx <= 0) return '/'
-  return trimmed.slice(0, idx)
-}
-
 async function ensureParent(ws: Workspace, path: string): Promise<void> {
-  const parent = parentOf(path)
-  if (parent === '/' || parent === '') return
+  const parent = gnuDirname(path)
+  if (parent === '/' || parent === '' || parent === '.') return
   if (await ws.fs.exists(parent)) return
   await ensureParent(ws, parent)
   try {

@@ -15,7 +15,7 @@
 import type { IndexCacheStore, PathSpec } from '@struktoai/mirage-core'
 import type { EmailAccessor } from '../../accessor/email.ts'
 import { fetchAttachment, fetchMessage } from './_client.ts'
-import { rstripSlash, stripSlash } from '@struktoai/mirage-core'
+import { gnuDirname, stripSlash } from '@struktoai/mirage-core'
 
 const ENC = new TextEncoder()
 
@@ -29,13 +29,6 @@ function eisdir(p: string): Error {
   const e = new Error(`EISDIR: ${p}`) as Error & { code: string }
   e.code = 'EISDIR'
   return e
-}
-
-function dirname(p: string): string {
-  const norm = rstripSlash(p)
-  const idx = norm.lastIndexOf('/')
-  if (idx <= 0) return '/'
-  return norm.slice(0, idx)
 }
 
 export async function read(
@@ -56,7 +49,7 @@ export async function read(
     throw eisdir(path.original)
   }
   if (rt === 'email/attachment') {
-    const parentKey = dirname(virtualKey)
+    const parentKey = gnuDirname(virtualKey)
     const parentResult = await index.get(parentKey)
     if (parentResult.entry === undefined || parentResult.entry === null) {
       throw enoent(path.original)

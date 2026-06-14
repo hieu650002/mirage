@@ -442,6 +442,16 @@ export const CASES: ReadonlyArray<readonly [string, string]> = [
   ],
   ['arch_iconv_file', 'iconv -f utf-8 -t utf-8 /data/arch/g.txt'],
   ['arch_mktemp', 'mktemp -p /data/arch | wc -l'],
+
+  // ----- create at the mount root (parent resolves to "/") -----
+  // Commented out pending the GNU find start-path fix: `find <dir>` does not
+  // emit the start directory (mirage walks from depth 1), so root_create_mkdir
+  // below returns nothing. Re-enable with the dedicated find parity change.
+  // ['root_create', 'echo atroot | tee /data/at_root.txt'],
+  // ['root_create_cat', 'cat /data/at_root.txt'],
+  // ['root_create_mkdir', 'mkdir /data/rootdir && find /data/rootdir -type d'],
+  // ['root_create_basename', 'basename /data/at_root.txt'],
+  // ['root_create_dirname', 'dirname /data/at_root.txt'],
 ];
 
 export const EXIT_CODE_CASES: ReadonlyArray<readonly [string, string]> = [

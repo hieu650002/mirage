@@ -17,10 +17,7 @@ import type { SSHAccessor } from '../../accessor/ssh.ts'
 import { SCOPE_ERROR } from '../disk/constants.ts'
 import { readdir } from './readdir.ts'
 import { fnmatch } from '@struktoai/mirage-core'
-
-function basenameOf(p: string): string {
-  return p.slice(p.lastIndexOf('/') + 1)
-}
+import { gnuBasename } from '@struktoai/mirage-core'
 
 export async function resolveGlob(
   accessor: SSHAccessor,
@@ -40,7 +37,7 @@ export async function resolveGlob(
       const entries = await readdir(accessor, dirSpec)
       const matched: PathSpec[] = []
       for (const e of entries) {
-        if (fnmatch(basenameOf(e), p.pattern)) {
+        if (fnmatch(gnuBasename(e), p.pattern)) {
           matched.push(
             new PathSpec({
               original: e,
