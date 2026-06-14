@@ -45,11 +45,35 @@ function coerceOnExceed(value: string): OnExceed {
   return value.toLowerCase() as OnExceed
 }
 
+function snakeToCamel(key: string): string {
+  let out = ''
+  let upper = false
+  for (const ch of key) {
+    if (ch === '_') {
+      upper = true
+      continue
+    }
+    out += upper ? ch.toUpperCase() : ch
+    upper = false
+  }
+  return out
+}
+
+function camelizeKeys(obj: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj)) out[snakeToCamel(k)] = v
+  return out
+}
+
+// Workspace YAML uses Python's snake_case keys (command_safeguards, max_lines,
+// on_exceed, ...). The in-memory config stays camelCase, so normalize each
+// block's keys at the boundary before constructing the safeguard.
 function parseSafeguards(
-  raw: Record<string, RawSafeguardBlock> | undefined,
+  raw: Record<string, Record<string, unknown>> | undefined,
 ): Record<string, CommandSafeguard> {
   const out: Record<string, CommandSafeguard> = {}
-  for (const [cmd, block] of Object.entries(raw ?? {})) {
+  for (const [cmd, rawBlock] of Object.entries(raw ?? {})) {
+    const block = camelizeKeys(rawBlock) as RawSafeguardBlock
     out[cmd] = new CommandSafeguard({
       ...(block.maxBytes !== undefined ? { maxBytes: block.maxBytes } : {}),
       ...(block.maxLines !== undefined ? { maxLines: block.maxLines } : {}),
@@ -107,7 +131,7 @@ export interface MountBlock {
   resource: string
   mode?: string
   config?: Record<string, unknown>
-  commandSafeguards?: Record<string, RawSafeguardBlock>
+  command_safeguards?: Record<string, Record<string, unknown>>
 }
 
 export interface RamCacheBlock {
@@ -236,7 +260,7 @@ export async function configToWorkspaceArgs(cfg: WorkspaceConfigRaw): Promise<Wo
   for (const [prefix, block] of Object.entries(cfg.mounts)) {
     const r = await buildResource(block.resource, block.config ?? {})
     const m = coerceMountMode(block.mode, wsMode)
-    resources[prefix] = [r, m, parseSafeguards(block.commandSafeguards)]
+    resources[prefix] = [r, m, parseSafeguards(block.command_safeguards)]
   }
   const cache = buildCache(cfg.cache)
   const index = buildIndex(cfg.index)

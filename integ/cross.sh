@@ -34,6 +34,22 @@ seed() {
   $cli execute -w "$id" -c "printf 'disk-1\ndisk-2\ndisk-3\n' > /disk/g.txt" >/dev/null
   $cli execute -w "$id" -c "printf 'redis-x\nredis-y\n' > /redis/h.txt" >/dev/null
   $cli execute -w "$id" -c "printf 'minio-1\nminio-2\n' > /minio/data/x.txt" >/dev/null
+  $cli execute -w "$id" -c "printf '1\n2\n3\n4\n5\n' > /guard/big.txt" >/dev/null
+}
+
+# The /guard mount in cross.yaml caps `cat` at 2 lines. Safeguards apply at
+# create time (not load) in both languages, so assert on the writer: this
+# proves both CLIs parse + apply the same snake_case command_safeguards block.
+check_safeguard() {
+  local cli="$1" name="$2"
+  local lines
+  lines="$($cli execute -w cross_w -c "cat /guard/big.txt" | stdout_of | grep -c .)"
+  if [ "$lines" == "2" ]; then
+    echo "  OK   safeguard caps cat to 2 lines ($name)"
+  else
+    echo "  FAIL safeguard not applied by $name: got $lines lines (expected 2)"
+    fail=1
+  fi
 }
 
 run_direction() {
@@ -46,6 +62,7 @@ run_direction() {
   $writer_cli workspace delete cross_w >/dev/null 2>&1 || true
   $writer_cli workspace create "$YAML" --id cross_w >/dev/null
   seed "$writer_cli" cross_w
+  check_safeguard "$writer_cli" "$writer_name"
 
   local expected=()
   local i

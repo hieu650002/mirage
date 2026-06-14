@@ -91,13 +91,13 @@ describe('configToWorkspaceArgs', () => {
     expect(args.options.cache).toBeInstanceOf(RedisFileCacheStore)
   })
 
-  it('parses per-mount commandSafeguards into the resource tuple', async () => {
+  it('parses per-mount command_safeguards (snake_case YAML) into the resource tuple', async () => {
     const cfg = loadWorkspaceConfig({
       mounts: {
         '/': {
           resource: 'ram',
-          commandSafeguards: {
-            cat: { maxLines: 10, timeoutSeconds: 5, onExceed: 'error' },
+          command_safeguards: {
+            cat: { max_lines: 10, timeout_seconds: 5, on_exceed: 'error' },
           },
         },
       },
@@ -109,15 +109,15 @@ describe('configToWorkspaceArgs', () => {
     expect(safeguards?.cat?.onExceed).toBe('error')
   })
 
-  it('defaults to no commandSafeguards when omitted', async () => {
+  it('defaults to no command_safeguards when omitted', async () => {
     const cfg = loadWorkspaceConfig({ mounts: { '/': { resource: 'ram' } } })
     const args = await configToWorkspaceArgs(cfg)
     expect(args.resources['/']?.[2]).toEqual({})
   })
 
-  it('rejects an invalid onExceed value', async () => {
+  it('rejects an invalid on_exceed value', async () => {
     const cfg = loadWorkspaceConfig({
-      mounts: { '/': { resource: 'ram', commandSafeguards: { cat: { onExceed: 'boom' } } } },
+      mounts: { '/': { resource: 'ram', command_safeguards: { cat: { on_exceed: 'boom' } } } },
     })
     await expect(configToWorkspaceArgs(cfg)).rejects.toThrow(/invalid onExceed/)
   })

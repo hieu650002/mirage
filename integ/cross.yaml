@@ -23,3 +23,11 @@ mounts:
       endpoint_url: ${S3_ENDPOINT}
       access_key_id: ${AWS_ACCESS_KEY_ID}
       secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+
+  # Snake_case command_safeguards must parse + apply identically in both CLIs.
+  /guard:
+    resource: ram
+    command_safeguards:
+      cat:
+        max_lines: 2
+        on_exceed: truncate
