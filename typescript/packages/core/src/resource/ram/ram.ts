@@ -187,10 +187,11 @@ export class RAMResource extends BaseResource implements Resource {
 
   loadState(state: RAMResourceState): void {
     this.store.files.clear()
-    for (const [k, v] of Object.entries(state.files)) this.store.files.set(k, v)
+    for (const [k, v] of Object.entries(state.files ?? {})) this.store.files.set(k, v)
     this.store.dirs.clear()
-    for (const d of state.dirs.length > 0 ? state.dirs : ['/']) this.store.dirs.add(d)
+    const dirs = state.dirs ?? []
+    for (const d of dirs.length > 0 ? dirs : ['/']) this.store.dirs.add(d)
     this.store.modified.clear()
-    for (const [k, v] of Object.entries(state.modified)) this.store.modified.set(k, v)
+    for (const [k, v] of Object.entries(state.modified ?? {})) this.store.modified.set(k, v)
   }
 }

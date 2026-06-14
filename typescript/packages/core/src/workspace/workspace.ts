@@ -1023,14 +1023,14 @@ export class Workspace {
     const resources: Record<string, Resource> = {}
     const needsRestore: MountSnapshot[] = []
     for (const m of state.mounts) {
-      if (resourceStateRequiresOverride(m.resource_state)) {
-        const override = overrides[m.prefix]
-        if (override === undefined) {
-          throw new Error(
-            `Workspace.fromState: resource for mount '${m.prefix}' has redacted secrets; pass it via overrides['${m.prefix}']`,
-          )
-        }
+      const override = overrides[m.prefix]
+      if (override !== undefined) {
         resources[m.prefix] = override
+        needsRestore.push(m)
+      } else if (resourceStateRequiresOverride(m.resource_state)) {
+        throw new Error(
+          `Workspace.fromState: resource for mount '${m.prefix}' has redacted secrets; pass it via overrides['${m.prefix}']`,
+        )
       } else {
         const r = new RAMResource()
         r.loadState(m.resource_state as RAMResourceState)

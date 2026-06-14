@@ -1,0 +1,25 @@
+mode: WRITE
+consistency: LAZY
+
+mounts:
+  /ram:
+    resource: ram
+
+  /disk:
+    resource: disk
+    config:
+      root: ${CROSS_DISK_ROOT}
+
+  /redis:
+    resource: redis
+    config:
+      url: ${REDIS_URL}
+      key_prefix: ${CROSS_REDIS_PREFIX}
+
+  /minio:
+    resource: minio
+    config:
+      bucket: ${S3_BUCKET}
+      endpoint_url: ${S3_ENDPOINT}
+      access_key_id: ${AWS_ACCESS_KEY_ID}
+      secret_access_key: ${AWS_SECRET_ACCESS_KEY}
