@@ -21,7 +21,7 @@ def test_record_no_context():
     record("read", "/a.txt", "s3", 100, 0)
 
 
-def test_start_stop_recording():
+def test_recording_scope_collects_records():
     scope = RecordingScope()
     records = scope.records
     record("read", "/a.txt", "s3", 100, 0)
