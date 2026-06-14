@@ -26,6 +26,7 @@ import { splitManifestAndBlobs } from './snapshot/manifest.ts'
 import { writeSnapshotTar } from './snapshot/tar_io.ts'
 import { DriftPolicy, FileStat, FileType, MountMode, type PathSpec } from '../types.ts'
 import { ContentDriftError } from './snapshot/drift.ts'
+import { toStateDict } from './snapshot/state.ts'
 import { Workspace } from './workspace.ts'
 
 const require = createRequire(import.meta.url)
@@ -189,7 +190,7 @@ describe('Workspace snapshot: capture and replay drift detection', () => {
     accessor.put('/remote/a.txt', new TextEncoder().encode('v1'))
     const ws = build(accessor)
     await recordedDispatch(ws, 'read', '/remote/a.txt')
-    const state = await ws.toStateDict()
+    const state = await toStateDict(ws)
     expect(state.fingerprints?.length).toBe(1)
     expect(state.fingerprints?.[0]?.path).toBe('/remote/a.txt')
     expect(state.fingerprints?.[0]?.fingerprint).toContain('fp-')
@@ -227,7 +228,7 @@ describe('Workspace snapshot: capture and replay drift detection', () => {
     accessor.put('/remote/a.txt', new TextEncoder().encode('v1'))
     const ws = build(accessor)
     await recordedDispatch(ws, 'read', '/remote/a.txt')
-    const state = await ws.toStateDict()
+    const state = await toStateDict(ws)
     // Strip revisions so the loader queues a drift check instead of pinning.
     state.fingerprints = (state.fingerprints ?? []).map((e) => ({
       path: e.path,

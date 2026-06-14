@@ -32,7 +32,7 @@ from mirage.workspace.types import ExecutionNode, ExecutionRecord
 
 def _mirage_version() -> str:
     try:
-        return importlib.metadata.version("mirage")
+        return importlib.metadata.version("mirage-ai")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
 

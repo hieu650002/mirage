@@ -12,10 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { Workspace as CoreWorkspace } from '@struktoai/mirage-core'
-import { lstripSlash, stripSlash } from '@struktoai/mirage-core'
+import { lstripSlash, stripSlash, type WorkspaceStateDict } from '@struktoai/mirage-core'
 
-export type WorkspaceStateDict = Awaited<ReturnType<CoreWorkspace['toStateDict']>>
+export type { WorkspaceStateDict }
 
 type AnyDict = Record<string, unknown>
 
@@ -148,7 +147,9 @@ export function toState(
     version: meta.version,
     mounts,
     cache: { limit: meta.cache.limit, entries: cacheEntries },
+    sessions: [],
     history: [],
+    jobs: [],
     fingerprints: meta.fingerprints,
     live_only_mounts: meta.liveOnlyMounts,
   } as unknown as WorkspaceStateDict

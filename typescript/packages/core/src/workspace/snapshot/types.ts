@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { RAMResourceState } from '../resource/ram/ram.ts'
+import type { RAMResourceState } from '../../resource/ram/ram.ts'
 
 export interface ResourceStateBase {
   type: string
