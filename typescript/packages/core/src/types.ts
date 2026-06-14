@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { rstripSlash, stripSlash } from './util/slash.ts'
+import { rstripSlash, stripSlash } from './utils/slash.ts'
 
 export const MountMode = Object.freeze({
   READ: 'read',
@@ -146,6 +146,7 @@ export const ResourceName = Object.freeze({
   DATABRICKS_VOLUME: 'databricks_volume',
   MINIO: 'minio',
   CEPH: 'ceph',
+  SEAWEEDFS: 'seaweedfs',
   WASABI: 'wasabi',
   BACKBLAZE: 'backblaze',
   DIGITALOCEAN: 'digitalocean',

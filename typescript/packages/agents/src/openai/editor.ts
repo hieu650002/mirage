@@ -15,18 +15,11 @@
 import type { Workspace } from '@struktoai/mirage-core'
 import { applyDiff } from '@openai/agents'
 import type { ApplyPatchOperation, ApplyPatchResult, Editor } from '@openai/agents'
-import { rstripSlash } from '@struktoai/mirage-core'
-
-function parentOf(path: string): string {
-  const trimmed = rstripSlash(path)
-  const idx = trimmed.lastIndexOf('/')
-  if (idx <= 0) return '/'
-  return trimmed.slice(0, idx)
-}
+import { gnuDirname } from '@struktoai/mirage-core'
 
 async function ensureParent(ws: Workspace, path: string): Promise<void> {
-  const parent = parentOf(path)
-  if (parent === '/' || parent === '') return
+  const parent = gnuDirname(path)
+  if (parent === '/' || parent === '' || parent === '.') return
   if (await ws.fs.exists(parent)) return
   await ensureParent(ws, parent)
   try {

@@ -18,15 +18,7 @@ from mirage.accessor.redis import RedisAccessor
 from mirage.core.timeutil import now_iso
 from mirage.observe.context import record
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
-
-
-def _parent(path: str) -> str:
-    parts = path.rsplit("/", 1)
-    return parts[0] or "/"
+from mirage.utils.path import norm, parent
 
 
 async def write_bytes(
@@ -40,10 +32,11 @@ async def write_bytes(
         path = path.strip_prefix
     store = accessor.store
     start_ms = int(time.monotonic() * 1000)
-    p = _norm(path)
-    parent = _parent(p)
-    if parent != "/" and not await store.has_dir(parent):
-        raise FileNotFoundError(f"parent directory does not exist: {parent}")
+    p = norm(path)
+    parent_dir = parent(p)
+    if parent_dir != "/" and not await store.has_dir(parent_dir):
+        raise FileNotFoundError(
+            f"parent directory does not exist: {parent_dir}")
     await store.set_file(p, data)
     await store.set_modified(p, now_iso())
     record("write", path, "redis", len(data), start_ms)

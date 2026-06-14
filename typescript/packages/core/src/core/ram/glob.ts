@@ -17,11 +17,8 @@ import type { RAMAccessor } from '../../accessor/ram.ts'
 import { PathSpec } from '../../types.ts'
 import { SCOPE_ERROR } from './constants.ts'
 import { readdir } from './readdir.ts'
-import { fnmatch } from '../../util/fnmatch.ts'
-
-function basenameOf(p: string): string {
-  return p.slice(p.lastIndexOf('/') + 1)
-}
+import { fnmatch } from '../../utils/fnmatch.ts'
+import { gnuBasename } from '../../utils/path.ts'
 
 export async function resolveGlob(
   accessor: RAMAccessor,
@@ -42,7 +39,7 @@ export async function resolveGlob(
       const entries = await readdir(accessor, dirSpec, index)
       const matched: PathSpec[] = []
       for (const e of entries) {
-        if (fnmatch(basenameOf(e), p.pattern)) {
+        if (fnmatch(gnuBasename(e), p.pattern)) {
           matched.push(
             new PathSpec({
               original: e,

@@ -1,6 +1,7 @@
 import pytest
 
-from mirage.commands.builtin.generic.grep import grep
+from mirage.commands.builtin.generic.grep import GrepFlags, grep, parse_flags
+from mirage.commands.spec.types import FlagView
 from mirage.types import FileStat, FileType, PathSpec
 
 
@@ -390,3 +391,132 @@ async def test_grep_single_file_threads_index():
     )
     decoded = (await _drain_async(output)).decode()
     assert "apple" in decoded
+
+
+def test_parse_flags_defaults_and_context_fallback():
+    f = parse_flags(FlagView({}), never_match=False)
+    assert f == GrepFlags(ignore_case=False,
+                          invert=False,
+                          line_numbers=False,
+                          count_only=False,
+                          files_only=False,
+                          whole_word=False,
+                          fixed_string=False,
+                          only_matching=False,
+                          quiet=False,
+                          recursive=False,
+                          max_count=None,
+                          after_context=0,
+                          before_context=0)
+    f = parse_flags(FlagView({"A": "2", "C": "5"}), never_match=False)
+    assert f.after_context == 2
+    assert f.before_context == 5
+
+
+def test_parse_flags_never_match_suppresses_fixed_string():
+    f = parse_flags(FlagView({"F": True}), never_match=True)
+    assert f.fixed_string is False
+
+
+def test_grep_flags_struct_rejects_typos():
+    f = parse_flags(FlagView({"i": True}), never_match=False)
+    with pytest.raises(AttributeError):
+        _ = f.ignorecase
+    # FrozenInstanceError subclasses AttributeError
+    with pytest.raises(AttributeError):
+        f.ignore_case = False
+
+
+@pytest.mark.asyncio
+async def test_grep_count_only_no_match_exit_1():
+    readdir, stat, rb, rs = _make_backend({"/a.txt": b"hello\nworld\n"})
+    output, io = await grep(
+        [_spec("/a.txt")],
+        ["zzz"],
+        readdir=readdir,
+        stat=stat,
+        read_bytes=rb,
+        read_stream=rs,
+        flags={"c": True},
+    )
+    decoded = (await _drain_async(output)).decode().strip()
+    assert decoded == "0"
+    assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_grep_stdin_count_only_no_match_exit_1():
+    readdir, stat, rb, rs = _make_backend({})
+    output, io = await grep(
+        [],
+        ["zzz"],
+        readdir=readdir,
+        stat=stat,
+        read_bytes=rb,
+        read_stream=rs,
+        stdin=b"hello\nworld\n",
+        flags={"c": True},
+    )
+    decoded = (await _drain_async(output)).decode().strip()
+    assert decoded == "0"
+    assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_grep_count_only_multi_file_no_match_exit_1():
+    readdir, stat, rb, rs = _make_backend({
+        "/a.txt": b"hello\n",
+        "/b.txt": b"world\n",
+    })
+    output, io = await grep(
+        [_spec("/a.txt"), _spec("/b.txt")],
+        ["zzz"],
+        readdir=readdir,
+        stat=stat,
+        read_bytes=rb,
+        read_stream=rs,
+        flags={"c": True},
+    )
+    decoded = (await _drain_async(output)).decode()
+    assert decoded.splitlines() == ["/a.txt:0", "/b.txt:0"]
+    assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_grep_count_only_multi_file_match_exit_0():
+    readdir, stat, rb, rs = _make_backend({
+        "/a.txt": b"hello\n",
+        "/b.txt": b"world\n",
+    })
+    output, io = await grep(
+        [_spec("/a.txt"), _spec("/b.txt")],
+        ["hello"],
+        readdir=readdir,
+        stat=stat,
+        read_bytes=rb,
+        read_stream=rs,
+        flags={"c": True},
+    )
+    decoded = (await _drain_async(output)).decode()
+    assert decoded.splitlines() == ["/a.txt:1", "/b.txt:0"]
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_grep_recursive_count_only_no_match_exit_1():
+    readdir, stat, rb, rs = _make_backend({"/d/a.txt": b"hello\n"})
+    output, io = await grep(
+        [_spec("/d")],
+        ["zzz"],
+        readdir=readdir,
+        stat=stat,
+        read_bytes=rb,
+        read_stream=rs,
+        flags={
+            "r": True,
+            "c": True
+        },
+    )
+    decoded = (await _drain_async(output)).decode()
+    assert decoded.splitlines() == ["/d/a.txt:0"]
+    assert io.exit_code == 1

@@ -49,6 +49,7 @@ from mirage.types import (DEFAULT_AGENT_ID, DEFAULT_SESSION_ID,
                           PathSpec, StateKey)
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.dispatcher import Dispatcher
+from mirage.workspace.executor.fs_error import format_fs_error
 from mirage.workspace.file_prompt import build_file_prompt
 from mirage.workspace.fuse import FuseManager
 from mirage.workspace.mount import Mount, MountRegistry
@@ -688,6 +689,11 @@ class Workspace:
         except UsageError as exc:
             msg = f"{exc}\n".encode()
             io = IOResult(exit_code=2, stderr=msg)
+            return io
+        except OSError as exc:
+            cmd_name = command.split()[0] if command.split() else command
+            msg = format_fs_error(cmd_name, exc)
+            io = IOResult(exit_code=1, stderr=msg)
             return io
         except Exception as exc:
             io = IOResult(exit_code=1, stderr=str(exc).encode())

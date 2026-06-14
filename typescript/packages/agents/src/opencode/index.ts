@@ -14,7 +14,7 @@
 
 import type { Workspace } from '@struktoai/mirage-node'
 import { z } from 'zod'
-import { rstripSlash } from '@struktoai/mirage-core'
+import { gnuDirname } from '@struktoai/mirage-core'
 
 export interface ToolContext {
   sessionID: string
@@ -44,16 +44,9 @@ async function resolveWs(ws: WsLike, ctx: ToolContext): Promise<Workspace> {
   return isResolver(ws) ? ws(ctx) : ws
 }
 
-function parentOf(path: string): string {
-  const trimmed = rstripSlash(path)
-  const idx = trimmed.lastIndexOf('/')
-  if (idx <= 0) return '/'
-  return trimmed.slice(0, idx)
-}
-
 async function ensureParent(ws: Workspace, path: string): Promise<void> {
-  const parent = parentOf(path)
-  if (parent === '/' || parent === '') return
+  const parent = gnuDirname(path)
+  if (parent === '/' || parent === '' || parent === '.') return
   if (await ws.fs.exists(parent)) return
   await ensureParent(ws, parent)
   try {

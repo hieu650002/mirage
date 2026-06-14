@@ -5,6 +5,7 @@ from typing import Any
 
 from mirage.cache.index import IndexCacheStore, IndexEntry
 from mirage.core.chroma._client import fetch_path_tree
+from mirage.utils.path import gnu_basename, parent
 
 
 async def ensure_tree(accessor,
@@ -67,7 +68,7 @@ def build_dir_entries(
         if directory == "/":
             continue
         entry = IndexEntry(id=directory.strip("/"),
-                           name=basename(directory),
+                           name=gnu_basename(directory),
                            resource_type="folder")
         dir_entries[virtual_path(parent(directory), prefix)].append(
             (entry.name, entry))
@@ -78,7 +79,7 @@ def build_dir_entries(
         updated_at = metadata_or_none(metadata, "updated_at")
         entry = IndexEntry(
             id=slug,
-            name=basename(path),
+            name=gnu_basename(path),
             resource_type="file",
             size=size,
             remote_time=updated_at or "",
@@ -158,12 +159,3 @@ def virtual_path(path: str, prefix: str) -> str:
     if root == "/":
         return path
     return root + path
-
-
-def parent(path: str) -> str:
-    value = path.rsplit("/", 1)[0]
-    return value or "/"
-
-
-def basename(path: str) -> str:
-    return path.rstrip("/").rsplit("/", 1)[-1] or "/"

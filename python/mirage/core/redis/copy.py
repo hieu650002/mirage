@@ -15,10 +15,7 @@
 from mirage.accessor.redis import RedisAccessor
 from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def copy(
@@ -35,7 +32,7 @@ async def copy(
     if isinstance(dst, PathSpec):
         dst = dst.strip_prefix
     store = accessor.store
-    s, d = _norm(src), _norm(dst)
+    s, d = norm(src), norm(dst)
     data = await store.get_file(s)
     if data is None:
         raise FileNotFoundError(s)

@@ -16,7 +16,8 @@ import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import { deflateRaw } from '../../../utils/compress.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { lstripSlash } from '../../../util/slash.ts'
+import { lstripSlash } from '../../../utils/slash.ts'
+import { gnuBasename } from '../../../utils/path.ts'
 
 const ENC = new TextEncoder()
 
@@ -59,11 +60,6 @@ interface ZipItem {
   crc: number
   method: number
   localOffset: number
-}
-
-function basename(path: string): string {
-  const idx = path.lastIndexOf('/')
-  return idx >= 0 ? path.slice(idx + 1) : path
 }
 
 function concat(chunks: readonly Uint8Array[]): Uint8Array {
@@ -167,7 +163,7 @@ export async function zipGeneric(
     const raw = await materialize(stream(p))
     const data = new Uint8Array(raw.byteLength)
     data.set(raw)
-    const arcname = junkPaths ? basename(p.original) : lstripSlash(p.original)
+    const arcname = junkPaths ? gnuBasename(p.original) : lstripSlash(p.original)
     const compressed = await deflateRaw(data)
     items.push({
       name: arcname,

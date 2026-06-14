@@ -17,7 +17,8 @@ import { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { decodeBase64 } from '../../utils/base64.ts'
 import { gunzip } from '../../utils/compress.ts'
-import { stripSlash } from '../../util/slash.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
+import { gnuBasename, parent } from '../../utils/path.ts'
 import { fetchPathTree } from './_client.ts'
 
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -90,7 +91,7 @@ export function buildDirEntries(
     if (directory === '/') continue
     const entry = new IndexEntry({
       id: stripSlash(directory),
-      name: basename(directory),
+      name: gnuBasename(directory),
       resourceType: 'folder',
     })
     dirEntries.get(virtualPath(parent(directory), prefix))?.push([entry.name, entry])
@@ -103,7 +104,7 @@ export function buildDirEntries(
     const updatedAt = metadataOrNull(metadata, 'updated_at')
     const entry = new IndexEntry({
       id: slug,
-      name: basename(path),
+      name: gnuBasename(path),
       resourceType: 'file',
       size,
       remoteTime: updatedAt ?? '',
@@ -176,7 +177,7 @@ export function metadataIntOrNull(metadata: Record<string, unknown>, key: string
 }
 
 export function mountRoot(prefix: string): string {
-  const stripped = prefix.replace(/\/+$/, '')
+  const stripped = rstripSlash(prefix)
   return stripped !== '' ? stripped : '/'
 }
 
@@ -185,16 +186,4 @@ export function virtualPath(path: string, prefix: string): string {
   if (path === '/') return root
   if (root === '/') return path
   return root + path
-}
-
-export function parent(path: string): string {
-  const idx = path.lastIndexOf('/')
-  const value = idx <= 0 ? '' : path.slice(0, idx)
-  return value !== '' ? value : '/'
-}
-
-export function basename(path: string): string {
-  const stripped = path.replace(/\/+$/, '')
-  const last = stripped.split('/').pop()
-  return last !== undefined && last !== '' ? last : '/'
 }

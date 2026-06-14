@@ -14,10 +14,7 @@
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def exists(accessor: RedisAccessor, path: PathSpec) -> bool:
@@ -26,5 +23,5 @@ async def exists(accessor: RedisAccessor, path: PathSpec) -> bool:
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     return await store.has_file(p) or await store.has_dir(p)

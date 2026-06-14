@@ -15,15 +15,12 @@
 from mirage.accessor.redis import RedisAccessor
 from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def mkdir_p(accessor: RedisAccessor, path: PathSpec) -> None:
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     parts = p.strip("/").split("/")
     current = ""
     now = now_iso()

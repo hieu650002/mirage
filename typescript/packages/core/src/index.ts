@@ -273,7 +273,7 @@ export { fmtGeneric } from './commands/builtin/generic/fmt.ts'
 export { headStream } from './commands/builtin/generic/head.ts'
 export { basenameFn } from './commands/builtin/generic/basename.ts'
 export { dirnameFn } from './commands/builtin/generic/dirname.ts'
-export { gnuBasename, gnuDirname } from './utils/path.ts'
+export { gnuBasename, gnuDirname, norm, parent } from './utils/path.ts'
 export { detectFileType, FILE_MIME_MAP, formatFileResult } from './commands/builtin/file_helper.ts'
 export {
   type AggregateResult,
@@ -1059,7 +1059,7 @@ export { readdir as chromaReaddir } from './core/chroma/readdir.ts'
 export { stat as chromaStat } from './core/chroma/stat.ts'
 export { resolveGlob as resolveChromaGlob } from './core/chroma/glob.ts'
 export { searchSegments as chromaSearch } from './core/chroma/search.ts'
-export { scoreFromDistance } from './util/score.ts'
+export { scoreFromDistance } from './utils/score.ts'
 export {
   countDocuments as mongoCountDocuments,
   findDocuments as mongoFindDocuments,
@@ -1080,8 +1080,9 @@ export {
 } from './core/mongodb/search.ts'
 export { setHttpProxyBase } from './commands/builtin/utils/http.ts'
 
-export { lstripSlash, rstripSlash, stripSlash } from './util/slash.ts'
-export { fnmatch } from './util/fnmatch.ts'
+export { lstripSlash, rstripSlash, stripSlash } from './utils/slash.ts'
+export { fnmatch } from './utils/fnmatch.ts'
+export { enoent, enotdir, errorVirtualPath, type FsError, gnuStrerror } from './utils/errors.ts'
 
 export {
   DatabricksVolumeAccessor,

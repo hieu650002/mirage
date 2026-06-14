@@ -14,10 +14,11 @@
 
 import type { FileStat } from '../../types.ts'
 import { FileType } from '../../types.ts'
-import { rstripSlash } from '../../util/slash.ts'
+import { rstripSlash } from '../../utils/slash.ts'
+import { gnuBasename } from '../../utils/path.ts'
 import { getExtension } from '../resolve.ts'
 import { BINARY_EXTENSIONS, compilePattern, grepLines } from './grep_helper.ts'
-import { fnmatch } from '../../util/fnmatch.ts'
+import { fnmatch } from '../../utils/fnmatch.ts'
 
 export const TYPE_EXTENSIONS: Record<string, string[]> = {
   py: ['.py'],
@@ -52,18 +53,13 @@ export interface RgFilterOptions {
   hidden: boolean
 }
 
-function basename(path: string): string {
-  const i = path.lastIndexOf('/')
-  return i === -1 ? path : path.slice(i + 1)
-}
-
 export function rgMatchesFilter(
   entry: string,
   fileType: string | null,
   globPattern: string | null,
   hidden: boolean,
 ): boolean {
-  const base = basename(entry)
+  const base = gnuBasename(entry)
   if (!hidden && base.startsWith('.')) return false
   if (fileType !== null) {
     const exts = TYPE_EXTENSIONS[fileType] ?? [`.${fileType}`]
@@ -196,7 +192,7 @@ export async function rgFull(
       // box/dropbox readdir marks folders with a trailing slash; strip it so
       // basename sees the real directory name (hidden-dir skip).
       const child = rstripSlash(entry)
-      const base = basename(child)
+      const base = gnuBasename(child)
       if (!opts.hidden && base.startsWith('.')) continue
       const sub = await rgFull(readdirFn, statFn, readBytesFn, child, pattern, opts, warnings)
       results.push(...sub)

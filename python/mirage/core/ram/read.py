@@ -18,22 +18,21 @@ from mirage.accessor.ram import RAMAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.observe.context import record
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.errors import enoent
+from mirage.utils.path import norm
 
 
 async def read_bytes(accessor: RAMAccessor, path: PathSpec) -> bytes:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
     start_ms = int(time.monotonic() * 1000)
-    key = _norm(path)
+    key = norm(path)
     if key not in store.files:
-        raise FileNotFoundError(path)
+        raise enoent(virtual)
     data = store.files[key]
     record("read", path, "ram", len(data), start_ms)
     return data
@@ -44,6 +43,7 @@ async def read(accessor: RAMAccessor,
                index: IndexCacheStore = None) -> bytes:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
@@ -51,4 +51,7 @@ async def read(accessor: RAMAccessor,
         rest = path[len(prefix):]
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             path = rest or "/"
-    return await read_bytes(accessor, path)
+    try:
+        return await read_bytes(accessor, path)
+    except FileNotFoundError as exc:
+        raise enoent(virtual) from exc

@@ -111,7 +111,7 @@ def test_tree_slug_and_timestamp_helpers():
     assert tree.timestamp_to_iso(None) == ""
     assert tree.virtual_path("/a", "/knowledge/") == "/knowledge/a"
     assert tree.parent("/a/b") == "/a"
-    assert tree.basename("/a/b") == "b"
+    assert tree.gnu_basename("/a/b") == "b"
 
 
 def test_normalize_slug_rejects_invalid_segments():

@@ -442,6 +442,16 @@ export const CASES: ReadonlyArray<readonly [string, string]> = [
   ],
   ['arch_iconv_file', 'iconv -f utf-8 -t utf-8 /data/arch/g.txt'],
   ['arch_mktemp', 'mktemp -p /data/arch | wc -l'],
+
+  // ----- create at the mount root (parent resolves to "/") -----
+  // Commented out pending the GNU find start-path fix: `find <dir>` does not
+  // emit the start directory (mirage walks from depth 1), so root_create_mkdir
+  // below returns nothing. Re-enable with the dedicated find parity change.
+  // ['root_create', 'echo atroot | tee /data/at_root.txt'],
+  // ['root_create_cat', 'cat /data/at_root.txt'],
+  // ['root_create_mkdir', 'mkdir /data/rootdir && find /data/rootdir -type d'],
+  // ['root_create_basename', 'basename /data/at_root.txt'],
+  // ['root_create_dirname', 'dirname /data/at_root.txt'],
 ];
 
 export const EXIT_CODE_CASES: ReadonlyArray<readonly [string, string]> = [
@@ -470,6 +480,12 @@ export const EXIT_CODE_CASES: ReadonlyArray<readonly [string, string]> = [
   ["lazy_exit_grep_match", "grep hello /data/a.txt"],
   ["lazy_exit_grep_no_match", "grep zzz /data/a.txt"],
   ["grep_f_empty_no_match", "grep -f /data/empty.txt /data/a.txt"],
+  ["grep_c_match_exit", "grep -c hello /data/a.txt"],
+  ["grep_c_no_match_exit", "grep -c zzz /data/a.txt"],
+  ["grep_c_stdin_no_match_exit", "echo hi | grep -c zzz"],
+  ["grep_c_multi_no_match_exit", "grep -c zzz /data/a.txt /data/b.txt"],
+  ["zgrep_c_match_exit", "echo hello | gzip | zgrep -c hello"],
+  ["zgrep_c_no_match_exit", "echo hello | gzip | zgrep -c zzz"],
   ["grep_usage_exit", "grep"],
   ["rg_usage_exit", "rg"],
   ["zgrep_usage_exit", "zgrep"],
@@ -529,7 +545,44 @@ export const SLEEP_CASES: ReadonlyArray<readonly [string, string, number]> = [
   ["sleep_one", "sleep 1", 1],
 ];
 
+// Not-found errors must always show the full virtual path the user typed
+// (mount prefix included) plus the GNU strerror, identically across backends
+// and languages. Each case prints exit code and stderr.
+export const NOT_FOUND_CASES: ReadonlyArray<readonly [string, string]> = [
+  ["nf_cat", "cat /data/missing.txt"],
+  ["nf_head", "head /data/missing.txt"],
+  ["nf_tail", "tail /data/missing.txt"],
+  ["nf_wc", "wc /data/missing.txt"],
+  ["nf_stat", "stat /data/missing.txt"],
+  ["nf_grep", "grep x /data/missing.txt"],
+  ["nf_cat_nested", "cat /data/sub/missing.txt"],
+  ["nf_cat_pipe", "cat /data/missing.txt | cat"],
+];
+
 const ENC = new TextEncoder();
+
+// Backend-agnostic not-found probe: every backend (whatever its mount prefix)
+// must surface the full virtual path plus the GNU strerror. Read-only SaaS/DB
+// backends call runNotFound(ws, MOUNT) so the same invariant is checked there.
+const NOT_FOUND_PROGS: ReadonlyArray<readonly [string, string]> = [
+  ["nf_cat", "cat"],
+  ["nf_head", "head"],
+  ["nf_tail", "tail"],
+  ["nf_wc", "wc"],
+  ["nf_stat", "stat"],
+  ["nf_grep", "grep x"],
+];
+
+export async function runNotFound(ws: Workspace, mount: string): Promise<void> {
+  const target = `${mount.replace(/\/+$/, "")}/__nf_missing__.txt`;
+  for (const [name, prog] of NOT_FOUND_PROGS) {
+    const result = await ws.execute(`${prog} ${target}`);
+    const err = new TextDecoder().decode(result.stderr).trim();
+    process.stdout.write(`=== ${name} ===\n`);
+    process.stdout.write(`exit=${result.exitCode}\n`);
+    if (err) process.stdout.write(err + "\n");
+  }
+}
 
 export async function runCases(ws: Workspace): Promise<void> {
   for (const [path, content] of Object.entries(SEED_FILES)) {
@@ -557,6 +610,14 @@ export async function runCases(ws: Workspace): Promise<void> {
     process.stdout.write(`=== ${name} ===\n`);
     process.stdout.write(`exit=${result.exitCode}\n`);
     if (out) process.stdout.write(out.endsWith("\n") ? out : out + "\n");
+  }
+
+  for (const [name, cmd] of NOT_FOUND_CASES) {
+    const result = await ws.execute(cmd);
+    const err = new TextDecoder().decode(result.stderr).trim();
+    process.stdout.write(`=== ${name} ===\n`);
+    process.stdout.write(`exit=${result.exitCode}\n`);
+    if (err) process.stdout.write(err + "\n");
   }
 
   for (const [name, cmd, expected] of SLEEP_CASES) {

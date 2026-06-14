@@ -3,6 +3,7 @@ from typing import Any
 
 from mirage.cache.index import IndexCacheStore, IndexEntry
 from mirage.core.dify._client import is_visible_document, list_all_documents
+from mirage.utils.path import gnu_basename, parent
 
 
 async def ensure_tree(accessor,
@@ -57,7 +58,7 @@ def build_dir_entries(
             continue
         entry = IndexEntry(
             id=directory.strip("/"),
-            name=basename(directory),
+            name=gnu_basename(directory),
             resource_type="folder",
         )
         dir_entries[virtual_path(parent(directory), prefix)].append(
@@ -66,7 +67,7 @@ def build_dir_entries(
     for path, document in sorted(files.items()):
         entry = IndexEntry(
             id=str(document["id"]),
-            name=basename(path),
+            name=gnu_basename(path),
             resource_type="file",
             size=extract_document_size(document),
             remote_time=timestamp_to_iso(document.get("created_at")),
@@ -170,12 +171,3 @@ def virtual_path(path: str, prefix: str) -> str:
     if root == "/":
         return path
     return root + path
-
-
-def parent(path: str) -> str:
-    value = path.rsplit("/", 1)[0]
-    return value or "/"
-
-
-def basename(path: str) -> str:
-    return path.rstrip("/").rsplit("/", 1)[-1] or "/"

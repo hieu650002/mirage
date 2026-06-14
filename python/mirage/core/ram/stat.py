@@ -15,11 +15,9 @@
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.types import FileStat, FileType, PathSpec
+from mirage.utils.errors import enoent
 from mirage.utils.filetype import guess_type
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def stat(accessor: RAMAccessor,
@@ -27,6 +25,7 @@ async def stat(accessor: RAMAccessor,
                index: IndexCacheStore = None) -> FileStat:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
@@ -35,7 +34,7 @@ async def stat(accessor: RAMAccessor,
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             path = rest or "/"
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     if p in store.dirs:
         return FileStat(
             name=p.rsplit("/", 1)[-1] or "/",
@@ -51,4 +50,4 @@ async def stat(accessor: RAMAccessor,
             modified=store.modified.get(p),
             type=guess_type(p),
         )
-    raise FileNotFoundError(p)
+    raise enoent(virtual)

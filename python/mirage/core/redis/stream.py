@@ -18,16 +18,15 @@ from mirage.accessor.redis import RedisAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.errors import enoent
+from mirage.utils.path import norm
 
 
 async def stream(accessor: RedisAccessor,
                  path: PathSpec) -> AsyncIterator[bytes]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
@@ -36,10 +35,10 @@ async def stream(accessor: RedisAccessor,
             if prefix.endswith("/") or rest == "" or rest.startswith("/"):
                 path = rest or "/"
     store = accessor.store
-    key = _norm(path)
+    key = norm(path)
     data = await store.get_file(key)
     if data is None:
-        raise FileNotFoundError(path)
+        raise enoent(virtual)
     rec = record_stream("read", path, "redis")
     if rec is not None:
         rec.bytes = len(data)

@@ -17,13 +17,9 @@ import { FileStat, FileType, type PathSpec } from '../../types.ts'
 import { guessType } from '../../utils/filetype.ts'
 import type { S3Accessor } from '../../accessor/s3.ts'
 import { createS3Client, isNotFoundError, loadS3Module, s3Key } from './_client.ts'
-import { rstripSlash, stripSlash } from '../../util/slash.ts'
-
-function basename(path: string): string {
-  const stripped = rstripSlash(path)
-  const idx = stripped.lastIndexOf('/')
-  return idx >= 0 ? stripped.slice(idx + 1) : stripped
-}
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
+import { gnuBasename } from '../../utils/path.ts'
+import { enoent } from '../../utils/errors.ts'
 
 export async function stat(
   accessor: S3Accessor,
@@ -68,9 +64,7 @@ export async function stat(
     const parent = virtualKey.replace(/\/[^/]*$/, '') || '/'
     const parentListing = await index.listDir(parent)
     if (parentListing.entries !== undefined && parentListing.entries !== null) {
-      const e = new Error(`S3 object not found: ${rawPath}`) as Error & { code: string }
-      e.code = 'ENOENT'
-      throw e
+      throw enoent(path)
     }
   }
 
@@ -96,11 +90,9 @@ export async function stat(
         }),
       )) as { CommonPrefixes?: unknown[]; Contents?: unknown[] }
       if ((listResp.CommonPrefixes?.length ?? 0) > 0 || (listResp.Contents?.length ?? 0) > 0) {
-        return new FileStat({ name: basename(rawPath) || '/', type: FileType.DIRECTORY })
+        return new FileStat({ name: gnuBasename(rawPath) || '/', type: FileType.DIRECTORY })
       }
-      const e = new Error(`S3 object not found: ${rawPath}`) as Error & { code: string }
-      e.code = 'ENOENT'
-      throw e
+      throw enoent(path)
     }
 
     try {
@@ -117,7 +109,7 @@ export async function stat(
       let revision = resp.VersionId ?? null
       if (revision === 'null') revision = null
       return new FileStat({
-        name: basename(rawPath),
+        name: gnuBasename(rawPath),
         size: resp.ContentLength ?? null,
         modified,
         fingerprint: etag !== '' ? etag : null,
@@ -140,12 +132,10 @@ export async function stat(
       }),
     )) as { CommonPrefixes?: unknown[]; Contents?: unknown[] }
     if ((listResp.CommonPrefixes?.length ?? 0) > 0 || (listResp.Contents?.length ?? 0) > 0) {
-      return new FileStat({ name: basename(rawPath) || '/', type: FileType.DIRECTORY })
+      return new FileStat({ name: gnuBasename(rawPath) || '/', type: FileType.DIRECTORY })
     }
 
-    const e = new Error(`S3 object not found: ${rawPath}`) as Error & { code: string }
-    e.code = 'ENOENT'
-    throw e
+    throw enoent(path)
   } finally {
     ;(client as unknown as { destroy?: () => void }).destroy?.()
   }

@@ -1469,6 +1469,25 @@ hello
 exit=1
 === grep_f_empty_no_match ===
 exit=1
+=== grep_c_match_exit ===
+exit=0
+1
+=== grep_c_no_match_exit ===
+exit=1
+0
+=== grep_c_stdin_no_match_exit ===
+exit=1
+0
+=== grep_c_multi_no_match_exit ===
+exit=1
+/data/a.txt:0
+/data/b.txt:0
+=== zgrep_c_match_exit ===
+exit=0
+1
+=== zgrep_c_no_match_exit ===
+exit=1
+0
 === grep_usage_exit ===
 exit=2
 === rg_usage_exit ===
@@ -1607,6 +1626,30 @@ exit=1
 exit=1
 === sleep_infinity ===
 exit=1
+=== nf_cat ===
+exit=1
+cat: /data/missing.txt: No such file or directory
+=== nf_head ===
+exit=1
+head: /data/missing.txt: No such file or directory
+=== nf_tail ===
+exit=1
+tail: /data/missing.txt: No such file or directory
+=== nf_wc ===
+exit=1
+wc: /data/missing.txt: No such file or directory
+=== nf_stat ===
+exit=1
+stat: /data/missing.txt: No such file or directory
+=== nf_grep ===
+exit=1
+grep: /data/missing.txt: No such file or directory
+=== nf_cat_nested ===
+exit=1
+cat: /data/sub/missing.txt: No such file or directory
+=== nf_cat_pipe ===
+exit=0
+cat: /data/missing.txt: No such file or directory
 === sleep_zero ===
 sleep_zero ok
 === sleep_fraction ===
