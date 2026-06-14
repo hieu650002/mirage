@@ -15,14 +15,11 @@
 from mirage.accessor.ram import RAMAccessor
 from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def create(accessor: RAMAccessor, path: PathSpec) -> None:
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     store.files[p] = b""
     store.modified[p] = now_iso()

@@ -14,10 +14,7 @@
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def rm_r(accessor: RedisAccessor, path: PathSpec) -> None:
@@ -26,7 +23,7 @@ async def rm_r(accessor: RedisAccessor, path: PathSpec) -> None:
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     prefix = p.rstrip("/") + "/"
     for key in await store.list_files():
         if key == p or key.startswith(prefix):

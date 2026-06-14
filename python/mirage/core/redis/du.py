@@ -14,10 +14,7 @@
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def du(accessor: RedisAccessor, path: PathSpec) -> int:
@@ -26,7 +23,7 @@ async def du(accessor: RedisAccessor, path: PathSpec) -> int:
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     prefix = p.rstrip("/") + "/"
     total = 0
     for key in await store.list_files():
@@ -42,7 +39,7 @@ async def du_all(accessor: RedisAccessor,
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     prefix = p.rstrip("/") + "/"
     entries: list[tuple[str, int]] = []
     total = 0

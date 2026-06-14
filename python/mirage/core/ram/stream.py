@@ -19,10 +19,7 @@ from mirage.cache.index import IndexCacheStore
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def stream(accessor: RAMAccessor,
@@ -38,7 +35,7 @@ async def stream(accessor: RAMAccessor,
             if prefix.endswith("/") or rest == "" or rest.startswith("/"):
                 path = rest or "/"
     store = accessor.store
-    key = _norm(path)
+    key = norm(path)
     if key not in store.files:
         raise enoent(virtual)
     data = store.files[key]

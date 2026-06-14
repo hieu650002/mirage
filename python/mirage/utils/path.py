@@ -15,6 +15,33 @@
 import posixpath
 
 
+def norm(path: str) -> str:
+    """Normalize a virtual path to a leading-slash, no-trailing-slash key.
+
+    Args:
+        path: A virtual path string.
+
+    Returns:
+        The path with surrounding slashes collapsed to a single leading
+        slash (``"foo/bar/"`` -> ``"/foo/bar"``, ``""`` -> ``"/"``).
+    """
+    return "/" + path.strip("/")
+
+
+def parent(path: str) -> str:
+    """Return the parent directory of a normalized virtual key.
+
+    Args:
+        path: A normalized virtual path (leading slash, no trailing slash).
+
+    Returns:
+        The path with its last segment removed (``"/a/b"`` -> ``"/a"``),
+        or ``"/"`` when there is no parent segment.
+    """
+    i = path.rfind("/")
+    return path[:i] if i > 0 else "/"
+
+
 def resolve_path(path: str, cwd: str) -> str:
     """Resolve a relative path against cwd.
 

@@ -273,7 +273,7 @@ export { fmtGeneric } from './commands/builtin/generic/fmt.ts'
 export { headStream } from './commands/builtin/generic/head.ts'
 export { basenameFn } from './commands/builtin/generic/basename.ts'
 export { dirnameFn } from './commands/builtin/generic/dirname.ts'
-export { gnuBasename, gnuDirname } from './utils/path.ts'
+export { gnuBasename, gnuDirname, norm, parent } from './utils/path.ts'
 export { detectFileType, FILE_MIME_MAP, formatFileResult } from './commands/builtin/file_helper.ts'
 export {
   type AggregateResult,
