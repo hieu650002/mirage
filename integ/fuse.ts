@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdtempSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +31,9 @@ async function main(): Promise<void> {
   logs.store.dirs.add("/");
   logs.store.files.set("/b.txt", enc.encode("beta\n"));
 
-  const pinned = mkdtempSync(join(tmpdir(), "mirage-fuse-data-"));
+  // Non-existent pinned path: the mount must create it (mirrors the CLI flow).
+  const pinned = join(tmpdir(), `mirage-fuse-data-${String(process.pid)}`);
+  rmSync(pinned, { recursive: true, force: true });
   const ws = new Workspace(
     { "/data": data, "/logs": logs },
     { mode: MountMode.WRITE, fuseMounts: { "/data": pinned, "/logs": true } },

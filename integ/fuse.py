@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import os
+import shutil
 import tempfile
 import time
 
@@ -28,7 +29,9 @@ def main() -> None:
     logs._store.dirs.add("/")
     logs._store.files["/b.txt"] = b"beta\n"
 
-    pinned = tempfile.mkdtemp(prefix="mirage-fuse-data-")
+    pinned = os.path.join(tempfile.gettempdir(),
+                          f"mirage-fuse-data-{os.getpid()}")
+    shutil.rmtree(pinned, ignore_errors=True)
     with Workspace(
         {
             "/data": (data, MountMode.WRITE),
