@@ -31,6 +31,7 @@
  *  4. Open http://localhost:5173/gdrive_pkce.html
  */
 import { GDriveResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+import { escapeHtml } from './html.ts'
 
 declare const __GOOGLE_CLIENT_ID__: string
 declare const __GOOGLE_CLIENT_SECRET__: string
@@ -53,15 +54,6 @@ const logEl = document.getElementById('log') as HTMLDivElement
 
 function setStatus(html: string): void {
   statusEl.innerHTML = html
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
 }
 
 function line(s: string, cls?: string): void {

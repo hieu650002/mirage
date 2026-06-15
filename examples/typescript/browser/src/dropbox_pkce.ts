@@ -31,6 +31,7 @@
  *  4. Open http://localhost:5173/dropbox_pkce.html
  */
 import { DropboxResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+import { escapeHtml } from './html.ts'
 
 declare const __DROPBOX_CLIENT_ID__: string
 
@@ -49,15 +50,6 @@ const logEl = document.getElementById('log') as HTMLDivElement
 
 function setStatus(html: string): void {
   statusEl.innerHTML = html
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
 }
 
 function line(s: string, cls?: string): void {

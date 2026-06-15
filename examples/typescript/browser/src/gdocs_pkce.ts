@@ -34,6 +34,7 @@
  * NO `client_secret` parameter (PKCE works as expected end-to-end).
  */
 import { GDocsResource, MountMode, Workspace } from '@struktoai/mirage-browser'
+import { escapeHtml } from './html.ts'
 
 declare const __GOOGLE_CLIENT_ID__: string
 
@@ -55,15 +56,6 @@ const logEl = document.getElementById('log') as HTMLDivElement
 
 function status(html: string): void {
   statusEl.innerHTML = html
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
 }
 
 function line(s: string, cls?: string): void {
