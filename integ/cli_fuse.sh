@@ -113,6 +113,11 @@ expect "distinct" "yes"
 
 if [ "$fail" != "0" ]; then
   echo
+  if [ -f "$HOME/.mirage/daemon.log" ]; then
+    echo "===== ~/.mirage/daemon.log (last 60 lines) ====="
+    tail -60 "$HOME/.mirage/daemon.log"
+    echo
+  fi
   echo "CLI FUSE parity FAILED."
   exit 1
 fi
