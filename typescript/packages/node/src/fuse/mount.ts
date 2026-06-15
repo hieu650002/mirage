@@ -28,6 +28,8 @@ export interface FuseHandle {
 export interface MountOptions {
   mountpoint?: string
   agentId?: string
+  /** Scope the mount to a single workspace mount prefix (subtree exposure). */
+  rootPrefix?: string
   /**
    * When true, `@zkochan/fuse-native`'s `autoUnmount` flag is set so the
    * kernel releases the mount if the process exits abnormally. Defaults to
@@ -82,7 +84,10 @@ export async function mount(ws: Workspace, options: MountOptions = {}): Promise<
   const Fuse = await loadFuse()
   const mountpoint = options.mountpoint ?? mkdtempSync(join(tmpdir(), 'mirage-fuse-'))
   const agentId = options.agentId
-  const mfs = new MirageFS(ws, agentId !== undefined ? { agentId } : {})
+  const mfs = new MirageFS(ws, {
+    ...(agentId !== undefined ? { agentId } : {}),
+    ...(options.rootPrefix !== undefined ? { rootPrefix: options.rootPrefix } : {}),
+  })
   const autoUnmount = options.autoUnmount ?? process.platform === 'linux'
   // attr_timeout=0 (string: the option serializer drops falsy values) keeps
   // the kernel from caching the UNKNOWN_SIZE_SENTINEL that getattr reports
