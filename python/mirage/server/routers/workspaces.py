@@ -121,15 +121,15 @@ async def _run_snapshot(ws: Workspace, target: str) -> None:
 async def load_workspace(req: LoadWorkspaceRequest,
                          request: Request) -> WorkspaceDetail:
     registry = request.app.state.registry
-    if req.id is not None and req.id in registry:
-        raise HTTPException(status_code=409,
-                            detail=f"workspace id already exists: {req.id!r}")
-    resources = _build_load_resources(req.override)
     try:
         safe_path = resolve_within_root(request.app.state.snapshot_root,
                                         req.path)
     except PathOutsideRootError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if req.id is not None and req.id in registry:
+        raise HTTPException(status_code=409,
+                            detail=f"workspace id already exists: {req.id!r}")
+    resources = _build_load_resources(req.override)
     try:
         ws = Workspace.load(str(safe_path), resources=resources)
     except FileNotFoundError:
