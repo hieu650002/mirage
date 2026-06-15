@@ -66,7 +66,7 @@ describe('runRead', () => {
   it('errors on missing file', async () => {
     const result = await runRead(mkWs(), '/nonexistent.txt')
     expect(result.isError).toBe(true)
-    expect(firstText(result)).toContain('Error')
+    expect(firstText(result)).toContain('not found')
   })
 })
 

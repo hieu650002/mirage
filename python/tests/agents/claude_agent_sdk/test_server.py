@@ -56,7 +56,7 @@ async def test_read_file_with_offset_and_limit(tools, workspace):
 async def test_read_file_not_found(tools):
     result = await tools.read({"path": "/nonexistent.txt"})
     assert result["is_error"] is True
-    assert "Error" in result["content"][0]["text"]
+    assert "not found" in result["content"][0]["text"]
 
 
 @pytest.mark.asyncio

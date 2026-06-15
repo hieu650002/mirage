@@ -73,7 +73,9 @@ class _MirageTools:
         ops = self._ws.ops
         try:
             data = await ops.read(path)
-        except (FileNotFoundError, ValueError) as exc:
+        except FileNotFoundError:
+            return _error(f"Error: file '{path}' not found")
+        except ValueError as exc:
             return _error(f"Error: {exc}")
         text = data.decode("utf-8", errors="replace")
         lines = text.splitlines(keepends=True)

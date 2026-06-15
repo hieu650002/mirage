@@ -76,6 +76,9 @@ export async function runRead(
   try {
     data = await ws.fs.readFile(path)
   } catch (err) {
+    if (!(await ws.fs.exists(path))) {
+      return errorResult(`Error: file '${path}' not found`)
+    }
     return errorResult(`Error: ${err instanceof Error ? err.message : String(err)}`)
   }
   const text = decode(data)
