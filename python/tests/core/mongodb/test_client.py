@@ -18,7 +18,7 @@ import pytest
 
 from mirage.core.mongodb._client import (get_index_stats, get_indexes,
                                          get_validator, is_view,
-                                         iter_documents)
+                                         iter_documents, iter_inserts)
 
 
 class _AsyncIter:
@@ -256,3 +256,85 @@ async def test_get_indexes_returns_empty_for_view_without_listing():
     assert out == []
     db.list_collections.assert_awaited_once_with(filter={"name": "myview"})
     col.list_indexes.assert_not_called()
+
+
+class _AsyncChangeStream:
+
+    def __init__(self, changes):
+        self._iter = _AsyncIter(changes)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def __aiter__(self):
+        return self._iter
+
+
+def _build_watch_client(changes):
+    stream = _AsyncChangeStream(changes)
+    col = MagicMock()
+    col.watch = AsyncMock(return_value=stream)
+    db = MagicMock()
+    db.__getitem__.return_value = col
+    client = MagicMock()
+    client.__getitem__.return_value = db
+    return client, col
+
+
+@pytest.mark.asyncio
+async def test_iter_inserts_yields_full_documents():
+    changes = [
+        {
+            "operationType": "insert",
+            "fullDocument": {
+                "_id": 1,
+                "v": "a"
+            }
+        },
+        {
+            "operationType": "insert",
+            "fullDocument": {
+                "_id": 2,
+                "v": "b"
+            }
+        },
+    ]
+    client, col = _build_watch_client(changes)
+    out = []
+    async for doc in iter_inserts(client, "db1", "coll1"):
+        out.append(doc)
+    assert out == [{"_id": 1, "v": "a"}, {"_id": 2, "v": "b"}]
+    col.watch.assert_awaited_once_with([{
+        "$match": {
+            "operationType": "insert"
+        }
+    }])
+
+
+@pytest.mark.asyncio
+async def test_iter_inserts_skips_changes_without_full_document():
+    changes = [
+        {
+            "operationType": "insert",
+            "fullDocument": {
+                "_id": 1
+            }
+        },
+        {
+            "operationType": "drop"
+        },
+        {
+            "operationType": "insert",
+            "fullDocument": {
+                "_id": 2
+            }
+        },
+    ]
+    client, _ = _build_watch_client(changes)
+    out = []
+    async for doc in iter_inserts(client, "db1", "coll1"):
+        out.append(doc)
+    assert out == [{"_id": 1}, {"_id": 2}]
