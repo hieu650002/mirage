@@ -929,7 +929,9 @@ o
 === grep_recursive_dir ===
 
 === grep_empty_pattern ===
-
+1
+2
+3
 === grep_e_flag ===
 world
 === grep_e_n ===
