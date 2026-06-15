@@ -22,6 +22,7 @@ except ImportError as exc:
         "`claude-agent-sdk` not installed. "
         "Install with: pip install 'mirage-ai[claude-agent-sdk]'") from exc
 
+from mirage import __version__
 from mirage.agents.claude_agent_sdk.prompt import (  # yapf: disable
     EDIT_DESCRIPTION, EXECUTE_DESCRIPTION, GREP_DESCRIPTION, LS_DESCRIPTION,
     READ_DESCRIPTION, WRITE_DESCRIPTION)
@@ -146,7 +147,7 @@ def MirageServer(workspace: Workspace):
     tools_impl = _MirageTools(workspace)
     return create_sdk_mcp_server(
         name="mirage",
-        version="1.0.0",
+        version=__version__,
         tools=[
             tool("execute_command", EXECUTE_DESCRIPTION,
                  {"command": str})(tools_impl.execute_command),
