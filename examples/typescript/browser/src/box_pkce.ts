@@ -51,6 +51,15 @@ function setStatus(html: string): void {
   statusEl.innerHTML = html
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function line(s: string, cls?: string): void {
   const div = document.createElement('div')
   if (cls !== undefined) div.className = cls
@@ -189,7 +198,7 @@ async function main(): Promise<void> {
   const errParam = url.searchParams.get('error')
 
   if (errParam !== null) {
-    setStatus(`<span class="err">Box declined the consent: ${errParam}</span>`)
+    setStatus(`<span class="err">Box declined the consent: ${escapeHtml(errParam)}</span>`)
     return
   }
 
@@ -200,7 +209,9 @@ async function main(): Promise<void> {
       writeTokens(tokens)
       window.history.replaceState({}, document.title, '/box_pkce.html')
     } catch (err) {
-      setStatus(`<span class="err">${err instanceof Error ? err.message : String(err)}</span>`)
+      setStatus(
+        `<span class="err">${escapeHtml(err instanceof Error ? err.message : String(err))}</span>`,
+      )
       return
     }
   }

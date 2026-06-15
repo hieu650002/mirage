@@ -57,6 +57,15 @@ function status(html: string): void {
   statusEl.innerHTML = html
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function line(s: string, cls?: string): void {
   const div = document.createElement('div')
   if (cls !== undefined) div.className = cls
@@ -222,7 +231,7 @@ async function main(): Promise<void> {
   const errParam = url.searchParams.get('error')
 
   if (errParam !== null) {
-    status(`<span class="err">Google declined the consent: ${errParam}</span>`)
+    status(`<span class="err">Google declined the consent: ${escapeHtml(errParam)}</span>`)
     return
   }
 
@@ -234,7 +243,9 @@ async function main(): Promise<void> {
       // Strip ?code= from the URL so a reload doesn't try to re-exchange.
       window.history.replaceState({}, document.title, '/gdocs_pkce.html')
     } catch (err) {
-      status(`<span class="err">${err instanceof Error ? err.message : String(err)}</span>`)
+      status(
+        `<span class="err">${escapeHtml(err instanceof Error ? err.message : String(err))}</span>`,
+      )
       return
     }
   }
