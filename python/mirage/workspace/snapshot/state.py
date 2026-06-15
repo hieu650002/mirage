@@ -18,6 +18,8 @@ import tempfile
 
 from mirage.observe.log_entry import EVENT_CLEAR, EVENT_COMMAND, EVENT_DELETE
 from mirage.resource.history import HISTORY_PREFIX
+from mirage.resource.loader import load_backend_class
+from mirage.resource.registry import REGISTRY
 from mirage.resource.secrets import has_redacted_secret
 from mirage.shell.job_table import Job, JobStatus
 from mirage.types import (CacheKey, ConsistencyPolicy, JobKey, MountKey,
@@ -31,7 +33,7 @@ from mirage.workspace.snapshot.utils import FORMAT_VERSION, norm_mount_prefix
 
 def _mirage_version() -> str:
     try:
-        return importlib.metadata.version("mirage")
+        return importlib.metadata.version("mirage-ai")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
 
@@ -283,6 +285,9 @@ def requires_resource_override(mount_state: dict) -> bool:
 
 
 def _resource_class_for(mount_state: dict):
+    ptype = mount_state[MountKey.RESOURCE_STATE].get(ResourceStateKey.TYPE, "")
+    if ptype in REGISTRY:
+        return load_backend_class(REGISTRY[ptype].resource_path)
     cls_path = mount_state[MountKey.RESOURCE_CLASS]
     mod_name, cls_name = cls_path.rsplit(".", 1)
     return getattr(importlib.import_module(mod_name), cls_name)

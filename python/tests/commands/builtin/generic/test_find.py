@@ -1,13 +1,18 @@
+import asyncio
 from dataclasses import asdict
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
 
+from mirage.commands.builtin.find_eval import Name, Not, Or
 from mirage.commands.builtin.generic.find import (FindArgs, apply_mount_prefix,
                                                   apply_mtime_filter,
                                                   parse_find_args, walk_find)
-from mirage.types import FileStat, FileType, FindType, PathSpec
+from mirage.commands.errors import FindParseError
+from mirage.resource.ram import RAMResource
+from mirage.types import FileStat, FileType, FindType, MountMode, PathSpec
+from mirage.workspace import Workspace
 
 
 def _defaults() -> dict:
@@ -79,15 +84,14 @@ def test_parse_find_args_unknown_type_left_as_string():
     assert parse_find_args((), type="symlink").type == "symlink"
 
 
-def test_parse_find_args_extracts_not_name_from_texts():
+def test_parse_find_args_negation_builds_not_tree():
     args = parse_find_args(("-not", "-name", "*.pyc"))
-    assert args.name_exclude == "*.pyc"
+    assert args.tree == Not(Name("*.pyc"))
 
 
-def test_parse_find_args_extracts_or_names_only_when_multiple():
-    """Single `-name` gets a None or_names list (means: just use args.name)."""
-    args = parse_find_args(("-or", "-name", "*.py"), name="*.txt")
-    assert args.or_names == ["*.txt", "*.py"]
+def test_parse_find_args_or_builds_or_tree():
+    args = parse_find_args(("-name", "*.txt", "-o", "-name", "*.py"))
+    assert args.tree == Or([Name("*.txt"), Name("*.py")])
 
 
 def test_parse_find_args_or_names_none_when_only_one_name():
@@ -273,3 +277,48 @@ async def test_walk_find_size_filter_propagates_other_stat_errors():
                         is_dir_name=lambda c: False,
                         index=None,
                         args=FindArgs(min_size=1))
+
+
+@pytest.mark.parametrize("kwargs,flag,value", [
+    ({
+        "maxdepth": "abc"
+    }, "-maxdepth", "abc"),
+    ({
+        "mindepth": "xx"
+    }, "-mindepth", "xx"),
+    ({
+        "size": ""
+    }, "-size", ""),
+    ({
+        "size": "abc"
+    }, "-size", "abc"),
+    ({
+        "mtime": "abc"
+    }, "-mtime", "abc"),
+])
+def test_parse_find_args_invalid_numeric_raises_find_parse_error(
+        kwargs, flag, value):
+    with pytest.raises(FindParseError) as exc:
+        parse_find_args((), **kwargs)
+    assert str(exc.value) == f"find: invalid argument '{value}' to '{flag}'"
+
+
+@pytest.mark.parametrize("expr", [
+    "-maxdepth abc",
+    "-mindepth xx",
+    "-size ''",
+    "-size abc",
+    "-mtime abc",
+])
+def test_find_invalid_numeric_arg_exits_one_with_clean_stderr(expr):
+
+    async def _go() -> tuple[int, str]:
+        ws = Workspace({"/": RAMResource()}, mode=MountMode.WRITE)
+        ws.create_session("s")
+        r = await ws.execute(f"find / {expr}", session_id="s")
+        return r.exit_code, await r.stderr_str()
+
+    code, stderr = asyncio.run(_go())
+    assert code == 1
+    assert stderr.startswith("find: invalid argument ")
+    assert stderr.endswith("\n")

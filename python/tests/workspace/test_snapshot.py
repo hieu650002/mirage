@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import importlib.metadata
 import json
 import tarfile
 
@@ -320,7 +321,8 @@ def test_to_state_dict_shape():
                    mode=MountMode.WRITE)
     state = asyncio.run(to_state_dict(ws))
     assert state["version"] == 2
-    assert "mirage_version" in state
+    assert state["mirage_version"] == importlib.metadata.version("mirage-ai")
+    assert state["mirage_version"] != "unknown"
     assert isinstance(state["mounts"], list)
     assert state["cache"]["entries"] == []
     assert state["jobs"] == []

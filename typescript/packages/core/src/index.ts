@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const VERSION = '0.0.0'
+export { VERSION } from './version.ts'
 export {
   CommandSafeguard,
   type CommandSafeguardInit,
@@ -36,6 +36,17 @@ export {
   type FingerprintEntry,
   liveOnlyMountPrefixes,
 } from './workspace/snapshot/drift.ts'
+export { applyStateDict, buildMountArgs, toStateDict } from './workspace/snapshot/state.ts'
+export type {
+  CacheEntrySnapshot,
+  ExecutionRecordSnapshot,
+  FingerprintEntrySnapshot,
+  JobSnapshot,
+  MountSnapshot,
+  ResourceState,
+  SessionSnapshot,
+  WorkspaceStateDict,
+} from './workspace/snapshot/types.ts'
 export { BaseResource, type FindOptions, type Resource, throwUnsupported } from './resource/base.ts'
 export {
   hasRedactedSecret,
@@ -250,7 +261,7 @@ export { unzipGeneric } from './commands/builtin/generic/unzip.ts'
 export { zipGeneric } from './commands/builtin/generic/zip_cmd.ts'
 export { tarGeneric } from './commands/builtin/generic/tar.ts'
 export { realpathGeneric } from './commands/builtin/generic/realpath.ts'
-export { findGeneric } from './commands/builtin/generic/find.ts'
+export { findGeneric, findSizeMtimeError, invalidFindArg } from './commands/builtin/generic/find.ts'
 export { statGeneric, statProvisionGeneric } from './commands/builtin/generic/stat.ts'
 export { diffGeneric } from './commands/builtin/generic/diff.ts'
 export { duGeneric } from './commands/builtin/generic/du.ts'
@@ -1082,6 +1093,14 @@ export { setHttpProxyBase } from './commands/builtin/utils/http.ts'
 
 export { lstripSlash, rstripSlash, stripSlash } from './utils/slash.ts'
 export { fnmatch } from './utils/fnmatch.ts'
+export {
+  buildTree,
+  computeNonemptyDirs,
+  evalPredicate,
+  type FindEntry,
+  keep,
+  type PredNode,
+} from './commands/builtin/findEval.ts'
 export { enoent, enotdir, errorVirtualPath, type FsError, gnuStrerror } from './utils/errors.ts'
 
 export {

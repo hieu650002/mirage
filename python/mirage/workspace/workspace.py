@@ -25,7 +25,7 @@ from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import IndexConfig
 from mirage.commands.builtin.utils.safeguard import (CommandTimeoutError,
                                                      run_with_timeout)
-from mirage.commands.errors import UsageError
+from mirage.commands.errors import FindParseError, UsageError
 from mirage.commands.safeguard import resolve_safeguard
 
 try:
@@ -53,7 +53,6 @@ from mirage.workspace.executor.fs_error import format_fs_error
 from mirage.workspace.file_prompt import build_file_prompt
 from mirage.workspace.fuse import FuseManager
 from mirage.workspace.mount import Mount, MountRegistry
-from mirage.workspace.native import native_exec
 from mirage.workspace.node import provision_node, run_command_tree
 from mirage.workspace.session import (Session, SessionManager,
                                       reset_current_session,
@@ -85,8 +84,7 @@ class Workspace:
         consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY,
         session_id: str = DEFAULT_SESSION_ID,
         agent_id: str = DEFAULT_AGENT_ID,
-        fuse: bool = False,
-        native: bool = False,
+        fuse_mounts: dict[str, bool | str] | None = None,
         observe: ObserverStore | None = None,
     ) -> None:
         self._registry = MountRegistry()
@@ -140,7 +138,7 @@ class Workspace:
                 mount_obj.command_safeguards.update(mount_safeguards)
 
         self._fuse = FuseManager()
-        self._native = native
+        self._fuse_managers: dict[str, FuseManager] = {}
 
         self.observer = Observer(store=observe)
         self._registry.mount(HISTORY_PREFIX,
@@ -153,8 +151,14 @@ class Workspace:
                         agent_id=agent_id,
                         session_id=session_id)
 
-        if fuse:
-            self._fuse.setup(self)
+        if fuse_mounts:
+            for prefix, target in fuse_mounts.items():
+                if not target:
+                    continue
+                manager = FuseManager()
+                point = target if isinstance(target, str) else None
+                manager.setup(self, root_prefix=prefix, mountpoint=point)
+                self._fuse_managers[prefix] = manager
 
     async def history(self) -> list[dict]:
         """Command events recorded by the hidden recorder.
@@ -239,6 +243,15 @@ class Workspace:
         return self._fuse.mountpoint
 
     @property
+    def fuse_mountpoints(self) -> dict[str, str]:
+        """Map each FUSE-exposed mount prefix to its on-disk mountpoint."""
+        return {
+            prefix: manager.mountpoint
+            for prefix, manager in self._fuse_managers.items()
+            if manager.mountpoint is not None
+        }
+
+    @property
     def _cwd(self) -> str:
         return self._session_mgr.cwd
 
@@ -274,6 +287,8 @@ class Workspace:
 
     def _close_parts(self) -> None:
         self._fuse.close()
+        for manager in self._fuse_managers.values():
+            manager.close()
         if self._closed:
             return
         self._closed = True
@@ -553,11 +568,10 @@ class Workspace:
     async def execute(
         self,
         command: str,
-        session_id: str = DEFAULT_SESSION_ID,
+        session_id: str | None = None,
         stdin: AsyncIterator[bytes] | bytes | None = None,
         provision: bool = False,
         agent_id: str = DEFAULT_AGENT_ID,
-        native: bool | None = None,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         cancel: asyncio.Event | None = None,
@@ -571,7 +585,6 @@ class Workspace:
             stdin: Optional stdin payload (bytes or async byte iterator).
             provision: If True, return a ProvisionResult instead of running.
             agent_id: Agent identifier for observability and history.
-            native: Force native FUSE execution; defaults to workspace setting.
             cwd: Per-call working directory override. When provided, the
                 command runs in an ephemeral session clone (bash subshell
                 semantics): the persistent session's cwd is unchanged and
@@ -594,31 +607,9 @@ class Workspace:
             raise MirageAbortError()
         if self._drift_check_pending:
             await self._run_pending_drift_check()
-        use_native = native if native is not None else self._native
-        if use_native:
-            if not self._fuse.mountpoint:
-                logger.warning(
-                    "native=True requires FUSE. Install macFUSE (macOS) "
-                    "or libfuse (Linux). Falling back to virtual mode.")
-            else:
-                native_name = command.strip().split()[0] if command.strip(
-                ) else None
-                resolved = (resolve_safeguard(native_name)
-                            if native_name else None)
-                native_timeout = (resolved.timeout_seconds
-                                  if resolved is not None else None)
-                if native_timeout is not None and native_timeout <= 0:
-                    native_timeout = None
-                stdout, stderr, code = await native_exec(
-                    command,
-                    cwd=self._fuse.mountpoint,
-                    timeout=native_timeout,
-                    name=native_name)
-                # TODO: record native (FUSE) executions in history and
-                # the audit log; this path returns before the recording
-                # scope opens, so native commands are invisible to both.
-                return IOResult(exit_code=code, stderr=stderr, stdout=stdout)
 
+        if session_id is None:
+            session_id = self._session_mgr.default_id
         session = self._session_mgr.get(session_id)
         use_override = cwd is not None or env is not None
         if use_override:
@@ -686,6 +677,10 @@ class Workspace:
             return io
         except (MirageAbortError, ContentDriftError):
             raise
+        except FindParseError as exc:
+            msg = f"{exc}\n".encode()
+            io = IOResult(exit_code=1, stderr=msg)
+            return io
         except UsageError as exc:
             msg = f"{exc}\n".encode()
             io = IOResult(exit_code=2, stderr=msg)

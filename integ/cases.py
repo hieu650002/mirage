@@ -517,16 +517,16 @@ CASES: list[tuple[str, str]] = [
     ("arch_iconv_file", "iconv -f utf-8 -t utf-8 /data/arch/g.txt"),
     ("arch_mktemp", "mktemp -p /data/arch | wc -l"),
 
+    # Quoted empty strings are real (empty) arguments, like bash.
+    ("echo_empty_squote", "echo a '' b"),
+    ("echo_empty_dquote", 'echo a "" b'),
+
     # ----- create at the mount root (parent resolves to "/") -----
-    # Disabled pending the GNU find start-path fix: `find <dir>` does not
-    # emit the start dir (mirage walks from depth 1), so the mkdir+find
-    # check below returns nothing. Re-enable with that find parity change.
-    # ("root_create", "echo atroot | tee /data/at_root.txt"),
-    # ("root_create_cat", "cat /data/at_root.txt"),
-    # ("root_create_mkdir",
-    #  "mkdir /data/rootdir && find /data/rootdir -type d"),
-    # ("root_create_basename", "basename /data/at_root.txt"),
-    # ("root_create_dirname", "dirname /data/at_root.txt"),
+    ("root_create", "echo atroot | tee /data/at_root.txt"),
+    ("root_create_cat", "cat /data/at_root.txt"),
+    ("root_create_mkdir", "mkdir /data/rootdir && find /data/rootdir -type d"),
+    ("root_create_basename", "basename /data/at_root.txt"),
+    ("root_create_dirname", "dirname /data/at_root.txt"),
     # ----- history: recorder views over whatever observer store -----
     ("history_last_two", "history 2"),
     ("bash_history_tail", "grep -v '^#' /.bash_history | tail -n 3"),
@@ -659,6 +659,16 @@ async def run_not_found(ws, mount: str) -> None:
             print(err)
 
 
+# Invalid numeric/size/mtime arguments to find must exit 1 with a GNU-style
+# message, identically across every backend (parsed before any backend I/O).
+FIND_ARG_ERROR_CASES: list[tuple[str, str]] = [
+    ("find_bad_maxdepth", "find /data -maxdepth abc"),
+    ("find_bad_mindepth", "find /data -mindepth xx"),
+    ("find_bad_size", "find /data -size abc"),
+    ("find_empty_size", "find /data -size ''"),
+    ("find_bad_mtime", "find /data -mtime abc"),
+]
+
 SLEEP_CASES: list[tuple[str, str, float]] = [
     ("sleep_zero", "sleep 0", 0.0),
     ("sleep_fraction", "sleep 0.2", 0.2),
@@ -687,6 +697,14 @@ async def run_cases(ws) -> None:
             print(out, end="" if out.endswith("\n") else "\n")
 
     for name, cmd in NOT_FOUND_CASES:
+        result = await ws.execute(cmd)
+        err = (await result.stderr_str()).strip()
+        print(f"=== {name} ===")
+        print(f"exit={result.exit_code}")
+        if err:
+            print(err)
+
+    for name, cmd in FIND_ARG_ERROR_CASES:
         result = await ws.execute(cmd)
         err = (await result.stderr_str()).strip()
         print(f"=== {name} ===")
