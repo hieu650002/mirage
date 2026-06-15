@@ -247,6 +247,11 @@ function restoreCache(ws: Workspace, state: WorkspaceStateDict): void {
 async function restoreHistory(ws: Workspace, state: WorkspaceStateDict): Promise<void> {
   ws.history.clear()
   for (const r of state.history) {
+    // Python's snapshot history is the Observer's LogEntry command
+    // events (no `tree`), not this ExecutionRecord shape. Skip foreign
+    // entries until the TS history port lands; cross-language loads
+    // must not crash on them.
+    if ((r as { tree?: unknown }).tree === undefined) continue
     await ws.history.append(recordFromSnapshot(r))
   }
 }
