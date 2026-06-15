@@ -22,51 +22,12 @@ except ImportError as exc:
         "`claude-agent-sdk` not installed. "
         "Install with: pip install 'mirage-ai[claude-agent-sdk]'") from exc
 
+from mirage.agents.claude_agent_sdk.prompt import (  # yapf: disable
+    EDIT_DESCRIPTION, EXECUTE_DESCRIPTION, GREP_DESCRIPTION, LS_DESCRIPTION,
+    READ_DESCRIPTION, WRITE_DESCRIPTION)
+from mirage.agents.io_text import io_to_str
 from mirage.io.types import IOResult
 from mirage.workspace.workspace import Workspace
-
-_EXECUTE_DESCRIPTION = (
-    "Run a shell-style command on the Mirage virtual filesystem. "
-    "Supports cat, grep, find, head, tail, ls, wc, sort, uniq, tee, pipe, "
-    "and any other Unix command on mounted resources (S3, disk, RAM, etc.). "
-    "Also supports reading structured files: "
-    "cat on .parquet/.orc/.csv returns a table.")
-
-_READ_DESCRIPTION = (
-    "Read the contents of a file on the Mirage virtual filesystem. "
-    "Returns line-numbered text. "
-    "Optionally pass 'offset' (default 0) to start at a given line "
-    "and 'limit' (default 2000) to cap the number of lines returned.")
-
-_WRITE_DESCRIPTION = (
-    "Write content to a new file on the Mirage virtual filesystem. "
-    "Fails if the file already exists; use edit to modify an existing file.")
-
-_EDIT_DESCRIPTION = (
-    "Replace a string in an existing file on the Mirage virtual filesystem. "
-    "Fails if old_string is not found or appears more than once. "
-    "Pass replace_all=true (default false) to replace every occurrence.")
-
-_LS_DESCRIPTION = ("List files and directories at the given path "
-                   "on the Mirage virtual filesystem.")
-
-_GREP_DESCRIPTION = (
-    "Search for a pattern in files on the Mirage virtual filesystem. "
-    "Supports regex. Searches recursively under path.")
-
-
-def _decode(value: bytes | None) -> str:
-    if value is None:
-        return ""
-    return value.decode("utf-8", errors="replace")
-
-
-def _io_to_str(io: IOResult) -> str:
-    stdout = _decode(io.stdout if isinstance(io.stdout, bytes) else None)
-    stderr = _decode(io.stderr if isinstance(io.stderr, bytes) else None)
-    if stderr:
-        return f"{stdout}\n{stderr}" if stdout else stderr
-    return stdout
 
 
 def _text(text: str) -> dict[str, Any]:
@@ -78,7 +39,7 @@ def _error(text: str) -> dict[str, Any]:
 
 
 def _io_to_result(io: IOResult) -> dict[str, Any]:
-    result = _text(_io_to_str(io))
+    result = _text(io_to_str(io))
     if io.exit_code != 0:
         result["is_error"] = True
     return result
@@ -170,7 +131,7 @@ class _MirageTools:
         path = args["path"]
         io = await self._ws.execute(
             f"grep -rn {shlex.quote(pattern)} {shlex.quote(path)}")
-        return _text(_io_to_str(io))
+        return _text(io_to_str(io))
 
 
 def MirageServer(workspace: Workspace):
@@ -187,27 +148,27 @@ def MirageServer(workspace: Workspace):
         name="mirage",
         version="1.0.0",
         tools=[
-            tool("execute_command", _EXECUTE_DESCRIPTION,
+            tool("execute_command", EXECUTE_DESCRIPTION,
                  {"command": str})(tools_impl.execute_command),
             tool("read",
-                 _READ_DESCRIPTION, {"path": str},
+                 READ_DESCRIPTION, {"path": str},
                  annotations=ToolAnnotations(readOnlyHint=True))(
                      tools_impl.read),
-            tool("write", _WRITE_DESCRIPTION, {
+            tool("write", WRITE_DESCRIPTION, {
                 "path": str,
                 "content": str
             })(tools_impl.write),
-            tool("edit", _EDIT_DESCRIPTION, {
+            tool("edit", EDIT_DESCRIPTION, {
                 "path": str,
                 "old_string": str,
                 "new_string": str
             })(tools_impl.edit),
             tool("ls",
-                 _LS_DESCRIPTION, {"path": str},
+                 LS_DESCRIPTION, {"path": str},
                  annotations=ToolAnnotations(readOnlyHint=True))(
                      tools_impl.ls),
             tool("grep",
-                 _GREP_DESCRIPTION, {
+                 GREP_DESCRIPTION, {
                      "pattern": str,
                      "path": str
                  },
