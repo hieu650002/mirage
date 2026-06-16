@@ -34,7 +34,7 @@ jobs:
       ssh: ${{ steps.filter.outputs.ssh }}
       fuse: ${{ steps.filter.outputs.fuse }}
     steps:
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -439,7 +439,7 @@ jobs:
           node-version: '24'
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.32.1
 
