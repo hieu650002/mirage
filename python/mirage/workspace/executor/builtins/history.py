@@ -112,6 +112,10 @@ async def handle_history(
                                          flags,
                                          cwd=session.cwd,
                                          session_id=session.session_id)
+    # The view command always returns byte stderr, but io.stderr is typed
+    # as a ByteSource (a possible lazy stream); resolve it to bytes so the
+    # execution-tree node holds concrete stderr, never an unread stream.
+    stderr = await io.materialize_stderr()
     return stream, io, ExecutionNode(command="history",
                                      exit_code=io.exit_code,
-                                     stderr=io.stderr)
+                                     stderr=stderr)

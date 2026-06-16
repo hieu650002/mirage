@@ -216,6 +216,22 @@ def test_history_d_non_numeric():
     assert b"abc: history position out of range" in io.stderr
 
 
+def test_history_d_trailing_garbage_rejected():
+    ws = _ws()
+    _exec(ws, "pwd")
+    io = _exec(ws, "history -d 1abc")
+    assert io.exit_code == 1
+    assert b"1abc: history position out of range" in io.stderr
+
+
+def test_history_count_trailing_garbage_rejected():
+    ws = _ws()
+    _exec(ws, "pwd")
+    io = _exec(ws, "history 3abc")
+    assert io.exit_code == 1
+    assert b"3abc: numeric argument required" in io.stderr
+
+
 def test_history_d_negative_offset_deletes_last():
     ws = _ws()
     _exec(ws, "echo first")
