@@ -1544,6 +1544,24 @@ disptree
 disptree/d
 disptree/d/y.txt
 disptree/x.txt
+=== history_last_two ===
+419  (cd /data && ls -R disptree)
+420  (cd /data && find disptree)
+=== bash_history_tail ===
+(cd /data && ls -R disptree)
+(cd /data && find disptree)
+history 2
+=== history_find_view ===
+/.bash_history
+=== history_find_no_dir ===
+
+=== bash_history_after_find ===
+find /.bash_history -type d
+=== bash_history_format ===
+#TS
+find /.bash_history -type d
+#TS
+grep -v '^#' /.bash_history | tail -n 1
 === jq_no_filter_no_input ===
 exit=0
 === jq_dot_no_input ===
