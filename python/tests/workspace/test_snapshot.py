@@ -66,6 +66,20 @@ def test_save_load_ram_round_trip(tmp_path):
     assert _read(dst, "/m/sub/b.txt") == "world\n"
 
 
+def test_history_survives_snapshot_round_trip(tmp_path):
+    src = Workspace({"/m": (RAMResource(), MountMode.WRITE)},
+                    mode=MountMode.WRITE)
+    asyncio.run(src.execute("echo one"))
+    asyncio.run(src.execute("echo two"))
+    assert len(asyncio.run(src.history())) == 2
+    snap = tmp_path / "history.tar"
+    asyncio.run(src.snapshot(snap))
+
+    dst = _load(snap)
+    entries = asyncio.run(dst.history())
+    assert [e["command"] for e in entries] == ["echo one", "echo two"]
+
+
 def test_from_state_rebuilds_in_process_without_tar():
     src = Workspace({"/m": (RAMResource(), MountMode.WRITE)},
                     mode=MountMode.WRITE)

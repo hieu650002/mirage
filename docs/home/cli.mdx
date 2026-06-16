@@ -130,11 +130,11 @@ mirage provision --workspace_id demo --command "cat /s3/data/example.jsonl"
 
 ### 7. Command history
 
-Every executed command is recorded by a hidden recorder. The `history`
-builtin shows the calling session's commands (GNU bash semantics,
-`history -c` clears only that session's view), and `/.bash_history`
-renders the GNU histfile across all sessions, readable with the
-ordinary file commands.
+Every executed command is recorded by a hidden recorder (the
+[Observer](/home/observer)). The `history` builtin shows the calling
+session's commands (GNU bash semantics, `history -c` clears only that
+session's view), and `/.bash_history` renders the GNU histfile across all
+sessions, readable with the ordinary file commands.
 
 ```bash
 mirage execute --workspace_id demo --command "history 5"

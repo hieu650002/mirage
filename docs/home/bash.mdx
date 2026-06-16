@@ -4,7 +4,7 @@ description: Run bash commands with `execute()`, per-call `cwd`/`env` overrides,
 icon: terminal
 ---
 
-Mirage Bash is how agents act on the workspace. `execute()` parses a bash-style command, looks up the target session, resolves mounts, runs the executor, applies I/O side effects, and records history.
+Mirage Bash is how agents act on the workspace. `execute()` parses a bash-style command, looks up the target session, resolves mounts, runs the executor, applies I/O side effects, and records history through the [Observer](/home/observer).
 
 ## Per-call overrides: `cwd`, `env`
 
