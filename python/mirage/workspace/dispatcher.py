@@ -87,8 +87,6 @@ class Dispatcher:
 
     async def apply_io(self, io: IOResult) -> None:
         await cache_io.apply_io(self._cache, io, self.is_cacheable_path)
-        if io.writes:
-            await self.invalidate_index_dirs(io)
 
     def is_cacheable_path(self, path: str) -> bool:
         try:
@@ -124,18 +122,3 @@ class Dispatcher:
                                            None), mount.prefix,
                                    mount.resource.is_remote is True)
         await manager.invalidate_after_write(path)
-
-    async def invalidate_index_dirs(self, io: IOResult) -> None:
-        dirs_seen: set[str] = set()
-        for path in io.writes:
-            try:
-                mount = self._registry.mount_for(path)
-            except ValueError:
-                continue
-            parent = path.rsplit("/", 1)[0] or "/"
-            if parent in dirs_seen:
-                continue
-            dirs_seen.add(parent)
-            idx = mount.resource.index
-            await idx.invalidate_dir(parent)
-            await idx.invalidate_dir(parent + "/")
