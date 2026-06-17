@@ -44,15 +44,15 @@ export interface Resource {
   readonly prompt?: string
   readonly writePrompt?: string
   readonly indexTtl?: number
-  readonly isRemote?: boolean
   /**
    * Whether reads of this resource may be served from / written to the
-   * local file cache. Defaults to true. A genuinely remote resource whose
-   * content is live (e.g. a database collection) sets this to false so
-   * reads always hit the backend and live follows (`tail -f`) are not
-   * masked by a cached snapshot.
+   * local file cache. Defaults to false. A network-backed resource whose
+   * content is read-mostly (e.g. object storage) sets this to true so
+   * reads can be cached; a resource whose content is live (e.g. a
+   * database collection) leaves it false so reads always hit the backend
+   * and live follows (`tail -f`) are not masked by a cached snapshot.
    */
-  readonly cacheable?: boolean
+  readonly cachesReads?: boolean
   /**
    * Whether this resource carries enough version information for
    * snapshot+replay drift detection. When true, the resource's
@@ -97,7 +97,7 @@ export function throwUnsupported(op: string): never {
 }
 
 export function cachesReads(resource: Resource): boolean {
-  return resource.isRemote === true && resource.cacheable !== false
+  return resource.cachesReads === true
 }
 
 export abstract class BaseResource {
