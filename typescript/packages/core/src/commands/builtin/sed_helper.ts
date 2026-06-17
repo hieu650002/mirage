@@ -229,7 +229,15 @@ export function breToEre(pat: string): string {
         continue
       }
       // Backslashed (){}+?| are the *special* forms in BRE -> emit bare (ERE).
-      if (nx === '(' || nx === ')' || nx === '{' || nx === '}' || nx === '+' || nx === '?' || nx === '|') {
+      if (
+        nx === '(' ||
+        nx === ')' ||
+        nx === '{' ||
+        nx === '}' ||
+        nx === '+' ||
+        nx === '?' ||
+        nx === '|'
+      ) {
         out += nx
         atStart = nx === '(' || nx === '|'
         i += 2
@@ -242,7 +250,15 @@ export function breToEre(pat: string): string {
       continue
     }
     // Bare (){}+?| are literal in BRE -> escape for ERE.
-    if (ch === '(' || ch === ')' || ch === '{' || ch === '}' || ch === '+' || ch === '?' || ch === '|') {
+    if (
+      ch === '(' ||
+      ch === ')' ||
+      ch === '{' ||
+      ch === '}' ||
+      ch === '+' ||
+      ch === '?' ||
+      ch === '|'
+    ) {
       out += '\\' + ch
       atStart = false
       i += 1
@@ -436,11 +452,13 @@ export function executeProgram(
         if (cmd.addrEnd !== null && cmd.addrEnd !== undefined) {
           const rid = pc
           if (rangeActive.get(rid) !== true) {
-            if (addrMatches(cmd.addrStart, pattern, lineno, total, extended)) rangeActive.set(rid, true)
+            if (addrMatches(cmd.addrStart, pattern, lineno, total, extended))
+              rangeActive.set(rid, true)
             else matched = false
           }
           if (rangeActive.get(rid) === true) {
-            if (addrMatches(cmd.addrEnd, pattern, lineno, total, extended)) rangeActive.set(rid, false)
+            if (addrMatches(cmd.addrEnd, pattern, lineno, total, extended))
+              rangeActive.set(rid, false)
           }
         } else {
           if (!addrMatches(cmd.addrStart, pattern, lineno, total, extended)) matched = false
@@ -474,7 +492,15 @@ export function executeProgram(
         const ef = cmd.exprFlags ?? ''
         const countMatch = /[0-9]+/.exec(ef)
         const count = countMatch ? Number.parseInt(countMatch[0], 10) : 1
-        const newPattern = regexReplace(pattern, pat, repl, ef.includes('i'), ef.includes('g'), count, extended)
+        const newPattern = regexReplace(
+          pattern,
+          pat,
+          repl,
+          ef.includes('i'),
+          ef.includes('g'),
+          count,
+          extended,
+        )
         const changed = newPattern !== pattern
         if (changed) substituted = true
         pattern = newPattern

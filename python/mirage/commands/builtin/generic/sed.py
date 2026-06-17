@@ -43,7 +43,10 @@ async def sed(
             for p in paths:
                 data = await read_bytes(accessor, p)
                 text = data.decode(errors="replace")
-                new_text = _execute_program(text, commands, suppress=suppress, extended=extended)
+                new_text = _execute_program(text,
+                                            commands,
+                                            suppress=suppress,
+                                            extended=extended)
                 new_data = new_text.encode()
                 await write_bytes(accessor, p, new_data)
                 writes[p.strip_prefix] = new_data
@@ -54,7 +57,10 @@ async def sed(
         for p in paths:
             data = await read_bytes(accessor, p)
             text = data.decode(errors="replace")
-            new_text = _execute_program(text, commands, suppress=suppress, extended=extended)
+            new_text = _execute_program(text,
+                                        commands,
+                                        suppress=suppress,
+                                        extended=extended)
             outputs.append(new_text)
         return "".join(outputs).encode(), IOResult(
             cache=[p.strip_prefix for p in paths])
@@ -66,7 +72,10 @@ async def sed(
         for p in paths:
             data = await read_bytes(accessor, p)
             text = data.decode(errors="replace")
-            result = _execute_program(text, commands, suppress=suppress, extended=extended)
+            result = _execute_program(text,
+                                      commands,
+                                      suppress=suppress,
+                                      extended=extended)
             if modifying:
                 new_data = result.encode()
                 await write_bytes(accessor, p, new_data)
@@ -82,7 +91,10 @@ async def sed(
     if raw is None:
         raise ValueError("sed: usage: sed EXPRESSION path")
     text = raw.decode(errors="replace")
-    result = _execute_program(text, commands, suppress=suppress, extended=extended)
+    result = _execute_program(text,
+                              commands,
+                              suppress=suppress,
+                              extended=extended)
     return result.encode(), IOResult()
 
 

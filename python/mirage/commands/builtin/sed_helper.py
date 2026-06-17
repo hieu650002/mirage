@@ -311,9 +311,8 @@ def _bre_to_ere(pat: str) -> str:
             i += 1
             continue
         if ch == "$":
-            is_end = (i == n - 1
-                      or (pat[i + 1] == "\\" and i + 2 < n
-                          and pat[i + 2] in ")|"))
+            is_end = (i == n - 1 or (pat[i + 1] == "\\" and i + 2 < n
+                                     and pat[i + 2] in ")|"))
             out.append("$" if is_end else "\\$")
             at_start = False
             i += 1
@@ -328,8 +327,11 @@ def _re_pattern(pat: str, extended: bool) -> str:
     return pat if extended else _bre_to_ere(pat)
 
 
-def _addr_matches(addr: tuple[str, str], line: str, lineno: int,
-                  total: int, extended: bool = False) -> bool:
+def _addr_matches(addr: tuple[str, str],
+                  line: str,
+                  lineno: int,
+                  total: int,
+                  extended: bool = False) -> bool:
     kind, val = addr
     if kind == "line":
         return lineno == int(val)
@@ -381,15 +383,18 @@ def _execute_program(text: str,
                 if addr_end is not None:
                     rid = id(cmd)
                     if not range_active.get(rid, False):
-                        if _addr_matches(addr_start, pattern, lineno, total, extended):
+                        if _addr_matches(addr_start, pattern, lineno, total,
+                                         extended):
                             range_active[rid] = True
                         else:
                             matched = False
                     if range_active.get(rid, False):
-                        if _addr_matches(addr_end, pattern, lineno, total, extended):
+                        if _addr_matches(addr_end, pattern, lineno, total,
+                                         extended):
                             range_active[rid] = False
                 else:
-                    if not _addr_matches(addr_start, pattern, lineno, total, extended):
+                    if not _addr_matches(addr_start, pattern, lineno, total,
+                                         extended):
                         matched = False
 
             if c == "{":
@@ -433,11 +438,14 @@ def _execute_program(text: str,
                           _global: bool = global_,
                           _counter: list = counter) -> str:
                     _counter[0] += 1
-                    hit = (_counter[0] >= _nth if _global
-                           else _counter[0] == _nth)
+                    hit = (_counter[0] >= _nth
+                           if _global else _counter[0] == _nth)
                     return _apply_repl(m, repl=_repl_s) if hit else m.group(0)
 
-                new_pattern = re.sub(_re_pattern(pat, extended), _repl, pattern, flags=re_flags)
+                new_pattern = re.sub(_re_pattern(pat, extended),
+                                     _repl,
+                                     pattern,
+                                     flags=re_flags)
                 changed = new_pattern != pattern
                 if changed:
                     substituted = True

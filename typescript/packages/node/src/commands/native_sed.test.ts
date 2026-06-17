@@ -422,7 +422,7 @@ describe.each(NATIVE_BACKENDS)('native sed (%s backend)', (kind) => {
     const env = makeEnv(kind)
     try {
       env.createFile('ef.txt', ENC.encode('hello world\n'))
-      const m = await env.mirage("sed -e s/hello/bye/ /data/ef.txt")
+      const m = await env.mirage('sed -e s/hello/bye/ /data/ef.txt')
       const n = await env.native('sed -e s/hello/bye/ ef.txt')
       expect(m).toBe(n)
       expect(m).toBe('bye world\n')

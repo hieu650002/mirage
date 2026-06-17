@@ -15,12 +15,7 @@
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import {
-  executeProgram,
-  parseOneCommand,
-  parseProgram,
-  type SedCommand,
-} from '../sed_helper.ts'
+import { executeProgram, parseOneCommand, parseProgram, type SedCommand } from '../sed_helper.ts'
 import { readStdinAsync } from '../utils/stream.ts'
 
 const ENC = new TextEncoder()

@@ -15,8 +15,9 @@
 
 Every backend's ``sed`` is the same logic over the generic engine, differing
 only in how bytes are read, whether globs are resolved (and under what
-condition), whether the mount is writable, and the ``-i`` rejection. ``make_sed``
-captures that so each backend is a small config instead of a copy-pasted body.
+condition), whether the mount is writable, and the ``-i`` rejection.
+``make_sed`` captures that so each backend is a small config instead of a
+copy-pasted body.
 """
 
 import posixpath
@@ -53,6 +54,7 @@ def _positional_as_paths(texts: tuple[str, ...],
             ))
     return out
 
+
 # (accessor, index, resolved_paths) -> read_bytes callable for generic_sed.
 MakeRead = Callable[[object, IndexCacheStore | None, list[PathSpec]], Callable]
 # (accessor, index) -> whether to resolve globs (paths already known truthy).
@@ -68,6 +70,7 @@ def make_sed(
     write_bytes: Callable[..., Awaitable[None]] | None = None,
     inplace_error: tuple[type[Exception], str] | None = None,
 ) -> Callable:
+
     @command("sed", resource=resource, spec=SPECS["sed"])
     async def sed(
         accessor: object,
@@ -83,8 +86,8 @@ def make_sed(
     ) -> tuple[ByteSource | None, IOResult]:
         # The script comes from -e expressions (joined with newlines) when any
         # were given, otherwise from the first positional operand.
-        e_list = e if isinstance(e, list) else ([e] if isinstance(e, str)
-                                                else [])
+        e_list = e if isinstance(e,
+                                 list) else ([e] if isinstance(e, str) else [])
         script = "\n".join(e_list) if e_list else (texts[0] if texts else None)
         if script is None:
             raise ValueError("sed: usage: sed EXPRESSION [path]")

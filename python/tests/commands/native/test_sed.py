@@ -114,80 +114,86 @@ def test_sed_e(env):
 
 def test_sed_numeric_count(env):
     data = b"oooo\n"
-    assert env.mirage("sed 's/o/O/2'", stdin=data) == env.native(
-        "sed 's/o/O/2'", stdin=data)
+    assert env.mirage("sed 's/o/O/2'",
+                      stdin=data) == env.native("sed 's/o/O/2'", stdin=data)
 
 
 def test_sed_p_flag(env):
     data = b"hi\nbye\n"
-    assert env.mirage("sed 's/hi/HI/p'", stdin=data) == env.native(
-        "sed 's/hi/HI/p'", stdin=data)
+    assert env.mirage("sed 's/hi/HI/p'",
+                      stdin=data) == env.native("sed 's/hi/HI/p'", stdin=data)
 
 
 def test_sed_n_p_flag(env):
     data = b"hi\nbye\n"
-    assert env.mirage("sed -n 's/hi/HI/p'", stdin=data) == env.native(
-        "sed -n 's/hi/HI/p'", stdin=data)
+    assert env.mirage("sed -n 's/hi/HI/p'",
+                      stdin=data) == env.native("sed -n 's/hi/HI/p'",
+                                                stdin=data)
 
 
 def test_sed_y_transliterate(env):
     data = b"hello\n"
-    assert env.mirage("sed 'y/el/ip/'", stdin=data) == env.native(
-        "sed 'y/el/ip/'", stdin=data)
+    assert env.mirage("sed 'y/el/ip/'",
+                      stdin=data) == env.native("sed 'y/el/ip/'", stdin=data)
 
 
 def test_sed_c_single_address(env):
     data = b"a\nb\nc\n"
-    assert env.mirage("sed '2c\\\nX'", stdin=data) == env.native(
-        "sed '2c\\\nX'", stdin=data)
+    assert env.mirage("sed '2c\\\nX'",
+                      stdin=data) == env.native("sed '2c\\\nX'", stdin=data)
 
 
 def test_sed_c_range(env):
     data = b"a\nb\nc\nd\n"
-    assert env.mirage("sed '2,3c\\\nX'", stdin=data) == env.native(
-        "sed '2,3c\\\nX'", stdin=data)
+    assert env.mirage("sed '2,3c\\\nX'",
+                      stdin=data) == env.native("sed '2,3c\\\nX'", stdin=data)
 
 
 def test_sed_bre_group_backref(env):
     data = b"foo\n"
-    assert env.mirage(r"sed 's/\(foo\)/[\1]/'", stdin=data) == env.native(
-        r"sed 's/\(foo\)/[\1]/'", stdin=data)
+    assert env.mirage(r"sed 's/\(foo\)/[\1]/'",
+                      stdin=data) == env.native(r"sed 's/\(foo\)/[\1]/'",
+                                                stdin=data)
 
 
 def test_sed_bre_interval(env):
     data = b"aaa\n"
-    assert env.mirage(r"sed 's/a\{2\}/X/'", stdin=data) == env.native(
-        r"sed 's/a\{2\}/X/'", stdin=data)
+    assert env.mirage(r"sed 's/a\{2\}/X/'",
+                      stdin=data) == env.native(r"sed 's/a\{2\}/X/'",
+                                                stdin=data)
 
 
 def test_sed_bre_bare_plus_literal(env):
     data = b"a+b\n"
-    assert env.mirage("sed 's/a+/X/'", stdin=data) == env.native(
-        "sed 's/a+/X/'", stdin=data)
+    assert env.mirage("sed 's/a+/X/'",
+                      stdin=data) == env.native("sed 's/a+/X/'", stdin=data)
 
 
 def test_sed_ere_group_plus(env):
     data = b"foo\n"
-    assert env.mirage(r"sed -E 's/(foo)/[\1]/'", stdin=data) == env.native(
-        r"sed -E 's/(foo)/[\1]/'", stdin=data)
+    assert env.mirage(r"sed -E 's/(foo)/[\1]/'",
+                      stdin=data) == env.native(r"sed -E 's/(foo)/[\1]/'",
+                                                stdin=data)
 
 
 def test_sed_ere_alternation(env):
     data = b"dog\n"
-    assert env.mirage("sed -E 's/cat|dog/PET/'", stdin=data) == env.native(
-        "sed -E 's/cat|dog/PET/'", stdin=data)
+    assert env.mirage("sed -E 's/cat|dog/PET/'",
+                      stdin=data) == env.native("sed -E 's/cat|dog/PET/'",
+                                                stdin=data)
 
 
 def test_sed_r_alias(env):
     data = b"aaab\n"
-    assert env.mirage("sed -r 's/a+/X/'", stdin=data) == env.native(
-        "sed -r 's/a+/X/'", stdin=data)
+    assert env.mirage("sed -r 's/a+/X/'",
+                      stdin=data) == env.native("sed -r 's/a+/X/'", stdin=data)
 
 
 def test_sed_multiple_e(env):
     data = b"a\n"
-    assert env.mirage("sed -e 's/a/b/' -e 's/b/c/'", stdin=data) == env.native(
-        "sed -e 's/a/b/' -e 's/b/c/'", stdin=data)
+    assert env.mirage("sed -e 's/a/b/' -e 's/b/c/'",
+                      stdin=data) == env.native("sed -e 's/a/b/' -e 's/b/c/'",
+                                                stdin=data)
 
 
 def test_sed_e_with_file(env):
