@@ -18,7 +18,11 @@ import { forceUnmount, mount, type FuseHandle, type MountOptions } from '../fuse
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const
 type Signal = (typeof SIGNALS)[number]
-type CleanupEntry = { mountpoint: string; handle: FuseHandle; ownsMountpoint: boolean }
+interface CleanupEntry {
+  mountpoint: string
+  handle: FuseHandle
+  ownsMountpoint: boolean
+}
 
 function removeMountpointIfOwned(entry: { mountpoint: string; ownsMountpoint: boolean }): void {
   if (!entry.ownsMountpoint) return
