@@ -199,8 +199,9 @@ change streams aren't defined on views.
 The MongoDB resource uses `IndexCacheStore` (same as RAM/S3/disk/GitHub)
 for listings: database names, collection names, and document counts.
 
-Document content is **not** cached. The resource sets `cacheable = False`,
-so `cat`, `grep`, `head`, and `tail` always query the live collection
+Document content is **not** cached. The resource leaves `caches_reads`
+at its default of `False`, so `cat`, `grep`, `head`, and `tail` always
+query the live collection
 instead of serving a stored snapshot. This keeps reads consistent with a
 mutable database and ensures `tail -f` follows the live change stream
 rather than replaying cached bytes.

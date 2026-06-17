@@ -60,8 +60,8 @@ export class Dispatcher {
 
   dispatch: DispatchFn = async (opName, path, args, kwargs) => {
     const [resource, scope, mode] = await this.resolveFn(path.original)
-    const cacheable = cachesReads(resource)
-    if (cacheable && DISPATCH_READ_OPS.has(opName)) {
+    const caches = cachesReads(resource)
+    if (caches && DISPATCH_READ_OPS.has(opName)) {
       let cached = await this.cache.get(path.original)
       if (
         cached !== null &&
@@ -126,25 +126,5 @@ export class Dispatcher {
 
   async applyIo(io: IOResult): Promise<void> {
     await applyIo(this.cache, io)
-    if (Object.keys(io.writes).length > 0) {
-      await this.invalidateIndexDirs(io)
-    }
-  }
-
-  async invalidateIndexDirs(io: IOResult): Promise<void> {
-    const dirsSeen = new Set<string>()
-    for (const path of Object.keys(io.writes)) {
-      const mount = this.registry.mountFor(path)
-      if (mount === null) continue
-      const slash = path.lastIndexOf('/')
-      const parent = slash <= 0 ? '/' : path.slice(0, slash)
-      if (dirsSeen.has(parent)) continue
-      dirsSeen.add(parent)
-      const idx = mount.resource.index
-      if (idx !== undefined) {
-        await idx.invalidateDir(parent)
-        await idx.invalidateDir(parent + '/')
-      }
-    }
   }
 }
