@@ -226,6 +226,45 @@ describe.each(NATIVE_BACKENDS)('native sed (%s backend)', (kind) => {
     }
   })
 
+  it('sed anchored substitution on a file argument matches native', async () => {
+    // The single-`s` fast-path (file args) must anchor per line too (#326).
+    const env = makeEnv(kind)
+    try {
+      env.createFile('anchors.txt', ENC.encode('#123\nls\n#456\nfoo bar\n'))
+      const m = await env.mirage("sed 's/^#[0-9]*$/#TS/' /data/anchors.txt")
+      const n = await env.native("sed 's/^#[0-9]*$/#TS/' anchors.txt")
+      expect(m).toBe(n)
+      expect(m).toBe('#TS\nls\n#TS\nfoo bar\n')
+    } finally {
+      await env.cleanup()
+    }
+  })
+
+  it('sed non-global sub on a file replaces first match per line', async () => {
+    const env = makeEnv(kind)
+    try {
+      env.createFile('multi.txt', ENC.encode('oo\noo\noo\n'))
+      const m = await env.mirage("sed 's/o/O/' /data/multi.txt")
+      const n = await env.native("sed 's/o/O/' multi.txt")
+      expect(m).toBe(n)
+      expect(m).toBe('Oo\nOo\nOo\n')
+    } finally {
+      await env.cleanup()
+    }
+  })
+
+  it('sed -i anchored substitution on a file matches native', async () => {
+    const env = makeEnv(kind)
+    try {
+      env.createFile('anchors_i.txt', ENC.encode('#123\nls\n#456\nfoo bar\n'))
+      await env.mirage("sed -i 's/^#[0-9]*$/#TS/' /data/anchors_i.txt")
+      const result = await env.mirage('cat /data/anchors_i.txt')
+      expect(result).toBe('#TS\nls\n#TS\nfoo bar\n')
+    } finally {
+      await env.cleanup()
+    }
+  })
+
   it('sed -i edits file in place', async () => {
     const env = makeEnv(kind)
     try {

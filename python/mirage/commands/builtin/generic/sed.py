@@ -1,4 +1,3 @@
-import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from mirage.cache.index import IndexCacheStore
@@ -33,20 +32,17 @@ async def sed(
         commands = [_parse_one_command(expression)[0]]
 
     if paths and _is_simple_sub(commands, suppress):
-        parsed = commands[0]
-        re_flags = re.IGNORECASE if "i" in parsed["expr_flags"] else 0
-        count = 0 if "g" in parsed["expr_flags"] else 1
-
+        # Run the substitution through the per-line engine rather than a single
+        # whole-buffer re.sub: ^/$ must anchor per line and a non-global s///
+        # substitutes the first match on *each* line, matching GNU sed. A
+        # buffer-wide re.sub anchors at the buffer ends and only touches the
+        # first match overall. See strukto-ai/mirage#326.
         if in_place:
             writes: dict[str, bytes] = {}
             for p in paths:
                 data = await read_bytes(accessor, p)
                 text = data.decode(errors="replace")
-                new_text = re.sub(parsed["pattern"],
-                                  parsed["replacement"],
-                                  text,
-                                  count=count,
-                                  flags=re_flags)
+                new_text = _execute_program(text, commands, suppress=suppress)
                 new_data = new_text.encode()
                 await write_bytes(accessor, p, new_data)
                 writes[p.strip_prefix] = new_data
@@ -57,11 +53,7 @@ async def sed(
         for p in paths:
             data = await read_bytes(accessor, p)
             text = data.decode(errors="replace")
-            new_text = re.sub(parsed["pattern"],
-                              parsed["replacement"],
-                              text,
-                              count=count,
-                              flags=re_flags)
+            new_text = _execute_program(text, commands, suppress=suppress)
             outputs.append(new_text)
         return "".join(outputs).encode(), IOResult(
             cache=[p.strip_prefix for p in paths])

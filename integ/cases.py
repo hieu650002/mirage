@@ -80,6 +80,8 @@ SEED_FILES = {
     "inner\n",
     "/data/anchors.txt":
     "#123\nls\n#456\nfoo bar\n",
+    "/data/multi.txt":
+    "oo\noo\noo\n",
 }
 
 CASES: list[tuple[str, str]] = [
@@ -330,6 +332,12 @@ CASES: list[tuple[str, str]] = [
     ("sed_anchor_sub_E", "cat /data/anchors.txt | sed -E 's/^#[0-9]+$/#TS/'"),
     ("sed_anchor_sub_g", "cat /data/anchors.txt | sed 's/^#[0-9]*$/#TS/g'"),
     ("sed_anchor_addr_del", "cat /data/anchors.txt | sed '/^#[0-9]*$/d'"),
+    # Same per-line semantics must hold when sed reads a file argument
+    # directly (single-`s` fast-path), not just stdin (strukto-ai/mirage#326).
+    ("sed_anchor_sub_file", "sed 's/^#[0-9]*$/#TS/' /data/anchors.txt"),
+    # Non-global s/// replaces the first match on *each* line, not just the
+    # first match in the whole file.
+    ("sed_firstmatch_file", "sed 's/o/O/' /data/multi.txt"),
 
     # ----- tr advanced -----
     ("tr_squeeze", "echo aaabbbccc | tr -s a-z"),
