@@ -366,6 +366,24 @@ CASES: list[tuple[str, str]] = [
     # Multiple -e expressions apply in sequence; -e with a file argument.
     ("sed_multi_e", "echo a | sed -e 's/a/b/' -e 's/b/c/'"),
     ("sed_e_file", "sed -e s/world/EARTH/ /data/a.txt"),
+    # Broader GNU sed surface: & whole-match, s flags, addresses, hold/branch,
+    # multi-command, alt delimiters, a/i/c forms.
+    ("sed_amp", "sed 's/world/[&]/' /data/a.txt"),
+    ("sed_amp_literal", r"sed 's/world/[\&]/' /data/a.txt"),
+    ("sed_sub_i", "sed 's/hello/HI/i' /data/mixed.txt"),
+    ("sed_delim_pipe", "sed 's|o|O|g' /data/a.txt"),
+    ("sed_d_range", "sed '2,3d' /data/a.txt"),
+    ("sed_n_2p", "sed -n '2p' /data/a.txt"),
+    ("sed_n_lastp", "sed -n '$p' /data/a.txt"),
+    ("sed_insert", "sed '2iINSERTED' /data/a.txt"),
+    ("sed_change_all", "sed 'cX' /data/a.txt"),
+    ("sed_change_regex", "sed '/world/cCHANGED' /data/a.txt"),
+    ("sed_quit", "sed '2q' /data/a.txt"),
+    ("sed_double_space", "sed 'G' /data/a.txt"),
+    ("sed_n_join", r"sed 'N;s/\n/ /' /data/a.txt"),
+    ("sed_block", "sed '/world/{s/world/W/;s/W/X/}' /data/a.txt"),
+    ("sed_semicolon", "sed 's/o/0/;s/a/A/' /data/a.txt"),
+    ("sed_backref_E", r"sed -E 's/(section)([0-9])/\2\1/' /data/sections.txt"),
 
     # ----- tr advanced -----
     ("tr_squeeze", "echo aaabbbccc | tr -s a-z"),

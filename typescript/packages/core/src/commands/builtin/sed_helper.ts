@@ -323,6 +323,11 @@ export function translateReplacement(repl: string): string {
       out += '$$'
       continue
     }
+    if (ch === '&') {
+      // Unescaped `&` is the whole match (JS `$&`); `\&` (below) is literal.
+      out += '$&'
+      continue
+    }
     if (ch === '\\' && i + 1 < repl.length) {
       const next = repl[i + 1]
       if (next !== undefined && /[0-9]/.test(next)) {
@@ -533,11 +538,14 @@ export function executeProgram(
       } else if (c === 'h') {
         hold = pattern
       } else if (c === 'H') {
-        hold = hold !== '' ? hold + '\n' + pattern : pattern
+        // GNU appends newline + pattern unconditionally (empty hold -> leading
+        // newline), so `H` on the first line yields "\n<pattern>".
+        hold = hold + '\n' + pattern
       } else if (c === 'g') {
         pattern = hold
       } else if (c === 'G') {
-        pattern = hold !== '' ? pattern + '\n' + hold : pattern
+        // GNU appends newline + hold unconditionally (empty hold -> blank line).
+        pattern = pattern + '\n' + hold
       } else if (c === 'x') {
         const tmp = pattern
         pattern = hold

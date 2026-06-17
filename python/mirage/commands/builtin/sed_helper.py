@@ -478,11 +478,15 @@ def _execute_program(text: str,
             elif c == "h":
                 hold = pattern
             elif c == "H":
-                hold = hold + "\n" + pattern if hold else pattern
+                # GNU appends newline + pattern unconditionally (empty hold ->
+                # leading newline).
+                hold = hold + "\n" + pattern
             elif c == "g":
                 pattern = hold
             elif c == "G":
-                pattern = pattern + "\n" + hold if hold else pattern
+                # GNU appends newline + hold unconditionally (empty hold ->
+                # blank line).
+                pattern = pattern + "\n" + hold
             elif c == "x":
                 pattern, hold = hold, pattern
             elif c == "a":

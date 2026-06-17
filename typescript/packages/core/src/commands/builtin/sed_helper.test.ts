@@ -129,6 +129,20 @@ describe('sed c (change)', () => {
   })
 })
 
+describe('sed replacement & hold-space (GNU semantics)', () => {
+  it('unescaped & is the whole match', () => {
+    expect(sed('s/wor/[&]/', 'world\n')).toBe('[wor]ld\n')
+  })
+
+  it('escaped \\& is a literal ampersand', () => {
+    expect(sed('s/wor/[\\&]/', 'world\n')).toBe('[&]ld\n')
+  })
+
+  it('G appends a blank line when the hold space is empty', () => {
+    expect(sed('G', 'a\nb\n')).toBe('a\n\nb\n\n')
+  })
+})
+
 describe('breToEre translation', () => {
   it('swaps backslashed and bare metacharacters', () => {
     expect(breToEre('a\\+')).toBe('a+')
