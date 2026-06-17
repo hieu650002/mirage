@@ -1,7 +1,8 @@
 import re
 from collections.abc import AsyncIterator, Callable
 
-from mirage.commands.builtin.utils.stream import _resolve_source
+from mirage.commands.builtin.utils.stream import (_open_read_stream,
+                                                  _resolve_source)
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
@@ -49,7 +50,7 @@ async def _nl_multi(
     pattern: re.Pattern[str] | None,
 ) -> AsyncIterator[bytes]:
     for p in paths:
-        source = read_stream(accessor, p)
+        source = await _open_read_stream(read_stream, accessor, p)
         async for chunk in _nl_stream(source, body_numbering, start, increment,
                                       width, separator, pattern):
             yield chunk

@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 
-from mirage.commands.builtin.utils.stream import _resolve_source
+from mirage.commands.builtin.utils.stream import (_open_read_stream,
+                                                  _resolve_source)
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
@@ -37,7 +38,7 @@ async def split(
     suffix_fn = _numeric_suffix if numeric_suffix else _alpha_suffix
 
     if paths:
-        source: AsyncIterator[bytes] = read_stream(accessor, paths[0])
+        source = await _open_read_stream(read_stream, accessor, paths[0])
     else:
         source = _resolve_source(stdin)
 

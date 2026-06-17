@@ -13,7 +13,8 @@ from mirage.commands.builtin.rg_helper import rg_full
 from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.output import (format_optional_records,
                                                   format_records)
-from mirage.commands.builtin.utils.stream import _resolve_source
+from mirage.commands.builtin.utils.stream import (_open_read_stream,
+                                                  _resolve_source)
 from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
                                                 call_stat)
 from mirage.commands.errors import UsageError
@@ -221,7 +222,7 @@ async def rg(
             return format_records(all_results), IOResult()
 
         if read_stream is not None:
-            source: AsyncIterator[bytes] = read_stream(accessor, paths[0])
+            source = await _open_read_stream(read_stream, accessor, paths[0])
         else:
             data = await rb(paths[0].original)
             source = _wrap_bytes(data)

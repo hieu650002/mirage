@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from mirage.commands.builtin.utils.stream import _open_read_stream
 from mirage.core.jq import (eval_jsonl_stream, format_jq_output, is_jsonl_path,
                             is_streamable_jsonl_expr, jq_eval, parse_json_auto,
                             parse_json_path)
@@ -34,7 +35,7 @@ async def jq(
     if paths:
         if is_jsonl_path(
                 paths[0].original) and is_streamable_jsonl_expr(expression):
-            source = read_stream(accessor, paths[0])
+            source = await _open_read_stream(read_stream, accessor, paths[0])
             return eval_jsonl_stream(source, expression, raw=r), IOResult()
         outputs: list[bytes] = []
         for p in paths:

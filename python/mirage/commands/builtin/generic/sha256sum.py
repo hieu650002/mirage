@@ -2,7 +2,8 @@ import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from mirage.commands.builtin.utils.lines import split_lines
-from mirage.commands.builtin.utils.stream import _resolve_source
+from mirage.commands.builtin.utils.stream import (_open_read_stream,
+                                                  _resolve_source)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -22,7 +23,8 @@ async def _sha256_multi(
 ) -> AsyncIterator[bytes]:
     for p in paths:
         h = hashlib.sha256()
-        async for chunk in read_stream(accessor, p):
+        source = await _open_read_stream(read_stream, accessor, p)
+        async for chunk in source:
             h.update(chunk)
         yield (h.hexdigest() + "  " + p.display + "\n").encode()
 
@@ -54,7 +56,8 @@ async def _sha256_check(
         expected_hash, filename = parts
         target = _resolve_check_target(filename, mount_prefix)
         h = hashlib.sha256()
-        async for chunk in read_stream(accessor, target):
+        source = await _open_read_stream(read_stream, accessor, target)
+        async for chunk in source:
             h.update(chunk)
         if h.hexdigest() == expected_hash:
             lines.append(f"{filename}: OK")

@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 
-from mirage.commands.builtin.utils.stream import _read_stdin_async
+from mirage.commands.builtin.utils.stream import (_open_read_stream,
+                                                  _read_stdin_async)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -24,7 +25,8 @@ async def tee(
     if append:
         try:
             existing = b""
-            async for chunk in read_stream(accessor, paths[0]):
+            source = await _open_read_stream(read_stream, accessor, paths[0])
+            async for chunk in source:
                 existing += chunk
             write_data = existing + raw
         except FileNotFoundError:

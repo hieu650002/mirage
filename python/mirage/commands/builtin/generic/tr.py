@@ -1,7 +1,8 @@
 from collections.abc import AsyncIterator, Callable
 
 from mirage.commands.builtin.utils.escapes import interpret_escapes
-from mirage.commands.builtin.utils.stream import _resolve_source
+from mirage.commands.builtin.utils.stream import (_open_read_stream,
+                                                  _resolve_source)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -83,7 +84,7 @@ async def tr(
 
     cache: list[str] = []
     if paths:
-        source: AsyncIterator[bytes] = read_stream(accessor, paths[0])
+        source = await _open_read_stream(read_stream, accessor, paths[0])
         cache = [paths[0].strip_prefix]
     else:
         source = _resolve_source(stdin)

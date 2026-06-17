@@ -7,7 +7,8 @@ from mirage.commands.builtin.generic.awk_types import (CMP_OP_PATTERN,
                                                        PRINT_STMT, AwkBlock,
                                                        AwkBoolOp, AwkBuiltin,
                                                        AwkCmpOp)
-from mirage.commands.builtin.utils.stream import _resolve_source
+from mirage.commands.builtin.utils.stream import (_open_read_stream,
+                                                  _resolve_source)
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
@@ -298,7 +299,7 @@ async def awk(
 
     cache: list[str] = []
     if data_paths:
-        source: AsyncIterator[bytes] = read_stream(accessor, data_paths[0])
+        source = await _open_read_stream(read_stream, accessor, data_paths[0])
         cache = [data_paths[0]]
     else:
         source = _resolve_source(stdin)

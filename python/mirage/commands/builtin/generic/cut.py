@@ -1,7 +1,8 @@
 from collections.abc import AsyncIterator, Callable
 
 from mirage.commands.builtin.cut_helper import cut_stream, parse_ranges
-from mirage.commands.builtin.utils.stream import _resolve_source
+from mirage.commands.builtin.utils.stream import (_open_read_stream,
+                                                  _resolve_source)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -22,7 +23,7 @@ async def cut(
     char_ranges = parse_ranges(c) if c is not None else None
     delim = d if d is not None else "\t"
     if paths:
-        source: AsyncIterator[bytes] = read_stream(accessor, paths[0])
+        source = await _open_read_stream(read_stream, accessor, paths[0])
     else:
         source = _resolve_source(stdin, "cut: missing operand")
     return cut_stream(source, delim, field_ranges, char_ranges, complement,
