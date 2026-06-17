@@ -141,11 +141,26 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
         }, rest
     if ch == "s":
         delim = rest[1]
-        parts = rest[2:].split(delim)
-        pattern = parts[0]
-        replacement = parts[1] if len(parts) > 1 else ""
-        expr_flags = parts[2] if len(parts) > 2 else ""
-        remaining = delim.join(parts[3:]) if len(parts) > 3 else ""
+        # Read pattern and replacement up to the next delimiter, then consume
+        # only the trailing flag characters; anything after is a separate
+        # command (a plain split would fold `s/a/b/;d` into the flags).
+        idx = 2
+
+        def _field() -> str:
+            nonlocal idx
+            start = idx
+            while idx < len(rest) and rest[idx] != delim:
+                idx += 1
+            value = rest[start:idx]
+            idx += 1
+            return value
+
+        pattern = _field()
+        replacement = _field()
+        expr_flags = ""
+        while idx < len(rest) and rest[idx] in "0123456789gpiImMe":
+            expr_flags += rest[idx]
+            idx += 1
         return {
             "cmd": "s",
             "pattern": pattern,
@@ -153,15 +168,24 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
             "expr_flags": expr_flags,
             "addr_start": addr_start,
             "addr_end": addr_end,
-        }, remaining
+        }, rest[idx:]
     if ch == "y":
         # y/src/dst/ — transliterate src[i] -> dst[i]; the two sets must match
-        # in length. Parsed like `s` (naive split on the delimiter).
+        # in length. Read both fields up to the delimiter (no trailing flags).
         delim = rest[1]
-        parts = rest[2:].split(delim)
-        pattern = parts[0]
-        replacement = parts[1] if len(parts) > 1 else ""
-        remaining = delim.join(parts[2:]) if len(parts) > 2 else ""
+        idx = 2
+
+        def _yfield() -> str:
+            nonlocal idx
+            start = idx
+            while idx < len(rest) and rest[idx] != delim:
+                idx += 1
+            value = rest[start:idx]
+            idx += 1
+            return value
+
+        pattern = _yfield()
+        replacement = _yfield()
         if len(pattern) != len(replacement):
             raise ValueError(
                 "sed: strings for `y` command are different lengths")
@@ -171,7 +195,7 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
             "replacement": replacement,
             "addr_start": addr_start,
             "addr_end": addr_end,
-        }, remaining
+        }, rest[idx:]
     if ch in _SIMPLE_CMDS:
         return {
             "cmd": ch,

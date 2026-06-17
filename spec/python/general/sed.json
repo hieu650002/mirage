@@ -28,8 +28,9 @@
       "description": null,
       "long": null,
       "numeric_shorthand": false,
+      "repeatable": true,
       "short": "-e",
-      "value_kind": "none"
+      "value_kind": "text"
     },
     {
       "description": null,

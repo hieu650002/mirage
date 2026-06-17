@@ -14,12 +14,33 @@
 
 import type { Accessor } from '../../../accessor/base.ts'
 import { IOResult } from '../../../io/types.ts'
-import type { PathSpec, ResourceName } from '../../../types.ts'
+import { PathSpec, type ResourceName } from '../../../types.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
+import { resolvePath } from '../../spec/parser.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { sedGeneric } from './sed.ts'
 
 const ENC = new TextEncoder()
+
+/**
+ * When the script is supplied via -e, GNU sed treats every bare argument as a
+ * file. The arg parser instead routes the first bare arg into the positional
+ * `text` (script) slot, so recover it as a path operand here.
+ */
+function positionalAsPaths(texts: string[], opts: CommandOpts): PathSpec[] {
+  const prefix = opts.mountPrefix !== undefined ? rstripSlash(opts.mountPrefix) : ''
+  return texts.map((t) => {
+    const resolved = resolvePath(opts.cwd, t)
+    const slash = resolved.lastIndexOf('/')
+    return new PathSpec({
+      original: resolved,
+      directory: slash >= 0 ? resolved.slice(0, slash + 1) : '/',
+      resolved: true,
+      prefix,
+    })
+  })
+}
 
 /**
  * Per-backend hooks for the shared `sed` command. Every backend's `sed` is the
@@ -63,8 +84,11 @@ export function makeSed<A extends Accessor>(backend: SedBackend<A>) {
           }),
         ]
       }
+      // With -e the positional operand is a file, not the script (see above).
+      const usingE = opts.flags.e !== undefined && opts.flags.e !== false
+      const operands = usingE ? [...positionalAsPaths(texts, opts), ...paths] : paths
       const resolved =
-        glob !== undefined && paths.length > 0 ? await glob(accessor, paths, opts) : paths
+        glob !== undefined && operands.length > 0 ? await glob(accessor, operands, opts) : operands
       const writeFn =
         write ??
         ((): Promise<void> =>

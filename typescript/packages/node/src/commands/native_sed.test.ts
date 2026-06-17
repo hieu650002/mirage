@@ -405,6 +405,32 @@ describe.each(NATIVE_BACKENDS)('native sed (%s backend)', (kind) => {
     }
   })
 
+  it('sed multiple -e expressions apply in sequence, matches native', async () => {
+    const env = makeEnv(kind)
+    try {
+      const data = ENC.encode('a\n')
+      const m = await env.mirage("sed -e 's/a/b/' -e 's/b/c/'", data)
+      const n = await env.native("sed -e 's/a/b/' -e 's/b/c/'", data)
+      expect(m).toBe(n)
+      expect(m).toBe('c\n')
+    } finally {
+      await env.cleanup()
+    }
+  })
+
+  it('sed -e with a file argument matches native', async () => {
+    const env = makeEnv(kind)
+    try {
+      env.createFile('ef.txt', ENC.encode('hello world\n'))
+      const m = await env.mirage("sed -e s/hello/bye/ /data/ef.txt")
+      const n = await env.native('sed -e s/hello/bye/ ef.txt')
+      expect(m).toBe(n)
+      expect(m).toBe('bye world\n')
+    } finally {
+      await env.cleanup()
+    }
+  })
+
   it('sed -i edits file in place', async () => {
     const env = makeEnv(kind)
     try {

@@ -19,6 +19,7 @@ condition), whether the mount is writable, and the ``-i`` rejection. ``make_sed`
 captures that so each backend is a small config instead of a copy-pasted body.
 """
 
+import posixpath
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from mirage.cache.index import IndexCacheStore
@@ -27,6 +28,30 @@ from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
+
+
+def _positional_as_paths(texts: tuple[str, ...],
+                         cwd: PathSpec | None) -> list[PathSpec]:
+    """Treat positional operands as files (GNU rule when -e gives the script).
+
+    The arg parser routes the first bare arg into the positional ``text``
+    (script) slot, so recover it as a path operand carrying the mount prefix.
+    """
+    base = cwd.original if cwd is not None else "/"
+    prefix = cwd.prefix if cwd is not None else ""
+    out: list[PathSpec] = []
+    for t in texts:
+        resolved = (posixpath.normpath(t) if t.startswith("/") else
+                    posixpath.normpath(posixpath.join(base, t)))
+        slash = resolved.rfind("/")
+        out.append(
+            PathSpec(
+                original=resolved,
+                directory=resolved[:slash + 1] if slash >= 0 else "/",
+                resolved=True,
+                prefix=prefix,
+            ))
+    return out
 
 # (accessor, index, resolved_paths) -> read_bytes callable for generic_sed.
 MakeRead = Callable[[object, IndexCacheStore | None, list[PathSpec]], Callable]
@@ -50,28 +75,39 @@ def make_sed(
         *texts: str,
         stdin: AsyncIterator[bytes] | bytes | None = None,
         i: bool = False,
-        e: bool = False,
+        e: object = None,
         n: bool = False,
         E: bool = False,
         index: IndexCacheStore = None,
         **_extra: object,
     ) -> tuple[ByteSource | None, IOResult]:
-        if not texts:
+        # The script comes from -e expressions (joined with newlines) when any
+        # were given, otherwise from the first positional operand.
+        e_list = e if isinstance(e, list) else ([e] if isinstance(e, str)
+                                                else [])
+        script = "\n".join(e_list) if e_list else (texts[0] if texts else None)
+        if script is None:
             raise ValueError("sed: usage: sed EXPRESSION [path]")
         if inplace_error is not None and i:
             exc_type, message = inplace_error
             raise exc_type(message)
-        if paths and (glob_when is None or glob_when(accessor, index)):
-            paths = await glob_fn(accessor, paths, index)
+        operands = list(paths)
+        if e_list:
+            # With -e the positional operand is a file, not the script.
+            cwd = _extra.get("cwd")
+            operands = _positional_as_paths(
+                texts, cwd if isinstance(cwd, PathSpec) else None) + operands
+        if operands and (glob_when is None or glob_when(accessor, index)):
+            operands = await glob_fn(accessor, operands, index)
         elif inplace_error is None:
             # Writable mounts treat a non-glob invocation as stdin mode; the
             # read-only mounts leave the operands untouched (mirroring the
             # original per-backend wrappers).
-            paths = []
+            operands = []
         return await generic_sed(
-            paths,
-            texts[0],
-            read_bytes=make_read(accessor, index, paths),
+            operands,
+            script,
+            read_bytes=make_read(accessor, index, operands),
             write_bytes=write_bytes,
             accessor=accessor,
             stdin=stdin,

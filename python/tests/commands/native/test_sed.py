@@ -182,3 +182,15 @@ def test_sed_r_alias(env):
     data = b"aaab\n"
     assert env.mirage("sed -r 's/a+/X/'", stdin=data) == env.native(
         "sed -r 's/a+/X/'", stdin=data)
+
+
+def test_sed_multiple_e(env):
+    data = b"a\n"
+    assert env.mirage("sed -e 's/a/b/' -e 's/b/c/'", stdin=data) == env.native(
+        "sed -e 's/a/b/' -e 's/b/c/'", stdin=data)
+
+
+def test_sed_e_with_file(env):
+    env.create_file("ef.txt", b"hello world\n")
+    assert env.mirage("sed -e s/hello/bye/ /data/ef.txt") == env.native(
+        "sed -e s/hello/bye/ ef.txt")

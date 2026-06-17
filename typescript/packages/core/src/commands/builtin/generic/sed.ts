@@ -33,7 +33,11 @@ export async function sedGeneric(
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
 ): Promise<CommandFnResult> {
-  const script = texts[0]
+  // The script comes from -e expressions (joined with newlines, GNU-style) when
+  // any were given, otherwise from the first positional operand.
+  const eVals = opts.flags.e
+  const eList = Array.isArray(eVals) ? eVals : typeof eVals === 'string' ? [eVals] : []
+  const script = eList.length > 0 ? eList.join('\n') : texts[0]
   if (script === undefined) {
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('sed: missing script\n') })]
   }
@@ -43,7 +47,7 @@ export async function sedGeneric(
   const extended = opts.flags.E === true || opts.flags.r === true
   let commands: SedCommand[]
   try {
-    if (script.includes(';') || script.includes('{')) {
+    if (script.includes(';') || script.includes('{') || script.includes('\n')) {
       commands = parseProgram(script)
     } else {
       commands = [parseOneCommand(script)[0]]

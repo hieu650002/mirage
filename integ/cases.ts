@@ -295,6 +295,9 @@ export const CASES: ReadonlyArray<readonly [string, string]> = [
   ['sed_ere_group', "echo foo | sed -E 's/(foo)/[\\1]/'"],
   ['sed_ere_plus', "echo aaab | sed -E 's/a+/X/'"],
   ['sed_r_alias', "echo aaab | sed -r 's/a+/X/'"],
+  // Multiple -e expressions apply in sequence; -e with a file argument.
+  ['sed_multi_e', "echo a | sed -e 's/a/b/' -e 's/b/c/'"],
+  ['sed_e_file', 'sed -e s/world/EARTH/ /data/a.txt'],
 
   ["tr_squeeze", "echo aaabbbccc | tr -s a-z"],
   ["tr_complement", "cat /data/a.txt | tr -c 'a-z\\n' '*'"],

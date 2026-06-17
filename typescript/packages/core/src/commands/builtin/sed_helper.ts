@@ -92,26 +92,47 @@ export function parseOneCommand(rest: string): [SedCommand, string] {
   if (ch === 's') {
     const delim = rest[1]
     if (delim === undefined) throw new Error('sed: missing delimiter')
-    const parts = rest.slice(2).split(delim)
-    const pattern = parts[0] ?? ''
-    const replacement = parts.length > 1 ? (parts[1] ?? '') : ''
-    const exprFlags = parts.length > 2 ? (parts[2] ?? '') : ''
-    const remaining = parts.length > 3 ? parts.slice(3).join(delim) : ''
-    return [{ cmd: 's', pattern, replacement, exprFlags, addrStart, addrEnd }, remaining]
+    // Read pattern and replacement up to the next delimiter, then consume only
+    // the trailing flag characters. Anything after is a separate command — a
+    // plain split() would wrongly fold it into the flags (e.g. `s/a/b/;d`).
+    let i = 2
+    const field = (): string => {
+      const start = i
+      while (i < rest.length && rest[i] !== delim) i += 1
+      const value = rest.slice(start, i)
+      i += 1
+      return value
+    }
+    const pattern = field()
+    const replacement = field()
+    let exprFlags = ''
+    while (i < rest.length) {
+      const fc = rest[i]
+      if (fc === undefined || !/[0-9gpiImMe]/.test(fc)) break
+      exprFlags += fc
+      i += 1
+    }
+    return [{ cmd: 's', pattern, replacement, exprFlags, addrStart, addrEnd }, rest.slice(i)]
   }
   if (ch === 'y') {
     // y/src/dst/ — transliterate src[i] -> dst[i]; the two sets must match in
-    // length. Parsed like `s` (naive split on the delimiter).
+    // length. Read both fields up to the delimiter (no trailing flags).
     const delim = rest[1]
     if (delim === undefined) throw new Error('sed: missing delimiter')
-    const parts = rest.slice(2).split(delim)
-    const pattern = parts[0] ?? ''
-    const replacement = parts.length > 1 ? (parts[1] ?? '') : ''
-    const remaining = parts.length > 2 ? parts.slice(2).join(delim) : ''
+    let i = 2
+    const field = (): string => {
+      const start = i
+      while (i < rest.length && rest[i] !== delim) i += 1
+      const value = rest.slice(start, i)
+      i += 1
+      return value
+    }
+    const pattern = field()
+    const replacement = field()
     if (pattern.length !== replacement.length) {
       throw new Error('sed: strings for `y` command are different lengths')
     }
-    return [{ cmd: 'y', pattern, replacement, addrStart, addrEnd }, remaining]
+    return [{ cmd: 'y', pattern, replacement, addrStart, addrEnd }, rest.slice(i)]
   }
   if (ch !== undefined && SIMPLE_CMDS.has(ch)) {
     return [{ cmd: ch, addrStart, addrEnd }, rest.slice(1)]

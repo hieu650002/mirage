@@ -968,6 +968,14 @@ PET
 Xb
 === sed_r_alias ===
 Xb
+=== sed_multi_e ===
+c
+=== sed_e_file ===
+hello
+EARTH
+foo
+bar
+baz
 === tr_squeeze ===
 abc
 === tr_complement ===
@@ -1639,8 +1647,8 @@ disptree/d
 disptree/d/y.txt
 disptree/x.txt
 === history_last_two ===
-443  (cd /data && ls -R disptree)
-444  (cd /data && find disptree)
+445  (cd /data && ls -R disptree)
+446  (cd /data && find disptree)
 === bash_history_tail ===
 (cd /data && ls -R disptree)
 (cd /data && find disptree)

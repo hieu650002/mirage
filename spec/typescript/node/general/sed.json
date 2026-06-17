@@ -37,7 +37,7 @@
       "long": null,
       "numeric_shorthand": false,
       "short": "-e",
-      "value_kind": "none"
+      "value_kind": "text"
     },
     {
       "description": null,

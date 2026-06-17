@@ -27,7 +27,7 @@ async def sed(
     extended: bool = False,
     index: IndexCacheStore | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
-    if ";" in expression or "{" in expression:
+    if ";" in expression or "{" in expression or "\n" in expression:
         commands = _parse_program(expression)
     else:
         commands = [_parse_one_command(expression)[0]]
