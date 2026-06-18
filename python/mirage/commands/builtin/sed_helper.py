@@ -92,6 +92,14 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
     if addr_start and rest.startswith(","):
         addr_end, rest = _consume_address(rest[1:])
 
+    # Optional address negation: `addr!command` (whitespace allowed around `!`)
+    # applies the command to every line the address does NOT select.
+    negate = False
+    probe = rest.lstrip(" ")
+    if probe.startswith("!"):
+        negate = True
+        rest = probe[1:].lstrip(" ")
+
     if not rest:
         raise ValueError("sed: missing command")
 
@@ -102,6 +110,7 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
             "cmd": "{",
             "addr_start": addr_start,
             "addr_end": addr_end,
+            "negate": negate,
         }, rest[1:]
     if ch == "}":
         return {"cmd": "}"}, rest[1:]
@@ -126,6 +135,7 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
             "label": label.strip(),
             "addr_start": addr_start,
             "addr_end": addr_end,
+            "negate": negate,
         }, rest
     if ch == "t":
         label = ""
@@ -138,6 +148,7 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
             "label": label.strip(),
             "addr_start": addr_start,
             "addr_end": addr_end,
+            "negate": negate,
         }, rest
     if ch == "s":
         delim = rest[1]
@@ -168,6 +179,7 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
             "expr_flags": expr_flags,
             "addr_start": addr_start,
             "addr_end": addr_end,
+            "negate": negate,
         }, rest[idx:]
     if ch == "y":
         # y/src/dst/ — transliterate src[i] -> dst[i]; the two sets must match
@@ -195,12 +207,14 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
             "replacement": replacement,
             "addr_start": addr_start,
             "addr_end": addr_end,
+            "negate": negate,
         }, rest[idx:]
     if ch in _SIMPLE_CMDS:
         return {
             "cmd": ch,
             "addr_start": addr_start,
             "addr_end": addr_end,
+            "negate": negate,
         }, rest[1:]
     if ch in ("a", "i", "c"):
         # Text forms: `a\` <newline> text (classic multi-line form, where the
@@ -224,6 +238,7 @@ def _parse_one_command(rest: str) -> tuple[dict, str]:
             "text": text[:end],
             "addr_start": addr_start,
             "addr_end": addr_end,
+            "negate": negate,
         }, text[end:]
 
     raise ValueError(f"sed: unsupported command: {ch!r}")
@@ -396,6 +411,10 @@ def _execute_program(text: str,
                     if not _addr_matches(addr_start, pattern, lineno, total,
                                          extended):
                         matched = False
+
+            # addr!cmd inverts the selection (range state tracked normally).
+            if cmd.get("negate"):
+                matched = not matched
 
             if c == "{":
                 if not matched:

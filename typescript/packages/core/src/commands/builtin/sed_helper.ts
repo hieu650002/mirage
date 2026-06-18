@@ -20,6 +20,7 @@ export interface SedCommand {
   cmd: string
   addrStart?: SedAddr | null
   addrEnd?: SedAddr | null
+  negate?: boolean
   pattern?: string
   replacement?: string
   exprFlags?: string
@@ -77,9 +78,19 @@ export function parseOneCommand(rest: string): [SedCommand, string] {
   if (addrStart !== null && rest.startsWith(',')) {
     ;[addrEnd, rest] = consumeAddress(rest.slice(1))
   }
+  // Optional address negation: `addr!command` (whitespace allowed around `!`)
+  // applies the command to every line the address does NOT select.
+  let negate = false
+  let probe = rest
+  while (probe.startsWith(' ')) probe = probe.slice(1)
+  if (probe.startsWith('!')) {
+    negate = true
+    rest = probe.slice(1)
+    while (rest.startsWith(' ')) rest = rest.slice(1)
+  }
   if (rest === '') throw new Error('sed: missing command')
   const ch = rest[0]
-  if (ch === '{') return [{ cmd: '{', addrStart, addrEnd }, rest.slice(1)]
+  if (ch === '{') return [{ cmd: '{', addrStart, addrEnd, negate }, rest.slice(1)]
   if (ch === '}') return [{ cmd: '}' }, rest.slice(1)]
   if (ch === ':') {
     const [label, after] = readLabelOrBranch(rest.slice(1))
@@ -87,7 +98,7 @@ export function parseOneCommand(rest: string): [SedCommand, string] {
   }
   if (ch === 'b' || ch === 't') {
     const [label, after] = readLabelOrBranch(rest.slice(1))
-    return [{ cmd: ch, label, addrStart, addrEnd }, after]
+    return [{ cmd: ch, label, addrStart, addrEnd, negate }, after]
   }
   if (ch === 's') {
     const delim = rest[1]
@@ -112,7 +123,10 @@ export function parseOneCommand(rest: string): [SedCommand, string] {
       exprFlags += fc
       i += 1
     }
-    return [{ cmd: 's', pattern, replacement, exprFlags, addrStart, addrEnd }, rest.slice(i)]
+    return [
+      { cmd: 's', pattern, replacement, exprFlags, addrStart, addrEnd, negate },
+      rest.slice(i),
+    ]
   }
   if (ch === 'y') {
     // y/src/dst/ — transliterate src[i] -> dst[i]; the two sets must match in
@@ -132,10 +146,10 @@ export function parseOneCommand(rest: string): [SedCommand, string] {
     if (pattern.length !== replacement.length) {
       throw new Error('sed: strings for `y` command are different lengths')
     }
-    return [{ cmd: 'y', pattern, replacement, addrStart, addrEnd }, rest.slice(i)]
+    return [{ cmd: 'y', pattern, replacement, addrStart, addrEnd, negate }, rest.slice(i)]
   }
   if (ch !== undefined && SIMPLE_CMDS.has(ch)) {
-    return [{ cmd: ch, addrStart, addrEnd }, rest.slice(1)]
+    return [{ cmd: ch, addrStart, addrEnd, negate }, rest.slice(1)]
   }
   if (ch === 'a' || ch === 'i' || ch === 'c') {
     // Text forms: `a\` <newline> text (the classic multi-line form, where the
@@ -156,7 +170,7 @@ export function parseOneCommand(rest: string): [SedCommand, string] {
         break
       }
     }
-    return [{ cmd: ch, text: text.slice(0, end), addrStart, addrEnd }, text.slice(end)]
+    return [{ cmd: ch, text: text.slice(0, end), addrStart, addrEnd, negate }, text.slice(end)]
   }
   throw new Error(`sed: unsupported command: ${String(ch)}`)
 }
@@ -469,6 +483,8 @@ export function executeProgram(
           if (!addrMatches(cmd.addrStart, pattern, lineno, total, extended)) matched = false
         }
       }
+      // `addr!cmd` inverts the selection (range state above is tracked normally).
+      if (cmd.negate === true) matched = !matched
 
       if (c === '{') {
         if (!matched) {

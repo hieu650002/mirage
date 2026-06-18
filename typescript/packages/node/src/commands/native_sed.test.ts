@@ -431,6 +431,32 @@ describe.each(NATIVE_BACKENDS)('native sed (%s backend)', (kind) => {
     }
   })
 
+  it('sed negated line address matches native', async () => {
+    const env = makeEnv(kind)
+    try {
+      const data = ENC.encode('a\nb\nc\n')
+      const m = await env.mirage("sed '2!d'", data)
+      const n = await env.native("sed '2!d'", data)
+      expect(m).toBe(n)
+      expect(m).toBe('b\n')
+    } finally {
+      await env.cleanup()
+    }
+  })
+
+  it('sed negated regex address matches native', async () => {
+    const env = makeEnv(kind)
+    try {
+      const data = ENC.encode('a\nb\nc\n')
+      const m = await env.mirage("sed '/b/!d'", data)
+      const n = await env.native("sed '/b/!d'", data)
+      expect(m).toBe(n)
+      expect(m).toBe('b\n')
+    } finally {
+      await env.cleanup()
+    }
+  })
+
   it('sed -i edits file in place', async () => {
     const env = makeEnv(kind)
     try {

@@ -200,3 +200,15 @@ def test_sed_e_with_file(env):
     env.create_file("ef.txt", b"hello world\n")
     assert env.mirage("sed -e s/hello/bye/ /data/ef.txt") == env.native(
         "sed -e s/hello/bye/ ef.txt")
+
+
+def test_sed_negate_line(env):
+    data = b"a\nb\nc\n"
+    assert env.mirage("sed '2!d'", stdin=data) == env.native("sed '2!d'",
+                                                             stdin=data)
+
+
+def test_sed_negate_regex(env):
+    data = b"a\nb\nc\n"
+    assert env.mirage("sed '/b/!d'", stdin=data) == env.native("sed '/b/!d'",
+                                                               stdin=data)

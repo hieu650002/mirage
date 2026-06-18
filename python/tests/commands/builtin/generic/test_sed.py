@@ -318,3 +318,48 @@ async def test_sed_ere_address():
                           stdin=b"aaa\nbbb\n",
                           extended=True)
     assert output == b"bbb\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_negate_line():
+    rb, wb, _ = _make_backend({})
+    output, _ = await sed([],
+                          "2!d",
+                          read_bytes=rb,
+                          write_bytes=wb,
+                          stdin=b"a\nb\nc\n")
+    assert output == b"b\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_negate_regex():
+    rb, wb, _ = _make_backend({})
+    output, _ = await sed([],
+                          "/b/!d",
+                          read_bytes=rb,
+                          write_bytes=wb,
+                          stdin=b"a\nb\nc\n")
+    assert output == b"b\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_negate_last_with_suppress():
+    rb, wb, _ = _make_backend({})
+    output, _ = await sed([],
+                          "$!p",
+                          read_bytes=rb,
+                          write_bytes=wb,
+                          stdin=b"a\nb\nc\n",
+                          suppress=True)
+    assert output == b"a\nb\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_negate_range():
+    rb, wb, _ = _make_backend({})
+    output, _ = await sed([],
+                          "1,2!s/./X/",
+                          read_bytes=rb,
+                          write_bytes=wb,
+                          stdin=b"a\nb\nc\nd\n")
+    assert output == b"a\nb\nX\nX\n"

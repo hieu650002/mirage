@@ -316,6 +316,11 @@ export const CASES: ReadonlyArray<readonly [string, string]> = [
   ['sed_block', "sed '/world/{s/world/W/;s/W/X/}' /data/a.txt"],
   ['sed_semicolon', "sed 's/o/0/;s/a/A/' /data/a.txt"],
   ['sed_backref_E', "sed -E 's/(section)([0-9])/\\2\\1/' /data/sections.txt"],
+  // address negation: addr!cmd applies to lines the address does NOT select.
+  ['sed_neg_line', "sed '2!d' /data/a.txt"],
+  ['sed_neg_regex', "sed '/world/!d' /data/a.txt"],
+  ['sed_neg_lastp', "sed -n '$!p' /data/a.txt"],
+  ['sed_neg_range', "sed '1,3!s/./X/' /data/a.txt"],
 
   ["tr_squeeze", "echo aaabbbccc | tr -s a-z"],
   ["tr_complement", "cat /data/a.txt | tr -c 'a-z\\n' '*'"],

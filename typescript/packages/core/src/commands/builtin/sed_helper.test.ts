@@ -129,6 +129,28 @@ describe('sed c (change)', () => {
   })
 })
 
+describe('sed address negation (addr!cmd)', () => {
+  it('negated line address applies to all other lines', () => {
+    expect(sed('2!d', 'a\nb\nc\n')).toBe('b\n')
+  })
+
+  it('negated regex address keeps only non-matching lines', () => {
+    expect(sed('/b/!d', 'a\nb\nc\n')).toBe('b\n')
+  })
+
+  it('negated last-line with -n prints all but the last', () => {
+    expect(sed('$!p', 'a\nb\nc\n', true)).toBe('a\nb\n')
+  })
+
+  it('negated range substitutes outside the range', () => {
+    expect(sed('1,2!s/./X/', 'a\nb\nc\nd\n')).toBe('a\nb\nX\nX\n')
+  })
+
+  it('whitespace is allowed around the negation', () => {
+    expect(sed('2 ! d', 'a\nb\nc\n')).toBe('b\n')
+  })
+})
+
 describe('sed replacement & hold-space (GNU semantics)', () => {
   it('unescaped & is the whole match', () => {
     expect(sed('s/wor/[&]/', 'world\n')).toBe('[wor]ld\n')

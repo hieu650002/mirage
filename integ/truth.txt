@@ -1062,6 +1062,21 @@ body1
 body2
 3section
 body3
+=== sed_neg_line ===
+world
+=== sed_neg_regex ===
+world
+=== sed_neg_lastp ===
+hello
+world
+foo
+bar
+=== sed_neg_range ===
+hello
+world
+foo
+Xar
+Xaz
 === tr_squeeze ===
 abc
 === tr_complement ===
@@ -1733,8 +1748,8 @@ disptree/d
 disptree/d/y.txt
 disptree/x.txt
 === history_last_two ===
-461  (cd /data && ls -R disptree)
-462  (cd /data && find disptree)
+465  (cd /data && ls -R disptree)
+466  (cd /data && find disptree)
 === bash_history_tail ===
 (cd /data && ls -R disptree)
 (cd /data && find disptree)
