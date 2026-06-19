@@ -45,6 +45,8 @@ async def test_mv_moves_file(onedrive_write_ws, onedrive_files):
     assert io.exit_code == 0
     assert "/words.txt" not in onedrive_files.files
     assert onedrive_files.files["/moved.txt"] == b"beta\nalpha\nalpha\n"
+    assert "/onedrive/moved.txt" in io.writes
+    assert "/onedrive/onedrive/moved.txt" not in io.writes
 
 
 @pytest.mark.asyncio
@@ -73,6 +75,8 @@ async def test_mkdir_creates_directory(onedrive_write_ws, onedrive_files):
 
     assert io.exit_code == 0
     assert "/newdir" in onedrive_files.dirs
+    assert "/onedrive/newdir" in io.writes
+    assert "/onedrive/onedrive/newdir" not in io.writes
 
 
 @pytest.mark.asyncio
@@ -81,3 +85,5 @@ async def test_touch_creates_missing_file(onedrive_write_ws, onedrive_files):
 
     assert io.exit_code == 0
     assert onedrive_files.files["/created.txt"] == b""
+    assert "/onedrive/created.txt" in io.writes
+    assert "/onedrive/onedrive/created.txt" not in io.writes

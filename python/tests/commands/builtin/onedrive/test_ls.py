@@ -26,8 +26,9 @@ async def test_ls_long_includes_size(onedrive_read_ws):
 
     assert io.exit_code == 0
     out = io.stdout.decode()
-    assert "words.txt" in out
-    assert "17" in out
+    words_rows = [line for line in out.splitlines() if "words.txt" in line]
+    assert words_rows, "words.txt row missing from ls -l output"
+    assert "17" in words_rows[0]
 
 
 @pytest.mark.asyncio

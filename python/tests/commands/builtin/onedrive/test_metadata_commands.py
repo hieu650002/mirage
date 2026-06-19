@@ -7,8 +7,8 @@ async def test_stat_reports_file_metadata(onedrive_read_ws):
 
     assert io.exit_code == 0
     out = io.stdout.decode()
-    assert "words.txt" in out
-    assert "17" in out
+    assert "name=words.txt" in out
+    assert "size=17" in out
 
 
 @pytest.mark.asyncio
