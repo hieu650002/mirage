@@ -116,7 +116,7 @@ class FakeGraph:
 
     def _folder_item(self, path: str) -> dict:
         return {
-            "id": f"folder:{path}" or "root",
+            "id": f"folder:{path}" if path else "root",
             "name": posixpath.basename(path) if path else "root",
             "folder": {
                 "childCount": len(self._children(path))
@@ -158,7 +158,9 @@ def _not_found() -> web.Response:
 
 
 def _parse_item_path(path: str) -> tuple[str, str]:
-    idx = path.index("/root")
+    idx = path.find("/root")
+    if idx < 0:
+        return "", ""
     rest = path[idx + len("/root"):]
     if rest in ("", "/"):
         return "", ""
@@ -181,6 +183,7 @@ class GraphServer:
         self.state = state
         self.uploads: dict[str, dict] = {}
         self.calls: Counter = Counter()
+        self._upload_seq = 0
 
     async def handle(self, request: web.Request) -> web.StreamResponse:
         path = request.path
@@ -194,9 +197,8 @@ class GraphServer:
             return web.json_response({"status": "completed"})
         item_path, action = _parse_item_path(path)
         if method == "GET":
-            self.calls["children" if action ==
-                       "children" else "content" if action ==
-                       "content" else "item"] += 1
+            kind = action if action in ("children", "content") else "item"
+            self.calls[kind] += 1
         return await self._drive(request, method, item_path, action)
 
     async def _drive(self, request: web.Request, method: str, item_path: str,
@@ -219,7 +221,7 @@ class GraphServer:
             vid = action[len("versions/"):-len("/content")]
             return self._version_content(request, item_path, vid)
         if action.endswith("/restoreVersion"):
-            return web.json_response({})
+            return web.Response(status=204)
         if action == "versions":
             return self._versions_response(item_path)
         if method == "DELETE":
@@ -242,10 +244,7 @@ class GraphServer:
 
     def _content_response(self, request: web.Request,
                           item_path: str) -> web.Response:
-        entry = self.state.files.get(_norm(item_path))
-        if entry is None:
-            return _not_found()
-        return self._range_body(request, entry["content"])
+        return self._serve_bytes(request, item_path)
 
     def _serve_bytes(self, request: web.Request, path: str) -> web.Response:
         entry = self.state.files.get(_norm(path))
@@ -255,9 +254,18 @@ class GraphServer:
 
     def _range_body(self, request: web.Request,
                     content: bytes) -> web.Response:
-        start, end = _parse_range(request.headers.get("Range"), len(content))
-        return web.Response(body=content[start:end],
-                            content_type="application/octet-stream")
+        header = request.headers.get("Range")
+        start, end = _parse_range(header, len(content))
+        body = content[start:end]
+        if header and header.startswith("bytes=") and start < end:
+            return web.Response(status=206,
+                                body=body,
+                                content_type="application/octet-stream",
+                                headers={
+                                    "Content-Range":
+                                    f"bytes {start}-{end - 1}/{len(content)}"
+                                })
+        return web.Response(body=body, content_type="application/octet-stream")
 
     def _versions_response(self, item_path: str) -> web.Response:
         entry = self.state.files.get(_norm(item_path))
@@ -354,10 +362,13 @@ class GraphServer:
                 state.dirs.add(dest + d[len(src):])
 
     def _create_upload(self, item_path: str) -> web.Response:
-        token = f"{_norm(item_path)}#{len(self.uploads)}"
+        self._upload_seq += 1
+        token = f"{_norm(item_path)}#{self._upload_seq}"
         self.uploads[token] = {"path": _norm(item_path), "buffer": bytearray()}
-        return web.json_response(
-            {"uploadUrl": f"{self.state.base}/upload/{token}"})
+        return web.json_response({
+            "uploadUrl": f"{self.state.base}/upload/{token}",
+            "expirationDateTime": MODIFIED,
+        })
 
     async def _upload(self, request: web.Request, token: str) -> web.Response:
         session = self.uploads.get(token)
