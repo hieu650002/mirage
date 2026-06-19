@@ -47,12 +47,19 @@ async def readdir(accessor: OneDriveAccessor, path: PathSpec,
         key = f"{base}/{cname}"
         names.append(key)
         if "folder" in child:
-            entry = IndexEntry(id=key, name=cname, resource_type="folder")
+            entry = IndexEntry(id=key,
+                               name=cname,
+                               resource_type="folder",
+                               size=child.get("size"),
+                               remote_time=child.get("lastModifiedDateTime",
+                                                     ""))
         else:
             entry = IndexEntry(id=key,
                                name=cname,
                                resource_type="file",
-                               size=child.get("size"))
+                               size=child.get("size"),
+                               remote_time=child.get("lastModifiedDateTime",
+                                                     ""))
         index_entries.append((cname, entry))
     names = sorted(names)
     virtual_entries = sorted((prefix + e if prefix else e) for e in names)
