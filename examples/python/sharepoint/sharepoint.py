@@ -37,7 +37,8 @@ def build_tests(base: str, test_dir: str, test_file: str):
         ("mkdir", f'mkdir "{test_dir}"'),
         ("touch", f'touch "{test_file}"'),
         ("echo write",
-         f'echo "hello world\nfoo bar\nhello again\napple\nbanana" > "{test_file}"'
+         f'echo "hello world\nfoo bar\nhello again'
+         f'\napple\nbanana" > "{test_file}"'
          ),
         ("ls", f'ls "{test_dir}"'),
         ("ls -l", f'ls -l "{test_dir}"'),
@@ -120,7 +121,8 @@ def build_tests(base: str, test_dir: str, test_file: str):
         ("if-else exists",
          f'if [ -f "{test_file}" ]; then echo exists; else echo missing; fi'),
         ("if-else missing",
-         'if [ -f "/sharepoint/no/such/file" ]; then echo exists; else echo missing; fi'
+         'if [ -f "/sharepoint/no/such/file" ];'
+         ' then echo exists; else echo missing; fi'
          ),
         ("for loop", 'for i in 1 2 3; do echo $i; done'),
         ("while read", 'seq 3 | while read n; do echo line$n; done'),
@@ -183,7 +185,8 @@ def write_report(
     failed = total - passed
     pct = (passed / total * 100) if total else 0
     lines.append(
-        f"**Total: {passed} passed, {failed} failed, {total} total ({pct:.1f}%)**\n"
+        f"**Total: {passed} passed, {failed} failed,"
+        f" {total} total ({pct:.1f}%)**\n"
     )
 
     for section, results in [("Individual Commands", cmd_results),
@@ -196,7 +199,9 @@ def write_report(
             status = "✅" if ok else "❌"
             detail = escape_md(stdout) if ok else escape_md(stderr or stdout)
             lines.append(
-                f"| {i} | {escape_md(name)} | `{escape_md(cmd)}` | {status} | {detail} |"
+                f"| {i} | {escape_md(name)} "
+                f"| `{escape_md(cmd)}` "
+                f"| {status} | {detail} |"
             )
         sec_passed = sum(1 for *_, ok, _, _ in results if ok)
         lines.append(f"\n**{sec_passed}/{len(results)} passed**\n")
