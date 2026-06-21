@@ -182,6 +182,7 @@ export async function readdir(
           id: ref.id,
           name: dirname,
           resourceType: 'notion/page',
+          remoteTime: ref.lastEditedTime,
           vfsName: dirname,
         }),
       ])

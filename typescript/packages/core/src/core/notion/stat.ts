@@ -111,6 +111,7 @@ export async function stat(
         return new FileStat({
           name: result.entry.name,
           type: FileType.DIRECTORY,
+          modified: result.entry.remoteTime,
           extra: { page_id: parsed.id },
         })
       }
