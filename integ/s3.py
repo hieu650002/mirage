@@ -15,7 +15,7 @@
 import asyncio
 import logging
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import aiobotocore.client
@@ -35,7 +35,7 @@ from mirage.types import CommandSafeguard, ConsistencyPolicy
 
 # Freeze the timestamp moto stamps onto every object so LastModified (and thus
 # the `ls -l` mtime column resolved from the index) is deterministic.
-_FROZEN_MTIME = datetime(2026, 3, 31, 12, 0, 0)
+_FROZEN_MTIME = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc)
 _s3_models.utcnow = lambda: _FROZEN_MTIME
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"

@@ -20,13 +20,12 @@ import { listChannels } from './channels.ts'
 import { DiscordIndexEntry, DiscordResourceType } from './entry.ts'
 import { fileBlobName } from './files.ts'
 import { listGuilds } from './guilds.ts'
-import { listMessagesForDay } from './history.ts'
+import { DISCORD_EPOCH, listMessagesForDay } from './history.ts'
 import { listMembers } from './members.ts'
 import { DiscordApiError } from './_client.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import { enoent } from '../../utils/errors.ts'
 
-const DISCORD_EPOCH = 1420070400000n
 const SOFT_STATUSES = new Set([403, 404, 429])
 
 export function snowflakeToDate(snowflake: string): string {
@@ -47,7 +46,8 @@ export function snowflakeToIso(snowflake: string): string | null {
   } catch {
     return null
   }
-  return new Date(Number(ms)).toISOString().replace('.000Z', 'Z')
+  // second precision, matching the Python converter
+  return new Date(Number(ms / 1000n) * 1000).toISOString().replace('.000Z', 'Z')
 }
 
 export function dateRangeDescending(endDate: string, days = 30): string[] {

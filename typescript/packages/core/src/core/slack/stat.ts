@@ -44,7 +44,8 @@ function slackModified(remoteTime: string): string | null {
   if (remoteTime === '') return null
   const ts = Number.parseFloat(remoteTime)
   if (Number.isNaN(ts)) return null
-  return new Date(ts * 1000).toISOString().replace('.000Z', 'Z')
+  // second precision, matching the Python converter
+  return new Date(Math.floor(ts) * 1000).toISOString().replace('.000Z', 'Z')
 }
 
 function fileNotFound(key: string): Error {

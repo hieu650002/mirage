@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from mirage.accessor.slack import SlackAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.slack.readdir import readdir as _readdir
+from mirage.core.timeutil import to_iso_z
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import filetype_from_mimetype
@@ -31,8 +32,7 @@ def _slack_modified(remote_time: str) -> str | None:
         ts = float(remote_time)
     except (TypeError, ValueError):
         return None
-    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-    return dt.isoformat().replace("+00:00", "Z")
+    return to_iso_z(datetime.fromtimestamp(int(ts), tz=timezone.utc))
 
 
 async def _populate_via_parent(
