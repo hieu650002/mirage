@@ -15,7 +15,7 @@
 import type { DiskAccessor } from '../../accessor/disk.ts'
 import { copyFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { PathSpec } from '@struktoai/mirage-core'
+import { enoent, invalidateAfterWrite, type PathSpec } from '@struktoai/mirage-core'
 import { resolveSafe } from './utils.ts'
 
 export async function copy(accessor: DiskAccessor, src: PathSpec, dst: PathSpec): Promise<void> {
@@ -26,8 +26,9 @@ export async function copy(accessor: DiskAccessor, src: PathSpec, dst: PathSpec)
     await copyFile(s, d)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`file not found: ${src.stripPrefix}`)
+      throw enoent(src)
     }
     throw err
   }
+  await invalidateAfterWrite(dst)
 }

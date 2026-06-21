@@ -16,12 +16,8 @@ import type { GitHubAccessor } from '../../accessor/github.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { PathSpec } from '../../types.ts'
 import { fetchBlob } from './_client.ts'
-
-function enoent(path: string): Error {
-  const e = new Error(`ENOENT: ${path}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 function eisdir(path: string): Error {
   const e = new Error(`EISDIR: ${path}`) as Error & { code: string }
@@ -39,7 +35,7 @@ function stripPrefix(path: PathSpec): string {
 }
 
 function indexKey(p: string): string {
-  const trimmed = p.replace(/^\/+|\/+$/g, '')
+  const trimmed = stripSlash(p)
   return trimmed === '' ? '/' : `/${trimmed}`
 }
 
@@ -49,9 +45,9 @@ export async function read(
   index?: IndexCacheStore,
 ): Promise<Uint8Array> {
   const p = stripPrefix(path)
-  if (index === undefined) throw enoent(p)
+  if (index === undefined) throw enoent(path)
   const result = await index.get(indexKey(p))
-  if (result.entry === undefined || result.entry === null) throw enoent(p)
+  if (result.entry === undefined || result.entry === null) throw enoent(path)
   if (result.entry.resourceType === 'folder') throw eisdir(p)
   return fetchBlob(accessor.transport, accessor.owner, accessor.repo, result.entry.id)
 }

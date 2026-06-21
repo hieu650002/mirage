@@ -12,11 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { mkdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, resolve, sep } from 'node:path'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { MountMode } from '@struktoai/mirage-node'
+import type { CommandSafeguard, MountMode } from '@struktoai/mirage-node'
 import { Workspace, type Resource } from '@struktoai/mirage-node'
 import type { WorkspaceRegistry } from '../registry.ts'
 import { buildOverrideResources, cloneWorkspaceWithOverride, type OverrideShape } from '../clone.ts'
@@ -30,6 +29,11 @@ import { makeBrief, makeDetail } from '../summary.ts'
 
 export interface WorkspaceRoutesDeps {
   registry: WorkspaceRegistry
+  snapshotRoot: string
+}
+
+const WRITE_RATE_LIMIT = {
+  config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
 }
 
 interface CreateWorkspaceBody {
@@ -50,17 +54,31 @@ interface CloneWorkspaceBody {
   override?: OverrideShape
 }
 
+interface SnapshotWorkspaceBody {
+  path: string
+}
+
+interface LoadWorkspaceBody {
+  path: string
+  id?: string
+  override?: OverrideShape
+}
+
 export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRoutesDeps): void {
   app.post<{ Body: CreateWorkspaceBody }>(
     '/v1/workspaces',
     async (req: FastifyRequest<{ Body: CreateWorkspaceBody }>, reply: FastifyReply) => {
       const body = req.body
+      const config: unknown = body.config
+      if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+        return reply.status(400).send({ detail: 'config must be a mapping' })
+      }
       if (body.id !== undefined && deps.registry.has(body.id)) {
         return reply.status(409).send({ detail: `workspace id already exists: ${body.id}` })
       }
       let cfg: WorkspaceConfigRaw
       try {
-        cfg = loadWorkspaceConfig(body.config)
+        cfg = loadWorkspaceConfig(config as Record<string, unknown>)
       } catch (e) {
         return reply.status(400).send({ detail: (e as Error).message })
       }
@@ -72,72 +90,88 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       }
       const resourceMap: Record<string, Resource> = {}
       const modeOverrides: Record<string, MountMode> = {}
-      for (const [prefix, [resource, mode]] of Object.entries(args.resources)) {
+      const commandSafeguards: Record<string, Record<string, CommandSafeguard>> = {}
+      for (const [prefix, [resource, mode, safeguards]] of Object.entries(args.resources)) {
         resourceMap[prefix] = resource
         modeOverrides[prefix] = mode
+        if (Object.keys(safeguards).length > 0) commandSafeguards[prefix] = safeguards
       }
-      const ws = new Workspace(resourceMap, { mode: args.options.mode, modeOverrides })
+      const ws = new Workspace(resourceMap, {
+        mode: args.options.mode,
+        consistency: args.options.consistency,
+        modeOverrides,
+        sessionId: args.options.sessionId,
+        agentId: args.options.agentId,
+        ...(args.options.fuseMounts !== undefined ? { fuseMounts: args.options.fuseMounts } : {}),
+        ...(Object.keys(commandSafeguards).length > 0 ? { commandSafeguards } : {}),
+        ...(args.options.cache !== undefined ? { cache: args.options.cache } : {}),
+        ...(args.options.index !== undefined ? { index: args.options.index } : {}),
+      })
       let entry
       try {
         entry = deps.registry.add(ws, body.id)
       } catch (e) {
         return reply.status(409).send({ detail: (e as Error).message })
       }
-      return reply.status(201).send(makeDetail(entry))
+      return reply.status(201).send(await makeDetail(entry))
     },
   )
 
   app.get('/v1/workspaces', () => deps.registry.list().map(makeBrief))
 
-  app.post('/v1/workspaces/load', async (req, reply) => {
-    let tarBuf: Buffer | null = null
-    let workspaceId: string | undefined
-    let override: unknown = null
-    for await (const part of req.parts()) {
-      if (part.type === 'file' && part.fieldname === 'tar') {
-        tarBuf = await part.toBuffer()
-      } else if (part.type === 'field' && part.fieldname === 'id') {
-        workspaceId = String(part.value)
-      } else if (part.type === 'field' && part.fieldname === 'override') {
-        try {
-          override = JSON.parse(String(part.value))
-        } catch {
-          return reply.status(400).send({ detail: 'override must be JSON' })
-        }
+  app.post<{ Body: LoadWorkspaceBody }>(
+    '/v1/workspaces/load',
+    WRITE_RATE_LIMIT,
+    async (req, reply) => {
+      const { path, id: workspaceId, override } = req.body
+      if (typeof path !== 'string' || path === '') {
+        return reply.status(400).send({ detail: 'path is required' })
       }
-    }
-    if (tarBuf === null) return reply.status(400).send({ detail: 'missing tar field' })
-    if (workspaceId !== undefined && deps.registry.has(workspaceId)) {
-      return reply.status(409).send({ detail: `workspace id already exists: ${workspaceId}` })
-    }
-    let overrides: Record<string, Resource>
-    try {
-      overrides = await buildOverrideResources(override as OverrideShape | null)
-    } catch (e) {
-      return reply.status(400).send({ detail: `override build failed: ${(e as Error).message}` })
-    }
-    let ws: Workspace
-    try {
-      ws = await Workspace.load(new Uint8Array(tarBuf), {}, overrides)
-    } catch (e) {
-      return reply.status(400).send({ detail: `load failed: ${(e as Error).message}` })
-    }
-    let entry
-    try {
-      entry = deps.registry.add(ws, workspaceId)
-    } catch (e) {
-      return reply.status(409).send({ detail: (e as Error).message })
-    }
-    return reply.status(201).send(makeDetail(entry))
-  })
+      // Confinement is inlined (not via a helper) so the static analyzer sees
+      // the startsWith barrier dominate the fs sink below.
+      const snapshotRoot = resolve(deps.snapshotRoot)
+      const safePath = resolve(snapshotRoot, path)
+      if (!safePath.startsWith(snapshotRoot + sep)) {
+        return reply.status(400).send({ detail: 'path escapes the configured root' })
+      }
+      if (workspaceId !== undefined && deps.registry.has(workspaceId)) {
+        return reply.status(409).send({ detail: `workspace id already exists: ${workspaceId}` })
+      }
+      let tarBuf: Buffer
+      try {
+        tarBuf = readFileSync(safePath)
+      } catch {
+        return reply.status(400).send({ detail: `snapshot not found: ${path}` })
+      }
+      let overrides: Record<string, Resource>
+      try {
+        overrides = await buildOverrideResources(override ?? null)
+      } catch (e) {
+        return reply.status(400).send({ detail: `override build failed: ${(e as Error).message}` })
+      }
+      let ws: Workspace
+      try {
+        ws = await Workspace.load(new Uint8Array(tarBuf), {}, overrides)
+      } catch (e) {
+        return reply.status(400).send({ detail: `load failed: ${(e as Error).message}` })
+      }
+      let entry
+      try {
+        entry = deps.registry.add(ws, workspaceId)
+      } catch (e) {
+        return reply.status(409).send({ detail: (e as Error).message })
+      }
+      return reply.status(201).send(await makeDetail(entry))
+    },
+  )
 
   app.get<{ Params: WorkspaceIdParams; Querystring: WorkspaceGetQuery }>(
     '/v1/workspaces/:id',
-    (req, reply) => {
+    async (req, reply) => {
       const { id } = req.params
       if (!deps.registry.has(id)) return reply.status(404).send({ detail: 'workspace not found' })
       const verbose = req.query.verbose === 'true'
-      return makeDetail(deps.registry.get(id), verbose)
+      return await makeDetail(deps.registry.get(id), verbose)
     },
   )
 
@@ -165,23 +199,30 @@ export function registerWorkspacesRoutes(app: FastifyInstance, deps: WorkspaceRo
       } catch (e) {
         return reply.status(409).send({ detail: (e as Error).message })
       }
-      return reply.status(201).send(makeDetail(entry))
+      return reply.status(201).send(await makeDetail(entry))
     },
   )
 
-  app.get<{ Params: WorkspaceIdParams }>('/v1/workspaces/:id/snapshot', async (req, reply) => {
-    const { id } = req.params
-    if (!deps.registry.has(id)) return reply.status(404).send({ detail: 'workspace not found' })
-    const tmp = mkdtempSync(join(tmpdir(), 'mirage-snap-'))
-    const out = join(tmp, `${id}.tar`)
-    try {
-      await deps.registry.get(id).runner.ws.snapshot(out)
-      const buf = readFileSync(out)
-      reply.header('Content-Type', 'application/x-tar')
-      reply.header('Content-Disposition', `attachment; filename="${id}.tar"`)
-      return await reply.send(buf)
-    } finally {
-      rmSync(tmp, { recursive: true, force: true })
-    }
-  })
+  app.post<{ Params: WorkspaceIdParams; Body: SnapshotWorkspaceBody }>(
+    '/v1/workspaces/:id/snapshot',
+    WRITE_RATE_LIMIT,
+    async (req, reply) => {
+      const { id } = req.params
+      if (!deps.registry.has(id)) return reply.status(404).send({ detail: 'workspace not found' })
+      const { path } = req.body
+      if (typeof path !== 'string' || path === '') {
+        return reply.status(400).send({ detail: 'path is required' })
+      }
+      // Confinement is inlined (not via a helper) so the static analyzer sees
+      // the startsWith barrier dominate the fs sink below.
+      const snapshotRoot = resolve(deps.snapshotRoot)
+      const safePath = resolve(snapshotRoot, path)
+      if (!safePath.startsWith(snapshotRoot + sep)) {
+        return reply.status(400).send({ detail: 'path escapes the configured root' })
+      }
+      mkdirSync(dirname(safePath), { recursive: true })
+      await deps.registry.get(id).runner.ws.snapshot(safePath)
+      return reply.status(200).send({ id, path: safePath, size: statSync(safePath).size })
+    },
+  )
 }

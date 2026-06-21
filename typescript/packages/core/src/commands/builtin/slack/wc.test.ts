@@ -23,7 +23,7 @@ const DEC = new TextDecoder()
 
 async function runWc(
   paths: PathSpec[],
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   options: { index?: RAMIndexCacheStore; transport?: FakeSlackTransport } = {},
 ): Promise<string> {
   const cmd = SLACK_WC[0]
@@ -65,7 +65,7 @@ describe('slack wc', () => {
     const out = await runWc(
       [
         new PathSpec({
-          original: '/mnt/slack/channels/general__C1/2024-01-01.jsonl',
+          original: '/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl',
           directory: '/mnt/slack/channels/general__C1/',
           resolved: false,
           prefix: '/mnt/slack',
@@ -74,9 +74,9 @@ describe('slack wc', () => {
       {},
       { index: idx, transport },
     )
-    const parts = out.split('\t')
-    expect(parts).toHaveLength(3)
+    const parts = out.trim().split(/\s+/)
     expect(parts[0]).toBe('3')
+    expect(parts.slice(3).join(' ')).toBe('/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl')
   })
 
   it('supports -l flag (line count)', async () => {
@@ -97,7 +97,7 @@ describe('slack wc', () => {
     const out = await runWc(
       [
         new PathSpec({
-          original: '/mnt/slack/channels/general__C1/2024-01-01.jsonl',
+          original: '/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl',
           directory: '/mnt/slack/channels/general__C1/',
           resolved: false,
           prefix: '/mnt/slack',
@@ -106,6 +106,6 @@ describe('slack wc', () => {
       { args_l: true },
       { index: idx, transport },
     )
-    expect(out).toBe('2')
+    expect(out).toBe('2 /mnt/slack/channels/general__C1/2024-01-01/chat.jsonl\n')
   })
 })

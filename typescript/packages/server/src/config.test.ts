@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { RedisFileCacheStore } from '@struktoai/mirage-node'
 import { describe, expect, it } from 'vitest'
 import { interpolateEnv, loadWorkspaceConfig, configToWorkspaceArgs } from './config.ts'
 
@@ -66,5 +67,139 @@ describe('configToWorkspaceArgs', () => {
       mode: 'writ',
     })
     await expect(configToWorkspaceArgs(bad)).rejects.toThrow(/invalid mount mode/)
+  })
+
+  it('builds a redis index config from an index block', async () => {
+    const cfg = loadWorkspaceConfig({
+      mounts: { '/': { resource: 'ram' } },
+      index: { type: 'redis', url: 'redis://localhost:6379/0', keyPrefix: 'x:' },
+    })
+    const args = await configToWorkspaceArgs(cfg)
+    expect(args.options.index).toEqual({
+      type: 'redis',
+      url: 'redis://localhost:6379/0',
+      keyPrefix: 'x:',
+    })
+  })
+
+  it('builds a redis file cache from a cache block', async () => {
+    const cfg = loadWorkspaceConfig({
+      mounts: { '/': { resource: 'ram' } },
+      cache: { type: 'redis', keyPrefix: 'c:' },
+    })
+    const args = await configToWorkspaceArgs(cfg)
+    expect(args.options.cache).toBeInstanceOf(RedisFileCacheStore)
+  })
+
+  it('parses per-mount command_safeguards (snake_case YAML) into the resource tuple', async () => {
+    const cfg = loadWorkspaceConfig({
+      mounts: {
+        '/': {
+          resource: 'ram',
+          command_safeguards: {
+            cat: { max_lines: 10, timeout_seconds: 5, on_exceed: 'error' },
+          },
+        },
+      },
+    })
+    const args = await configToWorkspaceArgs(cfg)
+    const safeguards = args.resources['/']?.[2]
+    expect(safeguards?.cat?.maxLines).toBe(10)
+    expect(safeguards?.cat?.timeoutSeconds).toBe(5)
+    expect(safeguards?.cat?.onExceed).toBe('error')
+  })
+
+  it('defaults to no command_safeguards when omitted', async () => {
+    const cfg = loadWorkspaceConfig({ mounts: { '/': { resource: 'ram' } } })
+    const args = await configToWorkspaceArgs(cfg)
+    expect(args.resources['/']?.[2]).toEqual({})
+  })
+
+  it('rejects an invalid on_exceed value', async () => {
+    const cfg = loadWorkspaceConfig({
+      mounts: { '/': { resource: 'ram', command_safeguards: { cat: { on_exceed: 'boom' } } } },
+    })
+    await expect(configToWorkspaceArgs(cfg)).rejects.toThrow(/invalid onExceed/)
+  })
+
+  it('reads snake_case default_session_id / default_agent_id (Python YAML)', async () => {
+    const cfg = loadWorkspaceConfig({
+      mounts: { '/': { resource: 'ram' } },
+      default_session_id: 'sess-1',
+      default_agent_id: 'agent-1',
+    })
+    const args = await configToWorkspaceArgs(cfg)
+    expect(args.options.sessionId).toBe('sess-1')
+    expect(args.options.agentId).toBe('agent-1')
+  })
+
+  it('reads snake_case index key_prefix into the index config', async () => {
+    const cfg = loadWorkspaceConfig({
+      mounts: { '/': { resource: 'ram' } },
+      index: { type: 'redis', url: 'redis://localhost:6379/0', key_prefix: 'idx:' },
+    })
+    const args = await configToWorkspaceArgs(cfg)
+    expect(args.options.index).toEqual({
+      type: 'redis',
+      url: 'redis://localhost:6379/0',
+      keyPrefix: 'idx:',
+    })
+  })
+
+  it('builds a redis cache from snake_case key_prefix / max_drain_bytes', async () => {
+    const cfg = loadWorkspaceConfig({
+      mounts: { '/': { resource: 'ram' } },
+      cache: { type: 'redis', key_prefix: 'c:', max_drain_bytes: 1024 },
+    })
+    const args = await configToWorkspaceArgs(cfg)
+    expect(args.options.cache).toBeInstanceOf(RedisFileCacheStore)
+  })
+
+  it('coerces consistency (default lazy, accepts always, rejects junk)', async () => {
+    const dflt = await configToWorkspaceArgs(
+      loadWorkspaceConfig({ mounts: { '/': { resource: 'ram' } } }),
+    )
+    expect(dflt.options.consistency).toBe('lazy')
+    const always = await configToWorkspaceArgs(
+      loadWorkspaceConfig({ mounts: { '/': { resource: 'ram' } }, consistency: 'ALWAYS' }),
+    )
+    expect(always.options.consistency).toBe('always')
+    await expect(
+      configToWorkspaceArgs(
+        loadWorkspaceConfig({ mounts: { '/': { resource: 'ram' } }, consistency: 'soon' }),
+      ),
+    ).rejects.toThrow(/invalid consistency/)
+  })
+
+  it('threads per-mount fuse into options.fuseMounts and omits it otherwise', async () => {
+    const withFuse = await configToWorkspaceArgs(
+      loadWorkspaceConfig({
+        mounts: {
+          '/data': { resource: 'ram', fuse: '/tmp/mt' },
+          '/s3': { resource: 'ram', fuse: true },
+          '/logs': { resource: 'ram' },
+        },
+      }),
+    )
+    expect(withFuse.options.fuseMounts).toEqual({ '/data': '/tmp/mt', '/s3': true })
+    const withoutFuse = await configToWorkspaceArgs(
+      loadWorkspaceConfig({ mounts: { '/': { resource: 'ram' } } }),
+    )
+    expect(withoutFuse.options.fuseMounts).toBeUndefined()
+  })
+
+  it('leaves mount config snake_case keys untouched (resource credentials)', () => {
+    const cfg = loadWorkspaceConfig({
+      mounts: {
+        '/s3': {
+          resource: 'ram',
+          config: { aws_access_key_id: 'AKIA', endpoint_url: 'http://localhost:9000' },
+        },
+      },
+    })
+    expect(cfg.mounts['/s3']?.config).toEqual({
+      aws_access_key_id: 'AKIA',
+      endpoint_url: 'http://localhost:9000',
+    })
   })
 })

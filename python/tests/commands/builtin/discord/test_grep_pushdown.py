@@ -16,15 +16,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mirage.commands.builtin.discord.grep.grep import grep
+from mirage.commands.builtin.discord.grep import grep
 from mirage.commands.builtin.discord.rg import rg
-from mirage.types import PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 
 
 def _concrete_paths(n: int = 7):
     paths = []
     for d in range(1, n + 1):
-        original = (f"/discord/myguild/channels/general/2026-01-{d:02d}.jsonl")
+        original = (
+            f"/discord/myguild/channels/general/2026-01-{d:02d}/chat.jsonl")
         paths.append(
             PathSpec(
                 original=original,
@@ -61,14 +62,15 @@ async def test_discord_grep_with_many_concrete_paths_uses_native_search():
         "author": {
             "username": "alice"
         },
+        "timestamp": "2026-01-15T12:34:56.000000+00:00",
         "id": "1"
     }]
     fake_channels = [{"id": "ch_456", "name": "general"}]
     with patch(
-            "mirage.commands.builtin.discord.grep.grep.search_guild",
+            "mirage.commands.builtin.discord.grep.search_guild",
             new=AsyncMock(return_value=fake_msgs),
     ) as fake_search, patch(
-            "mirage.commands.builtin.discord.grep.grep.list_channels",
+            "mirage.commands.builtin.discord.grep.list_channels",
             new=AsyncMock(return_value=fake_channels),
     ):
         out, io = await grep(accessor,
@@ -78,7 +80,9 @@ async def test_discord_grep_with_many_concrete_paths_uses_native_search():
     assert fake_search.await_count == 1
     assert io.exit_code == 0
     assert b"hello" in out
-    assert b"/discord/myguild/channels/general/" in out
+    assert out.endswith(b"\n")
+    assert (b"/discord/myguild/channels/general__ch_456/"
+            b"2026-01-15/chat.jsonl:") in out
 
 
 @pytest.mark.asyncio
@@ -92,14 +96,18 @@ async def test_discord_grep_falls_back_when_native_raises():
                  prefix="/discord"),
     ]
     with patch(
-            "mirage.commands.builtin.discord.grep.grep.search_guild",
+            "mirage.commands.builtin.discord.grep.search_guild",
             new=AsyncMock(side_effect=RuntimeError("rate limited")),
     ), patch(
-            "mirage.commands.builtin.discord.grep.grep.resolve_glob",
+            "mirage.commands.builtin.discord.grep.resolve_glob",
             new=AsyncMock(return_value=paths),
     ) as fake_resolve, patch(
-            "mirage.commands.builtin.discord.grep.grep.discord_read",
+            "mirage.commands.builtin.discord.grep.discord_read",
             new=AsyncMock(return_value=b""),
+    ), patch(
+            "mirage.commands.builtin.discord.grep._stat",
+            new=AsyncMock(return_value=FileStat(name="2026-04-10.jsonl",
+                                                type=FileType.TEXT)),
     ):
         out, io = await grep(accessor, paths, "hello", index=_fake_index())
     assert fake_resolve.await_count == 1
@@ -112,13 +120,13 @@ async def test_discord_grep_native_empty_does_not_trigger_fallback():
     accessor = AsyncMock()
     accessor.config = AsyncMock()
     with patch(
-            "mirage.commands.builtin.discord.grep.grep.search_guild",
+            "mirage.commands.builtin.discord.grep.search_guild",
             new=AsyncMock(return_value=[]),
     ) as fake_search, patch(
-            "mirage.commands.builtin.discord.grep.grep.list_channels",
+            "mirage.commands.builtin.discord.grep.list_channels",
             new=AsyncMock(return_value=[]),
     ), patch(
-            "mirage.commands.builtin.discord.grep.grep.discord_read",
+            "mirage.commands.builtin.discord.grep.discord_read",
             new=AsyncMock(return_value=b""),
     ) as fake_read:
         out, io = await grep(accessor,
@@ -141,6 +149,7 @@ async def test_discord_rg_with_many_concrete_paths_uses_native_search():
         "author": {
             "username": "bob"
         },
+        "timestamp": "2026-01-15T08:00:00.000000+00:00",
         "id": "2"
     }]
     fake_channels = [{"id": "ch_456", "name": "general"}]
@@ -158,4 +167,6 @@ async def test_discord_rg_with_many_concrete_paths_uses_native_search():
     assert fake_search.await_count == 1
     assert io.exit_code == 0
     assert b"hello" in out
-    assert b"/discord/myguild/channels/general/" in out
+    assert out.endswith(b"\n")
+    assert (b"/discord/myguild/channels/general__ch_456/"
+            b"2026-01-15/chat.jsonl:") in out

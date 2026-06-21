@@ -37,14 +37,12 @@ import { redactLinearConfig, type LinearConfig, type LinearConfigRedacted } from
 
 export interface LinearResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: LinearConfigRedacted
 }
 
 export class LinearResource implements Resource {
   readonly kind: string = ResourceName.LINEAR
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 600
   readonly prompt: string = LINEAR_PROMPT
   readonly writePrompt: string = LINEAR_WRITE_PROMPT
@@ -120,8 +118,6 @@ export class LinearResource implements Resource {
   getState(): Promise<LinearResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['apiKey'],
       config: redactLinearConfig(this.config),
     })
   }

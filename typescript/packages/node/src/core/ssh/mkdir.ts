@@ -12,10 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { invalidateAfterWrite } from '@struktoai/mirage-core'
 import type { PathSpec } from '@struktoai/mirage-core'
 import type { SFTPWrapper, Stats } from 'ssh2'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
-import { enoent, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
+import { isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
+import { enoent, stripSlash } from '@struktoai/mirage-core'
 
 async function statRemote(sftp: SFTPWrapper, remote: string): Promise<Stats | null> {
   return new Promise<Stats | null>((resolveFn) => {
@@ -52,12 +54,12 @@ export async function mkdir(accessor: SSHAccessor, p: PathSpec, recursive: boole
     try {
       await mkdirOne(sftp, remote, false)
     } catch (err) {
-      if (isNoSuchFile(err)) throw enoent(virtual)
+      if (isNoSuchFile(err)) throw enoent(p)
       throw err
     }
     return
   }
-  const cleaned = virtual.replace(/^\/+|\/+$/g, '')
+  const cleaned = stripSlash(virtual)
   if (cleaned.length === 0) return
   const parts = cleaned.split('/')
   let cur = ''
@@ -68,4 +70,5 @@ export async function mkdir(accessor: SSHAccessor, p: PathSpec, recursive: boole
     if (existing?.isDirectory()) continue
     await mkdirOne(sftp, stepRemote, true)
   }
+  await invalidateAfterWrite(p)
 }

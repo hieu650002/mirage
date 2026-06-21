@@ -24,7 +24,7 @@ const DEC = new TextDecoder()
 async function runDu(
   resource: RAMResource,
   paths: PathSpec[],
-  flags: Record<string, string | boolean> = {},
+  flags: Record<string, string | boolean | string[]> = {},
 ): Promise<{ lines: string[]; exitCode: number }> {
   const cmd = RAM_DU[0]
   if (cmd === undefined) throw new Error('du not registered')
@@ -44,7 +44,7 @@ async function runDu(
         ? out
         : await materialize(out as AsyncIterable<Uint8Array>)
   const text = DEC.decode(buf)
-  const lines = text === '' ? [] : text.split('\n')
+  const lines = text === '' ? [] : text.trimEnd().split('\n')
   return { lines, exitCode: ioResult.exitCode }
 }
 

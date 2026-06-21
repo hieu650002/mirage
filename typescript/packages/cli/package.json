@@ -1,6 +1,6 @@
 {
   "name": "@struktoai/mirage-cli",
-  "version": "0.0.2-alpha.0",
+  "version": "0.0.3-alpha.0",
   "description": "A Unified Virtual Filesystem For AI Agents",
   "keywords": [
     "bash",
@@ -49,10 +49,13 @@
     "commander": "^14.0.0",
     "yaml": "^2.6.0"
   },
+  "optionalDependencies": {
+    "@zkochan/fuse-native": "^0.1.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsup": "^8.5.0",
     "typescript": "^6.0.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.6"
   }
 }

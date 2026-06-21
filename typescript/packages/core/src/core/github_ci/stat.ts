@@ -16,6 +16,8 @@ import type { GitHubCIAccessor } from '../../accessor/github_ci.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { readdir as coreReaddir } from './readdir.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 const VIRTUAL_DIRS = new Set(['workflows', 'runs', 'jobs', 'artifacts'])
 
@@ -56,12 +58,6 @@ function stripPrefix(path: PathSpec): string {
   return p
 }
 
-function enoent(p: string): Error {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
-
 export async function stat(
   accessor: GitHubCIAccessor,
   path: PathSpec,
@@ -70,7 +66,7 @@ export async function stat(
   void accessor
   const prefix = path.prefix
   const stripped = stripPrefix(path)
-  const key = stripped.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(stripped)
 
   if (key === '') {
     return new FileStat({ name: '/', type: FileType.DIRECTORY })

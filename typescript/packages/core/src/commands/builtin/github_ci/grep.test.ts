@@ -14,7 +14,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../core/github_ci/read.ts', () => ({ read: vi.fn() }))
+vi.mock('../../../core/github_ci/read.ts', () => {
+  const read = vi.fn()
+  async function* stream(...args: unknown[]) {
+    yield await (read as (...a: unknown[]) => Promise<Uint8Array>)(...args)
+  }
+  return { read, stream }
+})
 vi.mock('../../../core/github_ci/readdir.ts', () => ({ readdir: vi.fn() }))
 vi.mock('../../../core/github_ci/stat.ts', () => ({ stat: vi.fn() }))
 
@@ -49,7 +55,7 @@ function makeAccessor(): GitHubCIAccessor {
 async function runGrep(
   paths: PathSpec[],
   texts: string[],
-  flags: Record<string, string | boolean> = {},
+  flags: Record<string, string | boolean | string[]> = {},
 ): Promise<{ stdout: string; exitCode: number }> {
   const cmd = GITHUB_CI_GREP[0]
   if (cmd === undefined) throw new Error('grep not registered')

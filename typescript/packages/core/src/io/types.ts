@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { CommandSafeguard } from '../types.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
 
 export type ByteSource = Uint8Array | AsyncIterable<Uint8Array>
@@ -32,24 +33,44 @@ export interface IOResultInit {
   reads?: Record<string, ByteSource>
   writes?: Record<string, ByteSource>
   cache?: string[]
+  safeguard?: CommandSafeguard | null
 }
 
 export class IOResult {
   stdout: ByteSource | null
   stderr: ByteSource | null
-  exitCode: number
+  private _exitCode: number
   reads: Record<string, ByteSource>
   writes: Record<string, ByteSource>
   cache: string[]
+  // Output cap for the command that produced this result. Resolved at
+  // dispatch time by Mount.executeCmd, applied at the workspace
+  // boundary after VALUE barrier. TODO: hoist to a finalization
+  // context returned alongside (stream, io) when a second policy
+  // field appears.
+  safeguard: CommandSafeguard | null
   streamSource: IOResult | null
 
   constructor(init: IOResultInit = {}) {
     this.stdout = init.stdout ?? null
     this.stderr = init.stderr ?? null
-    this.exitCode = init.exitCode ?? 0
+    this._exitCode = init.exitCode ?? 0
     this.reads = init.reads ?? {}
     this.writes = init.writes ?? {}
     this.cache = init.cache ?? []
+    this.safeguard = init.safeguard ?? null
+    this.streamSource = null
+  }
+
+  get exitCode(): number {
+    return this._exitCode
+  }
+
+  // An explicit write to exitCode wins over any lazy streamSource mirror.
+  // Without this, fanOutTraversal's aggregated exit code gets clobbered by
+  // syncExitCode() following streamSource from the last merged sub-IO.
+  set exitCode(v: number) {
+    this._exitCode = v
     this.streamSource = null
   }
 
@@ -95,6 +116,7 @@ export class IOResult {
       reads: { ...this.reads, ...other.reads },
       writes: { ...this.writes, ...other.writes },
       cache: [...this.cache, ...other.cache],
+      safeguard: other.safeguard,
     })
     result.streamSource = other
     return result

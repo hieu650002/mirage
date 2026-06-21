@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { invalidateAfterWrite } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
 import type { S3Accessor } from '../../accessor/s3.ts'
 import { loadS3Module, rawPathOf, s3Key, withClient } from './_client.ts'
@@ -23,9 +24,10 @@ export async function write(accessor: S3Accessor, path: PathSpec, data: Uint8Arr
     await client.send(
       new PutObjectCommand({
         Bucket: accessor.config.bucket,
-        Key: s3Key(raw),
+        Key: s3Key(raw, accessor.config),
         Body: data,
       }),
     )
   })
+  await invalidateAfterWrite(path)
 }

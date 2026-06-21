@@ -19,6 +19,14 @@ import { PathSpec } from '../../types.ts'
 import { listLabels } from './labels.ts'
 import type { GmailMessageRaw } from './messages.ts'
 import { extractAttachments, extractHeader, getMessageRaw, listMessages } from './messages.ts'
+import { GoogleFileSuffix } from '../google/drive.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
+
+export function isDirName(child: string): boolean {
+  // readdir emits only label/date dirs and rendered *.gmail.json files.
+  return !child.endsWith(GoogleFileSuffix.GMAIL)
+}
 
 const TITLE_MAX = 80
 const UNSAFE = /[^\w\s\-.]/g
@@ -26,8 +34,12 @@ const MULTI_UNDERSCORE = /_+/g
 
 export function sanitize(text: string): string {
   if (text.trim() === '') return 'No_Subject'
-  let cleaned = text.replace(UNSAFE, '_').replace(/ /g, '_')
-  cleaned = cleaned.replace(MULTI_UNDERSCORE, '_').replace(/^_+|_+$/g, '')
+  let cleaned = text.replace(UNSAFE, '_').replace(/ /g, '_').replace(MULTI_UNDERSCORE, '_')
+  let start = 0
+  let end = cleaned.length
+  while (start < end && cleaned.charCodeAt(start) === 95) start++
+  while (end > start && cleaned.charCodeAt(end - 1) === 95) end--
+  cleaned = cleaned.slice(start, end)
   if (cleaned.length > TITLE_MAX) cleaned = `${cleaned.slice(0, TITLE_MAX - 3)}...`
   return cleaned
 }
@@ -47,12 +59,6 @@ function dateFromInternal(internalDate: string | undefined): string {
   return `${yyyy}-${mm}-${dd}`
 }
 
-function enoent(p: string): Error {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
-
 export async function readdir(
   accessor: GmailAccessor,
   path: PathSpec,
@@ -62,7 +68,7 @@ export async function readdir(
   const raw = path.pattern !== null ? path.directory : path.original
   let p = raw
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   const virtualKey = key !== '' ? `${prefix}/${key}` : prefix !== '' ? prefix : '/'
   const parts = key === '' ? [] : key.split('/')
   const depth = parts.length

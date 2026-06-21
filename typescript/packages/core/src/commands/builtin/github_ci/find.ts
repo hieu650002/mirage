@@ -18,19 +18,14 @@ import { readdir as ciReaddir } from '../../../core/github_ci/readdir.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { PathSpec, ResourceName } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
+import { findSizeMtimeError, invalidFindArg } from '../generic/find.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { metadataProvision } from './provision.ts'
+import { stripSlash } from '../../../utils/slash.ts'
+import { fnmatch } from '../../../utils/fnmatch.ts'
+import { formatRecords } from '../utils/output.ts'
 
-const ENC = new TextEncoder()
 const TERMINAL_EXTS = ['.json', '.jsonl', '.log', '.zip']
-
-function fnmatch(name: string, pattern: string): boolean {
-  const re = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\?/g, '.')
-    .replace(/\*/g, '.*')
-  return new RegExp(`^${re}$`).test(name)
-}
 
 async function walk(
   accessor: GitHubCIAccessor,
@@ -85,14 +80,22 @@ async function findCommand(
   const minDepthRaw = typeof opts.flags.mindepth === 'string' ? opts.flags.mindepth : null
   const maxDepth = maxDepthRaw !== null ? Number.parseInt(maxDepthRaw, 10) : null
   const minDepth = minDepthRaw !== null ? Number.parseInt(minDepthRaw, 10) : null
+  if (maxDepthRaw !== null && Number.isNaN(maxDepth))
+    return invalidFindArg(maxDepthRaw, '-maxdepth')
+  if (minDepthRaw !== null && Number.isNaN(minDepth))
+    return invalidFindArg(minDepthRaw, '-mindepth')
+  const sizeFlag = typeof opts.flags.size === 'string' ? opts.flags.size : null
+  const mtimeFlag = typeof opts.flags.mtime === 'string' ? opts.flags.mtime : null
+  const sizeMtimeErr = findSizeMtimeError(sizeFlag, mtimeFlag)
+  if (sizeMtimeErr !== null) return sizeMtimeErr
 
   const allPaths = await walk(accessor, p0, opts.index, maxDepth, 0)
-  const searchKey = p0.stripPrefix.replace(/^\/+|\/+$/g, '')
+  const searchKey = stripSlash(p0.stripPrefix)
   const baseDepth = searchKey === '' ? -1 : searchKey.split('/').length - 1
   const results: string[] = []
   for (const p of [...allPaths].sort()) {
     const stripped = p.startsWith(p0.prefix) ? p.slice(p0.prefix.length) : p
-    const trimmed = stripped.replace(/^\/+|\/+$/g, '')
+    const trimmed = stripSlash(stripped)
     const depth = trimmed === '' ? -1 : trimmed.split('/').length - (baseDepth + 2)
     if (minDepth !== null && depth < minDepth) continue
     const entryName = p.split('/').pop() ?? p
@@ -100,7 +103,7 @@ async function findCommand(
     if (inameFlag !== null && !fnmatch(entryName.toLowerCase(), inameFlag.toLowerCase())) continue
     results.push(p)
   }
-  const out: ByteSource = ENC.encode(results.join('\n'))
+  const out: ByteSource = formatRecords(results)
   return [out, new IOResult()]
 }
 

@@ -19,31 +19,26 @@ import {
   GITHUB_COMMANDS,
   GITHUB_PROMPT,
   GITHUB_VFS_OPS,
-  type GitHubTreeItem,
   GitHubAccessor,
   HttpGitHubTransport,
   type IndexCacheStore,
-  type IndexEntry,
   PathSpec,
   RAMIndexCacheStore,
   type RegisteredCommand,
   type RegisteredOp,
   type Resource,
   ResourceName,
-  githubIndexEntryFromTree,
-  githubMakeTreeEntry,
+  githubBuildTreeMap,
+  githubPopulateIndex,
   githubRead,
   githubReaddir,
   githubResolveGlob,
   githubStat,
-  type GitHubTreeEntry,
 } from '@struktoai/mirage-core'
 import { redactGitHubConfig, type GitHubConfig, type GitHubConfigRedacted } from './config.ts'
 
 export interface GitHubResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: GitHubConfigRedacted
   defaultBranch: string
   truncated: boolean
@@ -51,7 +46,7 @@ export interface GitHubResourceState {
 
 export class GitHubResource implements Resource {
   readonly kind: string = ResourceName.GITHUB
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 86_400
   readonly prompt: string = GITHUB_PROMPT
   readonly config: GitHubConfig
@@ -71,8 +66,7 @@ export class GitHubResource implements Resource {
     const repoInfo = await fetchGitHubRepoInfo(transport, config.owner, config.repo)
     const ref = config.ref ?? repoInfo.default_branch
     const { tree, truncated } = await fetchGitHubTree(transport, config.owner, config.repo, ref)
-    const treeMap: Record<string, GitHubTreeEntry> = {}
-    for (const item of tree) treeMap[item.path] = githubMakeTreeEntry(item)
+    const treeMap = githubBuildTreeMap(tree)
     const accessor = new GitHubAccessor({
       transport,
       owner: config.owner,
@@ -83,7 +77,7 @@ export class GitHubResource implements Resource {
       tree: treeMap,
     })
     const index = new RAMIndexCacheStore({ ttl: 86_400 })
-    await populateIndex(index, tree)
+    await githubPopulateIndex(index, tree)
     return new GitHubResource(config, accessor, index)
   }
 
@@ -141,8 +135,6 @@ export class GitHubResource implements Resource {
   getState(): Promise<GitHubResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['token'],
       config: redactGitHubConfig(this.config),
       defaultBranch: this.accessor.defaultBranch,
       truncated: this.accessor.truncated,
@@ -152,17 +144,4 @@ export class GitHubResource implements Resource {
   loadState(_state: GitHubResourceState): Promise<void> {
     return Promise.resolve()
   }
-}
-
-async function populateIndex(index: IndexCacheStore, tree: GitHubTreeItem[]): Promise<void> {
-  const dirs = new Map<string, [string, IndexEntry][]>()
-  for (const item of tree) {
-    const parts = item.path.split('/')
-    const name = parts[parts.length - 1] ?? item.path
-    const parent = parts.length > 1 ? `/${parts.slice(0, -1).join('/')}` : '/'
-    const arr = dirs.get(parent) ?? []
-    arr.push([name, githubIndexEntryFromTree(item)])
-    dirs.set(parent, arr)
-  }
-  await Promise.all([...dirs].map(([parent, entries]) => index.setDir(parent, entries)))
 }

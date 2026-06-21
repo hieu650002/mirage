@@ -35,14 +35,12 @@ import { redactLangfuseConfig, type LangfuseConfig, type LangfuseConfigRedacted 
 
 export interface LangfuseResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: LangfuseConfigRedacted
 }
 
 export class LangfuseResource implements Resource {
   readonly kind: string = ResourceName.LANGFUSE
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 600
   readonly prompt: string = LANGFUSE_PROMPT
   readonly config: LangfuseConfig
@@ -127,8 +125,6 @@ export class LangfuseResource implements Resource {
   getState(): Promise<LangfuseResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['secretKey'],
       config: redactLangfuseConfig(this.config),
     })
   }

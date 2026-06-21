@@ -14,8 +14,9 @@
 
 import type { FileEntryWithStats, SFTPWrapper, Stats } from 'ssh2'
 import type { PathSpec } from '@struktoai/mirage-core'
+import { enoent, invalidateAfterUnlink } from '@struktoai/mirage-core'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
-import { enoent, isDirectoryAttrs, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
+import { isDirectoryAttrs, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
 
 async function statRemote(sftp: SFTPWrapper, remote: string): Promise<Stats> {
   return new Promise<Stats>((resolveFn, rejectFn) => {
@@ -75,7 +76,8 @@ export async function rmR(accessor: SSHAccessor, p: PathSpec): Promise<void> {
   try {
     await rmRecurse(sftp, remote)
   } catch (err) {
-    if (isNoSuchFile(err)) throw enoent(virtual)
+    if (isNoSuchFile(err)) throw enoent(p)
     throw err
   }
+  await invalidateAfterUnlink(p)
 }

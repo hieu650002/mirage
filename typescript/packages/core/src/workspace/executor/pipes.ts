@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runWithTimeout } from '../../commands/builtin/utils/safeguard.ts'
 import { asyncChain, closeQuietly, mergeStdoutStderr } from '../../io/stream.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
@@ -59,7 +60,11 @@ export async function handlePipe(
     }
 
     if (lastStdout !== null && !(lastStdout instanceof Uint8Array)) {
-      lastStdout = await materialize(lastStdout)
+      lastStdout = await runWithTimeout(
+        materialize(lastStdout),
+        session.pipelineTimeoutSeconds,
+        'pipeline',
+      )
     }
   } finally {
     for (const s of intermediate) await closeQuietly(s)
@@ -188,6 +193,8 @@ export async function handleSubshell(
   const savedReadonly = new Set(session.readonlyVars)
   const savedArrays: Record<string, string[]> = {}
   for (const [k, v] of Object.entries(session.arrays)) savedArrays[k] = [...v]
+  const savedFunctions = { ...session.functions }
+  const savedPositional = [...session.positionalArgs]
   try {
     const allStdout: ByteSource[] = []
     let mergedIo = new IOResult()
@@ -217,6 +224,8 @@ export async function handleSubshell(
     session.shellOptions = savedOptions
     session.readonlyVars = savedReadonly
     session.arrays = savedArrays
+    session.functions = savedFunctions
+    session.positionalArgs = savedPositional
   }
 }
 

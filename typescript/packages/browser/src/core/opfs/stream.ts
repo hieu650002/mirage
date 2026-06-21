@@ -13,18 +13,18 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { type PathSpec, recordStream, ResourceName } from '@struktoai/mirage-core'
+import { enoent } from '@struktoai/mirage-core'
+import type { OPFSAccessor } from '../../accessor/opfs.ts'
 import { isNotFound, resolveFileHandle } from './utils.ts'
 
-export async function* stream(
-  root: FileSystemDirectoryHandle,
-  path: PathSpec,
-): AsyncIterable<Uint8Array> {
+export async function* stream(accessor: OPFSAccessor, path: PathSpec): AsyncIterable<Uint8Array> {
+  const root = accessor.rootHandle
   const virtual = path.stripPrefix
   let handle: FileSystemFileHandle
   try {
     handle = await resolveFileHandle(root, virtual, { create: false })
   } catch (err) {
-    if (isNotFound(err)) throw new Error(`file not found: ${virtual}`)
+    if (isNotFound(err)) throw enoent(path)
     throw err
   }
   const file = await handle.getFile()

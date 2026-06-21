@@ -23,7 +23,7 @@ const DEC = new TextDecoder()
 
 async function runTree(
   paths: PathSpec[],
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   options: { index?: RAMIndexCacheStore; transport?: FakeSlackTransport } = {},
 ): Promise<string> {
   const cmd = SLACK_TREE[0]
@@ -60,7 +60,7 @@ describe('slack tree', () => {
       { L: '1' },
       { index: idx },
     )
-    const lines = out.split('\n')
+    const lines = out.trimEnd().split('\n')
     expect(lines).toHaveLength(3)
     expect(lines[0]).toContain('channels')
     expect(lines[1]).toContain('dms')
@@ -86,6 +86,6 @@ describe('slack tree', () => {
       { index: idx, transport },
     )
     expect(out).toContain('general__C1')
-    expect(out).toContain('2024-01-01.jsonl')
+    expect(out).toContain('2024-01-01')
   })
 })

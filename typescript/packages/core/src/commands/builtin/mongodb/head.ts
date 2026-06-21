@@ -13,142 +13,30 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { MongoDBAccessor } from '../../../accessor/mongodb.ts'
-import { findDocuments } from '../../../core/mongodb/_client.ts'
 import { resolveGlob } from '../../../core/mongodb/glob.ts'
-import { read as mongoRead } from '../../../core/mongodb/read.ts'
-import { detectScope } from '../../../core/mongodb/scope.ts'
-import { type ByteSource, IOResult } from '../../../io/types.ts'
-import { type PathSpec, ResourceName } from '../../../types.ts'
-import { encodeBase64 } from '../../../utils/base64.ts'
+import { streamAny } from '../../../core/mongodb/read.ts'
+import { stat as mongoStat } from '../../../core/mongodb/stat.ts'
+import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
+import { headGeneric } from '../generic/head.ts'
 import { fileReadProvision } from './_provision.ts'
-
-const ENC = new TextEncoder()
-
-function safeToString(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return String(value)
-  }
-  if (typeof value === 'object' && 'toString' in value) {
-    try {
-      return (value as { toString: () => string }).toString()
-    } catch {
-      return Object.prototype.toString.call(value)
-    }
-  }
-  return Object.prototype.toString.call(value)
-}
-
-function bsonReplacer(_key: string, value: unknown): unknown {
-  if (value instanceof Date) return value.toISOString()
-  if (typeof value === 'bigint') return value.toString()
-  if (value instanceof Uint8Array) return encodeBase64(value)
-  if (typeof value === 'object' && value !== null && 'toJSON' in value) {
-    try {
-      return (value as { toJSON: () => unknown }).toJSON()
-    } catch {
-      return safeToString(value)
-    }
-  }
-  return value
-}
-
-function stringifyId(value: unknown): unknown {
-  if (typeof value === 'string') return value
-  if (typeof value === 'number') return value
-  if (value === null || value === undefined) return value
-  if (typeof value === 'object' && 'toString' in value) {
-    try {
-      const s = (value as { toString: () => string }).toString()
-      if (s !== '[object Object]') return s
-    } catch {
-      return safeToString(value)
-    }
-  }
-  return safeToString(value)
-}
-
-function headBytes(data: Uint8Array, lines: number, bytesMode: number | null): Uint8Array {
-  if (bytesMode !== null) {
-    return data.slice(0, bytesMode)
-  }
-  let count = 0
-  let end = data.byteLength
-  for (let i = 0; i < data.byteLength; i++) {
-    if (data[i] === 0x0a) {
-      count += 1
-      if (count >= lines) {
-        end = i
-        break
-      }
-    }
-  }
-  return data.slice(0, end)
-}
 
 async function headCommand(
   accessor: MongoDBAccessor,
   paths: PathSpec[],
-  _texts: string[],
+  texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const nRaw = typeof opts.flags.n === 'string' ? opts.flags.n : null
-  const cRaw = typeof opts.flags.c === 'string' ? opts.flags.c : null
-  const lines = nRaw !== null ? Number.parseInt(nRaw, 10) : 10
-  const bytesMode = cRaw !== null ? Number.parseInt(cRaw, 10) : null
-
-  if (paths.length > 0) {
-    const first = paths[0]
-    if (first === undefined) return [null, new IOResult()]
-    const singleDb = accessor.config.databases !== null && accessor.config.databases.length === 1
-    const singleDbName = singleDb ? (accessor.config.databases?.[0] ?? null) : null
-    const scope = detectScope(first, { singleDb, singleDbName })
-
-    if (
-      scope.level === 'file' &&
-      scope.database !== null &&
-      scope.collection !== null &&
-      bytesMode === null
-    ) {
-      const limit = Math.min(lines, accessor.config.maxDocLimit)
-      const docs = await findDocuments(
-        accessor,
-        scope.database,
-        scope.collection,
-        {},
-        { limit, sort: { _id: 1 } },
-      )
-      if (docs.length === 0) return [headBytes(new Uint8Array(0), lines, null), new IOResult()]
-      const jsonl =
-        docs
-          .map((d) => {
-            const copy: Record<string, unknown> = { ...d }
-            if (copy._id !== undefined && copy._id !== null) {
-              copy._id = stringifyId(copy._id)
-            }
-            return JSON.stringify(copy, bsonReplacer)
-          })
-          .join('\n') + '\n'
-      return [headBytes(ENC.encode(jsonl), lines, null), new IOResult()]
-    }
-
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const target = resolved[0]
-    if (target === undefined) return [null, new IOResult()]
-    const data = await mongoRead(accessor, target, opts.index ?? undefined)
-    const out: ByteSource = headBytes(data, lines, bytesMode)
-    return [out, new IOResult()]
-  }
-
-  const raw = await readStdinAsync(opts.stdin)
-  if (raw === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('head: missing operand\n') })]
-  }
-  return [headBytes(raw, lines, bytesMode), new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return headGeneric(
+    resolved,
+    texts,
+    opts,
+    (p) => mongoStat(accessor, p, opts.index ?? undefined),
+    (p) => streamAny(accessor, p, opts.index ?? undefined),
+  )
 }
 
 export const MONGODB_HEAD = command({

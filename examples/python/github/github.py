@@ -34,6 +34,15 @@ async def main() -> None:
     )
     ws = Workspace({"/github": resource}, mode=MountMode.READ)
 
+    print("=== not-found errors show the full virtual path ===")
+    for cmd in ("cat /github/__nf_missing__.txt",
+                "head /github/__nf_missing__.txt",
+                "stat /github/__nf_missing__.txt"):
+        result = await ws.execute(cmd)
+        print(f"$ {cmd}")
+        print(f"  exit={result.exit_code}  "
+              f"{(await result.stderr_str()).strip()}")
+
     r = await ws.execute("ls /github")
     print(await r.stdout_str())
 
@@ -106,6 +115,8 @@ async def main() -> None:
         (f"grep -r FileType {s3_dir} (recursive scope)",
          f"grep -r FileType {s3_dir}"),
         (f"rg mirage {s3_dir} (rg recursive scope)", f"rg mirage {s3_dir}"),
+        ("grep -r GitHubAccessor /github/ (repo-root search narrowing)",
+         "grep -r GitHubAccessor /github/ | sort"),
     ]:
         print(f"\n=== {label} ===")
         r = await ws.execute(cmd)
@@ -187,6 +198,10 @@ async def main() -> None:
         "grep 'import' /github/python/mirage/types.py | sort | uniq")
     print(await r.stdout_str())
 
+    print("=== uniq (file path, streams via github read) ===")
+    r = await ws.execute("uniq /github/python/mirage/types.py")
+    print(await r.stdout_str())
+
     print("=== sha256sum ===")
     r = await ws.execute("sha256sum /github/python/mirage/types.py")
     print(await r.stdout_str())
@@ -201,6 +216,43 @@ async def main() -> None:
 
     print("=== dirname ===")
     r = await ws.execute("dirname /github/python/mirage/core/s3/read.py")
+    print(await r.stdout_str())
+
+    print("=== realpath ===")
+    r = await ws.execute("realpath /github/python/mirage/../mirage/types.py")
+    print(await r.stdout_str())
+
+    print("=== sed -n (line range) ===")
+    r = await ws.execute("sed -n '1,3p' /github/python/mirage/types.py")
+    print(await r.stdout_str())
+
+    print("=== sed s/// (file) ===")
+    r = await ws.execute(
+        "sed 's/import/IMPORT/' /github/python/mirage/core/s3/read.py")
+    print(await r.stdout_str())
+
+    print("=== awk (file) ===")
+    r = await ws.execute(
+        "awk '{print $1}' /github/python/mirage/core/s3/read.py")
+    print(await r.stdout_str())
+
+    print("=== cut -c (file) ===")
+    r = await ws.execute("cut -c1-10 /github/python/mirage/types.py")
+    print(await r.stdout_str())
+
+    print("=== grep dir operands (POSIX warn) ===")
+    r = await ws.execute("grep 'import' /github/python/mirage/*")
+    out = (await r.stdout_str()).strip()
+    err = (await r.stderr_str()).strip()
+    print(
+        f"  exit={r.exit_code} matches: {len(out.splitlines()) if out else 0}")
+    for line in err.splitlines()[:3]:
+        print(f"  {line}")
+    print()
+
+    print("=== diff -u ===")
+    r = await ws.execute("diff -u /github/python/mirage/core/s3/stat.py"
+                         " /github/python/mirage/core/s3/read.py")
     print(await r.stdout_str())
 
     print("=== tree -L ===")

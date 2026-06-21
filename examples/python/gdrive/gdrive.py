@@ -33,6 +33,15 @@ resource = GoogleDriveResource(config=config)
 async def main() -> None:
     ws = Workspace({"/gdrive": resource}, mode=MountMode.WRITE)
 
+    print("=== not-found errors show the full virtual path ===")
+    for cmd in ("cat /gdrive/__nf_missing__.txt",
+                "head /gdrive/__nf_missing__.txt",
+                "stat /gdrive/__nf_missing__.txt"):
+        result = await ws.execute(cmd)
+        print(f"$ {cmd}")
+        print(f"  exit={result.exit_code}  "
+              f"{(await result.stderr_str()).strip()}")
+
     print("=== ls /gdrive/ ===")
     result = await ws.execute("ls /gdrive/")
     print(await result.stdout_str())
@@ -104,6 +113,18 @@ async def main() -> None:
 
         print(f"=== rg title {gdoc} ===")
         result = await ws.execute(f'rg title "{gdoc}"')
+        print((await result.stdout_str())[:300])
+
+        print(f"=== cut -c 1-40 {gdoc} ===")
+        result = await ws.execute(f'cut -c 1-40 "{gdoc}"')
+        print((await result.stdout_str())[:300])
+
+        print(f"=== sed -n 2p {gdoc} ===")
+        result = await ws.execute(f'sed -n 2p "{gdoc}"')
+        print((await result.stdout_str())[:300])
+
+        print(f"=== sed s/title/TITLE/g {gdoc} ===")
+        result = await ws.execute(f'sed "s/title/TITLE/g" "{gdoc}"')
         print((await result.stdout_str())[:300])
 
         print(f"=== realpath {gdoc} ===")

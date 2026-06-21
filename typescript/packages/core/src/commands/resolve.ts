@@ -17,6 +17,7 @@ import type { ByteSource } from '../io/types.ts'
 import { OperandKind } from './spec/types.ts'
 import type { CommandSpec } from './spec/types.ts'
 import { parseCommand } from './spec/parser.ts'
+import { lstripSlash } from '../utils/slash.ts'
 
 export const COMPOUND_EXTENSIONS: ReadonlySet<string> = new Set([
   '.gdoc.json',
@@ -47,12 +48,12 @@ export async function materializeStdout(stdout: ByteSource | null): Promise<Uint
 }
 
 export function stripPrefixFromPathKwargs(
-  kwargs: Record<string, string | boolean>,
+  kwargs: Record<string, string | boolean | string[]>,
   spec: CommandSpec,
   prefix: string,
-): Record<string, string | boolean> {
+): Record<string, string | boolean | string[]> {
   if (prefix === '') return kwargs
-  const result: Record<string, string | boolean> = { ...kwargs }
+  const result: Record<string, string | boolean | string[]> = { ...kwargs }
   for (const opt of spec.options) {
     if (opt.valueKind !== OperandKind.PATH) continue
     for (const flagName of [opt.short, opt.long]) {
@@ -61,7 +62,7 @@ export function stripPrefixFromPathKwargs(
       const val = result[clean]
       if (typeof val === 'string') {
         if (val.startsWith(`${prefix}/`) || val === prefix) {
-          result[clean] = `/${val.slice(prefix.length).replace(/^\/+/, '')}`
+          result[clean] = `/${lstripSlash(val.slice(prefix.length))}`
         }
       }
     }

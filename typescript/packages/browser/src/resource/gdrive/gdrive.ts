@@ -35,14 +35,12 @@ import { redactGDriveConfig, type GDriveConfig, type GDriveConfigRedacted } from
 
 export interface GDriveResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: GDriveConfigRedacted
 }
 
 export class GDriveResource implements Resource {
   readonly kind: string = ResourceName.GDRIVE
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 86_400
   readonly prompt: string = GDRIVE_PROMPT
   readonly config: GDriveConfig
@@ -115,8 +113,6 @@ export class GDriveResource implements Resource {
   getState(): Promise<GDriveResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['clientSecret', 'refreshToken'],
       config: redactGDriveConfig(this.config),
     })
   }

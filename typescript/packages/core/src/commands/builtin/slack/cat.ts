@@ -13,55 +13,39 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { SlackAccessor } from '../../../accessor/slack.ts'
-import { resolveSlackGlob } from '../../../core/slack/glob.ts'
+import type { IndexCacheStore } from '../../../cache/index/index.ts'
 import { read as slackRead } from '../../../core/slack/read.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
+import { resolveSlackGlob } from '../../../core/slack/glob.ts'
+import { stat as slackStat } from '../../../core/slack/stat.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
+import { catGeneric } from '../generic/cat.ts'
 import { fileReadProvision } from './_provision.ts'
 
-const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function numberLines(data: Uint8Array): Uint8Array {
-  const text = DEC.decode(data)
-  const lines = text.split('\n')
-  const trailing = text.endsWith('\n')
-  const limit = trailing ? lines.length - 1 : lines.length
-  const out: string[] = []
-  for (let i = 0; i < limit; i++) {
-    out.push(`     ${String(i + 1)}\t${lines[i] ?? ''}\n`)
-  }
-  return ENC.encode(out.join(''))
+async function* slackStream(
+  accessor: SlackAccessor,
+  p: PathSpec,
+  index: IndexCacheStore | undefined,
+): AsyncIterable<Uint8Array> {
+  yield await slackRead(accessor, p, index)
 }
 
 async function catCommand(
   accessor: SlackAccessor,
   paths: PathSpec[],
-  _texts: string[],
+  texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const nFlag = opts.flags.n === true
-  if (paths.length > 0) {
-    const resolved = await resolveSlackGlob(accessor, paths, opts.index ?? undefined)
-    const first = resolved[0]
-    if (first === undefined) return [null, new IOResult()]
-    const data = await slackRead(accessor, first, opts.index ?? undefined)
-    const out: ByteSource = nFlag ? numberLines(data) : data
-    const io = new IOResult({
-      reads: { [first.stripPrefix]: data },
-      cache: [first.stripPrefix],
-    })
-    return [out, io]
-  }
-  const raw = await readStdinAsync(opts.stdin)
-  if (raw === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('cat: missing operand\n') })]
-  }
-  const out: ByteSource = nFlag ? numberLines(raw) : raw
-  return [out, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveSlackGlob(accessor, paths, opts.index ?? undefined) : []
+  return catGeneric(
+    resolved,
+    texts,
+    opts,
+    (p) => slackStat(accessor, p, opts.index ?? undefined),
+    (p) => slackStream(accessor, p, opts.index ?? undefined),
+  )
 }
 
 export const SLACK_CAT = command({

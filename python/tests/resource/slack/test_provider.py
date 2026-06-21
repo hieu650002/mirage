@@ -26,7 +26,7 @@ def config():
 
 def test_resource_init(config):
     resource = SlackResource(config)
-    assert resource.is_remote is True
+    assert resource.caches_reads is True
 
 
 def test_resource_name(config):
@@ -42,4 +42,5 @@ def test_resource_accessor(config):
 
 def test_resource_commands_registered(config):
     resource = SlackResource(config)
-    assert len(resource._commands) == 20
+    # 20 native + 9 filetype cmds x 7 columnar exts
+    assert len(resource._commands) == 20 + 9 * 7

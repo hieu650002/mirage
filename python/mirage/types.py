@@ -12,10 +12,46 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
+
+
+class Aggr:
+    """Declares how one CommandSafeguard field aggregates across guards.
+
+    Attach to a field via Annotated[..., Aggr(rule)]; ``rule`` takes the
+    list of that field's values across the stacked safeguards and returns
+    the aggregated value. CommandSafeguard.aggr reads these rules so each
+    field's aggregation behavior lives next to the field.
+
+    Args:
+        reduce (Callable[[list], object]): the per-field aggregation rule.
+    """
+
+    def __init__(self, reduce: Callable[[list], object]) -> None:
+        self.reduce = reduce
+
+
+def _min_positive(values: Iterable[float | int | None]) -> float | int | None:
+    positives = [v for v in values if v is not None and v > 0]
+    return min(positives) if positives else None
+
+
+class FindType(str, Enum):
+    """POSIX `find -type` flag values (`-type d`, `-type f`)."""
+    DIRECTORY = "d"
+    FILE = "f"
+
+
+class LsSortBy(str, Enum):
+    """`ls` sort keys. NAME is default, TIME is `-t`, SIZE is `-S`."""
+    NAME = "name"
+    TIME = "time"
+    SIZE = "size"
 
 
 class FileType(str, Enum):
@@ -43,6 +79,7 @@ class FileStat(BaseModel):
     size: int | None = None
     modified: str | None = None
     fingerprint: str | None = None
+    revision: str | None = None
     type: FileType | None = None
     extra: dict = Field(default_factory=dict)
 
@@ -56,6 +93,50 @@ class MountMode(str, Enum):
 class ConsistencyPolicy(str, Enum):
     LAZY = "lazy"
     ALWAYS = "always"
+
+
+class OnExceed(str, Enum):
+    ERROR = "error"
+    TRUNCATE = "truncate"
+
+
+def _prefer_error(values: Iterable["OnExceed"]) -> "OnExceed":
+    return (OnExceed.ERROR if any(v is OnExceed.ERROR
+                                  for v in values) else OnExceed.TRUNCATE)
+
+
+class CommandSafeguard(BaseModel):
+    max_bytes: Annotated[NonNegativeInt | None, Aggr(_min_positive)] = None
+    max_lines: Annotated[NonNegativeInt | None, Aggr(_min_positive)] = None
+    timeout_seconds: Annotated[float | None, Aggr(_min_positive)] = None
+    on_exceed: Annotated[OnExceed, Aggr(_prefer_error)] = OnExceed.TRUNCATE
+
+    @classmethod
+    def aggr(
+        cls,
+        safeguards: "Iterable[CommandSafeguard | None]",
+    ) -> "CommandSafeguard | None":
+        """Aggregate several safeguards using each field's declared rule.
+
+        Every field carries an Aggr(rule) in its annotation; this applies
+        that rule to the field's values across the present guards. Returns
+        None when nothing is configured. Used wherever guards stack
+        (cross-mount fan-out, layered configs).
+
+        Args:
+            safeguards (Iterable[CommandSafeguard | None]): guards to merge.
+        """
+        present = [s for s in safeguards if s is not None]
+        if not present:
+            return None
+        kwargs = {}
+        for name, field in cls.model_fields.items():
+            rule = next((m for m in field.metadata if isinstance(m, Aggr)),
+                        None)
+            values = [getattr(s, name) for s in present]
+            kwargs[name] = rule.reduce(
+                values) if rule is not None else values[0]
+        return cls(**kwargs)
 
 
 class VFSWriteOp(str, Enum):
@@ -86,7 +167,6 @@ class ResourceName(str, Enum):
     DISCORD = "discord"
     GMAIL = "gmail"
     TRELLO = "trello"
-    TELEGRAM = "telegram"
     MONGODB = "mongodb"
     POSTGRES = "postgres"
     NOTION = "notion"
@@ -96,7 +176,16 @@ class ResourceName(str, Enum):
     GITHUB_CI = "github_ci"
     GCS = "gcs"
     EMAIL = "email"
-    PAPERCLIP = "paperclip"
+    DIFY = "dify"
+    CHROMA = "chroma"
+    DATABRICKS_VOLUME = "databricks_volume"
+    HF_BUCKETS = "hf_buckets"
+    HF_DATASETS = "hf_datasets"
+    HF_MODELS = "hf_models"
+    HF_SPACES = "hf_spaces"
+    NEXTCLOUD = "nextcloud"
+    LANCEDB = "lancedb"
+    ONEDRIVE = "onedrive"
 
 
 @dataclass(frozen=True)
@@ -106,11 +195,23 @@ class PathSpec:
     pattern: str | None = None
     resolved: bool = True
     prefix: str = ""
+    as_typed: str | None = None
+
+    @property
+    def display(self) -> str:
+        """The path as the user typed it, for rendering in output.
+
+        Falls back to ``original`` (the resolved absolute path) when no
+        as-typed form was recorded, e.g. for absolute arguments.
+        """
+        return self.as_typed if self.as_typed is not None else self.original
 
     @property
     def strip_prefix(self) -> str:
         if self.prefix and self.original.startswith(self.prefix):
-            return self.original[len(self.prefix):] or "/"
+            rest = self.original[len(self.prefix):]
+            if self.prefix.endswith("/") or rest == "" or rest.startswith("/"):
+                return rest or "/"
         return self.original
 
     @property
@@ -170,6 +271,27 @@ class StateKey(StrEnum):
     CACHE = "cache"
     HISTORY = "history"
     JOBS = "jobs"
+    FINGERPRINTS = "fingerprints"
+    LIVE_ONLY_MOUNTS = "live_only_mounts"
+
+
+class DriftPolicy(StrEnum):
+    """Behaviour when a remote resource's live fingerprint differs from
+    the value recorded at snapshot time.
+
+    Values:
+        STRICT: raise ContentDriftError on mismatch (default).
+        OFF: skip drift checks entirely.
+    """
+    STRICT = "strict"
+    OFF = "off"
+
+
+class FingerprintKey(StrEnum):
+    PATH = "path"
+    MOUNT_PREFIX = "mount_prefix"
+    FINGERPRINT = "fingerprint"
+    REVISION = "revision"
 
 
 class MountKey(StrEnum):
@@ -234,8 +356,6 @@ class SessionKey(StrEnum):
 
 class ResourceStateKey(StrEnum):
     TYPE = "type"
-    NEEDS_OVERRIDE = "needs_override"
-    REDACTED_FIELDS = "redacted_fields"
     CONFIG = "config"
     FILES = "files"
     DIRS = "dirs"

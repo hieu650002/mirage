@@ -33,6 +33,7 @@ import {
   type ByteSource,
   type CommandFnResult,
   type CommandOpts,
+  formatRecords,
 } from '@struktoai/mirage-core'
 import type { EmailAccessor } from '../../../accessor/email.ts'
 import { resolveGlob } from '../../../core/email/glob.ts'
@@ -61,8 +62,8 @@ interface FlagSet {
   beforeContext: number
 }
 
-function parseFlags(flags: Record<string, string | boolean>): FlagSet {
-  const toInt = (v: string | boolean | undefined): number | null =>
+function parseFlags(flags: Record<string, string | boolean | string[]>): FlagSet {
+  const toInt = (v: string | boolean | string[] | undefined): number | null =>
     typeof v === 'string' ? Number.parseInt(v, 10) : null
   const aCtx = toInt(flags.A)
   const bCtx = toInt(flags.B)
@@ -83,7 +84,10 @@ function parseFlags(flags: Record<string, string | boolean>): FlagSet {
   }
 }
 
-function getPattern(texts: readonly string[], flags: Record<string, string | boolean>): string {
+function getPattern(
+  texts: readonly string[],
+  flags: Record<string, string | boolean | string[]>,
+): string {
   if (typeof flags.e === 'string') return flags.e
   if (texts.length > 0 && texts[0] !== undefined) return texts[0]
   throw new Error('grep: usage: grep [flags] pattern [path]')
@@ -187,9 +191,9 @@ async function grepCommand(
         },
         warnings,
       )
-      const stderr = warnings.length > 0 ? ENC.encode(warnings.join('\n')) : null
+      const stderr = warnings.length > 0 ? formatRecords(warnings) : null
       if (results.length === 0) return [new Uint8Array(0), new IOResult({ exitCode: 1, stderr })]
-      const out: ByteSource = ENC.encode(results.join('\n'))
+      const out: ByteSource = formatRecords(results)
       return [out, new IOResult({ stderr })]
     }
 
@@ -209,7 +213,7 @@ async function grepCommand(
         }
       }
       if (allResults.length === 0) return [new Uint8Array(0), new IOResult({ exitCode: 1 })]
-      const out: ByteSource = ENC.encode(allResults.join('\n'))
+      const out: ByteSource = formatRecords(allResults)
       return [out, new IOResult()]
     }
 

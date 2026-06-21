@@ -12,10 +12,33 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import logging
+
 from mirage.accessor.gdrive import GDriveAccessor
 from mirage.cache.index import IndexCacheStore, IndexEntry
-from mirage.core.google.drive import MIME_TO_EXT, list_files
+from mirage.core.google.drive import (MIME_TO_EXT, list_files,
+                                      list_shared_drives)
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
+
+logger = logging.getLogger(__name__)
+
+
+def is_dir_name(child: str) -> bool | None:
+    # Cold listings mark folders with a trailing slash; warm index-cache
+    # entries are slash-less, so classification falls back to stat.
+    return True if child.endswith("/") else None
+
+
+def unique_shared_drive_name(name: str, existing_names: set[str]) -> str:
+    if name not in existing_names:
+        return name
+    filename = f"{name} [Shared Drive]"
+    suffix = 2
+    while filename in existing_names:
+        filename = f"{name} [Shared Drive {suffix}]"
+        suffix += 1
+    return filename
 
 
 async def readdir(
@@ -25,24 +48,31 @@ async def readdir(
 ) -> list[str]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.directory if path.pattern else path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     key = path.strip("/")
     virtual_key = prefix + "/" + key if key else prefix or "/"
 
     if index is not None:
         cached = await index.list_dir(virtual_key)
+        # Cached entries are slash-less, while the cold path below marks
+        # folders with a trailing slash. Callers must not infer dir-ness
+        # from the slash alone (see find's stat fallback).
         if cached.entries is not None:
             return cached.entries
 
     if not key:
         folder_id = "root"
+        drive_id = None
     else:
         if index is None:
-            raise FileNotFoundError(path)
+            raise enoent(virtual)
         result = await index.get(virtual_key)
         if result.entry is None:
             parent_virtual = virtual_key.rstrip("/").rsplit("/", 1)[0] or "/"
@@ -52,10 +82,13 @@ async def readdir(
                 await readdir(accessor, parent_path, index)
                 result = await index.get(virtual_key)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
         folder_id = result.entry.id
+        drive_id = result.entry.extra.get("drive_id")
 
-    files = await list_files(accessor.token_manager, folder_id=folder_id)
+    files = await list_files(accessor.token_manager,
+                             folder_id=folder_id,
+                             drive_id=drive_id)
     entries = []
     for f in files:
         mime = f.get("mimeType", "")
@@ -85,8 +118,31 @@ async def readdir(
             remote_time=f.get("modifiedTime", ""),
             vfs_name=filename,
             size=int(f.get("size") or f.get("quotaBytesUsed") or 0) or None,
+            extra={"drive_id": f.get("driveId")} if f.get("driveId") else {},
         )
         entries.append((filename, entry, is_dir))
+
+    if not key:
+        # Shared Drive enumeration is best-effort: if the account can't list
+        # them (missing scope, API error), still return My Drive contents.
+        try:
+            shared_drives = await list_shared_drives(accessor.token_manager)
+        except Exception:
+            logger.debug("Unable to list Google Shared Drives", exc_info=True)
+            shared_drives = []
+        existing_names = {name for name, _, _ in entries}
+        for d in shared_drives:
+            name = d["name"]
+            filename = unique_shared_drive_name(name, existing_names)
+            existing_names.add(filename)
+            entry = IndexEntry(
+                id=d["id"],
+                name=name,
+                resource_type="gdrive/shared_drive",
+                vfs_name=filename,
+                extra={"drive_id": d["id"]},
+            )
+            entries.append((filename, entry, True))
 
     if index is not None:
         await index.set_dir(virtual_key, [(name, e) for name, e, _ in entries])

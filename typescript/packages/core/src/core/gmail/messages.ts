@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { GMAIL_API_BASE, type TokenManager, googleGet } from '../google/_client.ts'
+import { GMAIL_API_BASE, type TokenManager, googleGet, googlePost } from '../google/_client.ts'
 
 export interface GmailHeader {
   name?: string
@@ -63,6 +63,14 @@ export interface GmailAddress {
   email: string
 }
 
+export interface GmailProcessedAttachment {
+  id: string
+  filename: string
+  path: string
+  mime_type: string
+  size: number
+}
+
 export interface GmailMessageProcessed {
   id: string
   thread_id: string
@@ -74,6 +82,7 @@ export interface GmailMessageProcessed {
   body_text: string
   snippet: string
   labels: string[]
+  attachments: GmailProcessedAttachment[]
 }
 
 export interface ListMessagesOptions {
@@ -104,6 +113,11 @@ export async function getMessageRaw(
 ): Promise<GmailMessageRaw> {
   const url = `${GMAIL_API_BASE}/users/me/messages/${messageId}?format=full`
   return (await googleGet(tokenManager, url)) as GmailMessageRaw
+}
+
+export async function trashMessage(tokenManager: TokenManager, messageId: string): Promise<void> {
+  const url = `${GMAIL_API_BASE}/users/me/messages/${messageId}/trash`
+  await googlePost(tokenManager, url, {})
 }
 
 function base64UrlDecodeToBytes(input: string): Uint8Array {
@@ -192,6 +206,42 @@ export function extractAttachments(payload: GmailPayload | undefined): GmailAtta
   return attachments
 }
 
+function extractProcessedAttachments(
+  payload: GmailPayload | undefined,
+): GmailProcessedAttachment[] {
+  if (payload === undefined) return []
+  const result: GmailProcessedAttachment[] = []
+  for (const part of payload.parts ?? []) {
+    const filename = part.filename ?? ''
+    const body = part.body ?? {}
+    const attachmentId = body.attachmentId ?? ''
+    if (filename !== '' && attachmentId !== '') {
+      result.push({
+        id: attachmentId,
+        filename,
+        path: `attachments/${attachmentId}_${filename}`,
+        mime_type: part.mimeType ?? '',
+        size: body.size ?? 0,
+      })
+    }
+    for (const sub of part.parts ?? []) {
+      const fn = sub.filename ?? ''
+      const bd = sub.body ?? {}
+      const aid = bd.attachmentId ?? ''
+      if (fn !== '' && aid !== '') {
+        result.push({
+          id: aid,
+          filename: fn,
+          path: `attachments/${aid}_${fn}`,
+          mime_type: sub.mimeType ?? '',
+          size: bd.size ?? 0,
+        })
+      }
+    }
+  }
+  return result
+}
+
 export async function getMessageProcessed(
   tokenManager: TokenManager,
   messageId: string,
@@ -210,5 +260,6 @@ export async function getMessageProcessed(
     body_text: bodyText,
     snippet: raw.snippet ?? '',
     labels: raw.labelIds ?? [],
+    attachments: extractProcessedAttachments(raw.payload),
   }
 }

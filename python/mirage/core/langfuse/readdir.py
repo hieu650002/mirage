@@ -18,6 +18,7 @@ from mirage.core.langfuse._client import (fetch_dataset_runs, fetch_datasets,
                                           fetch_prompts, fetch_sessions,
                                           fetch_traces)
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 TOP_LEVEL_DIRS = ["traces", "sessions", "prompts", "datasets"]
 
@@ -37,15 +38,18 @@ async def readdir(
     """
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.directory if path.pattern else path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     key = path.strip("/")
 
     if key and any(p.startswith(".") for p in key.split("/")):
-        raise FileNotFoundError(path)
+        raise enoent(virtual)
 
     virtual_key = prefix + "/" + key if key else prefix or "/"
 
@@ -99,7 +103,7 @@ async def readdir(
             prefix,
         )
 
-    raise FileNotFoundError(path)
+    raise enoent(virtual)
 
 
 async def _readdir_traces(

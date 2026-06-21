@@ -17,12 +17,8 @@ import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { getExtension } from '../../commands/resolve.ts'
 import { readdir as coreReaddir } from './readdir.ts'
-
-function enoent(path: string): Error {
-  const e = new Error(`ENOENT: ${path}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 function stripPrefix(path: PathSpec): string {
   const prefix = path.prefix
@@ -34,7 +30,7 @@ function stripPrefix(path: PathSpec): string {
 }
 
 function indexKey(p: string): string {
-  const trimmed = p.replace(/^\/+|\/+$/g, '')
+  const trimmed = stripSlash(p)
   return trimmed === '' ? '/' : `/${trimmed}`
 }
 
@@ -52,11 +48,11 @@ export async function stat(
 ): Promise<FileStat> {
   const prefix = path.prefix
   const p = stripPrefix(path)
-  const trimmed = p.replace(/^\/+|\/+$/g, '')
+  const trimmed = stripSlash(p)
   if (trimmed === '') {
     return new FileStat({ name: '/', type: FileType.DIRECTORY })
   }
-  if (index === undefined) throw enoent(p)
+  if (index === undefined) throw enoent(path)
   const ikey = indexKey(p)
   let result = await index.get(ikey)
   if (result.entry === undefined || result.entry === null) {
@@ -77,7 +73,7 @@ export async function stat(
       // parent listing failed — fall through
     }
     result = await index.get(ikey)
-    if (result.entry === undefined || result.entry === null) throw enoent(p)
+    if (result.entry === undefined || result.entry === null) throw enoent(path)
   }
   if (result.entry.resourceType === 'folder') {
     return new FileStat({ name: result.entry.name, type: FileType.DIRECTORY })

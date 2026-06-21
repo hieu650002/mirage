@@ -13,6 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.s3 import S3Accessor
+from mirage.cache.context import (invalidate_after_unlink,
+                                  invalidate_after_write)
 from mirage.core.s3._client import _client_kwargs, _key, async_session
 from mirage.types import PathSpec
 
@@ -33,8 +35,10 @@ async def rename(accessor: S3Accessor, src: PathSpec, dst: PathSpec) -> None:
             Bucket=config.bucket,
             CopySource={
                 "Bucket": config.bucket,
-                "Key": _key(src)
+                "Key": _key(src, config)
             },
-            Key=_key(dst),
+            Key=_key(dst, config),
         )
-        await client.delete_object(Bucket=config.bucket, Key=_key(src))
+        await client.delete_object(Bucket=config.bucket, Key=_key(src, config))
+    await invalidate_after_write(dst)
+    await invalidate_after_unlink(src)

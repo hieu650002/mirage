@@ -147,6 +147,14 @@ async def main() -> None:
     result = await ws.execute("base64 /data/hello.txt")
     print(await result.stdout_str())
 
+    print("=== not-found errors show the full virtual path ===")
+    for cmd in ("cat /data/missing.txt", "head /data/missing.txt",
+                "stat /data/missing.txt"):
+        result = await ws.execute(cmd)
+        print(f"$ {cmd}")
+        print(f"  exit={result.exit_code}  "
+              f"{(await result.stderr_str()).strip()}")
+
     print("=== history (last 5) ===")
     result = await ws.execute("history 5")
     print(await result.stdout_str())
@@ -173,20 +181,20 @@ async def main() -> None:
     print(await result.stdout_str())
 
     # ── persistence: save / load / copy / deepcopy ──────────────────
-    # RAM has needs_override=False — full content is in the snapshot,
+    # RAM has no redacted config: full content is in the snapshot, so
     # no resources= needed at load time.
     print("\n=== PERSISTENCE ===\n")
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as f:
         snap = f.name
     try:
-        ws.snapshot(snap)
+        await ws.snapshot(snap)
         print(f"  saved → {snap} ({os.path.getsize(snap)} bytes)")
 
-        loaded = Workspace.load(snap)
+        loaded = await Workspace.load(snap)
         r = await loaded.execute("cat /data/hello.txt")
         print(f"  loaded ws cat: {(await r.stdout_str()).strip()!r}")
 
-        cp = ws.copy()
+        cp = await ws.copy()
         await cp.execute('echo "mutated" | tee /data/hello.txt')
         r_orig = await ws.execute("cat /data/hello.txt")
         r_cp = await cp.execute("cat /data/hello.txt")
@@ -194,14 +202,13 @@ async def main() -> None:
         print(f"  copy:      {(await r_cp.stdout_str()).strip()!r}  "
               "(local backend → independent)")
 
-        deep = _copy.deepcopy(ws)
-        print(f"  deepcopy mounts: {[m.prefix for m in deep.mounts()]}")
-
-        try:
-            _copy.copy(ws)
-            print("  ✗ shallow copy should have raised")
-        except NotImplementedError as e:
-            print(f"  ✓ shallow copy raises: {str(e)[:60]}…")
+        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
+                                                           _copy.copy)):
+            try:
+                op(ws)
+                print(f"  ✗ {op_name} should have raised")
+            except NotImplementedError as e:
+                print(f"  ✓ {op_name} raises: {str(e)[:60]}…")
     finally:
         os.unlink(snap)
 

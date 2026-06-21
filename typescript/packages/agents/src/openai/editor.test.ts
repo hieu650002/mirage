@@ -52,6 +52,20 @@ describe('MirageEditor', () => {
     expect(await ws.fs.readFileText('/data/sub/file.txt')).toBe('content\n')
   })
 
+  it('createFile handles a root-level relative path without recursing on "."', async () => {
+    const ws = mkWs()
+    const editor = new MirageEditor(ws)
+
+    const result = await editor.createFile({
+      type: 'create_file',
+      path: 'bare.txt',
+      diff: '+bare\n',
+    })
+
+    expect(result).toEqual({ status: 'completed' })
+    expect(await ws.fs.readFileText('bare.txt')).toBe('bare')
+  })
+
   it('createFile is idempotent on existing parent', async () => {
     const ws = mkWs()
     await ws.fs.mkdir('/data')

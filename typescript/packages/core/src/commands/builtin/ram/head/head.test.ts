@@ -26,7 +26,7 @@ const TWENTY_LINES = Array.from({ length: 20 }, (_, i) => `line${String(i + 1)}`
 async function runHead(
   resource: RAMResource,
   paths: PathSpec[],
-  flags: Record<string, string | boolean> = {},
+  flags: Record<string, string | boolean | string[]> = {},
 ): Promise<string> {
   const cmd = RAM_HEAD[0]
   if (cmd === undefined) throw new Error('head not registered')
@@ -72,7 +72,7 @@ describe('head', () => {
     const resource = new RAMResource()
     resource.store.files.set('/tmp/f.txt', ENC.encode('a\nb\nc'))
     expect(await runHead(resource, [PathSpec.fromStrPath('/tmp/f.txt')], { n: '100' })).toBe(
-      'a\nb\nc\n',
+      'a\nb\nc',
     )
   })
 
@@ -103,6 +103,6 @@ describe('head', () => {
   it('single line without newline', async () => {
     const resource = new RAMResource()
     resource.store.files.set('/tmp/f.txt', ENC.encode('hello'))
-    expect(await runHead(resource, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('hello\n')
+    expect(await runHead(resource, [PathSpec.fromStrPath('/tmp/f.txt')])).toBe('hello')
   })
 })

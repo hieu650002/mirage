@@ -15,11 +15,17 @@
 from mirage.accessor.gsheets import GSheetsAccessor
 from mirage.cache.index import IndexCacheStore, IndexEntry
 from mirage.core.google.date_glob import glob_to_modified_range
-from mirage.core.google.drive import list_all_files
+from mirage.core.google.drive import GoogleFileSuffix, list_all_files
 from mirage.resource.gsheets.sheet_entry import make_filename
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 MIME = "application/vnd.google-apps.spreadsheet"
+
+
+def is_dir_name(child: str) -> bool:
+    # readdir emits only folders and rendered *.gsheet.json files.
+    return not child.endswith(GoogleFileSuffix.GSHEET.value)
 
 
 async def readdir(
@@ -29,6 +35,7 @@ async def readdir(
 ) -> list[str]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     modified_range = None
     if isinstance(path, PathSpec):
         prefix = path.prefix
@@ -36,7 +43,9 @@ async def readdir(
             modified_range = glob_to_modified_range(path.pattern)
         path = path.directory if path.pattern else path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     key = path.strip("/")
     virtual_key = prefix + "/" + key if key else prefix or "/"
 
@@ -44,7 +53,7 @@ async def readdir(
         return [f"{prefix}/owned", f"{prefix}/shared"]
 
     if key not in ("owned", "shared"):
-        raise FileNotFoundError(path)
+        raise enoent(virtual)
 
     if index is not None and not modified_range:
         cached = await index.list_dir(virtual_key)

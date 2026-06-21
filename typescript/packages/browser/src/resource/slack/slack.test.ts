@@ -40,7 +40,7 @@ describe('SlackResource (browser)', () => {
   it('constructs with proxyUrl and exposes expected fields', () => {
     const r = new SlackResource({ proxyUrl: '/api/slack' })
     expect(r.kind).toBe(ResourceName.SLACK)
-    expect(r.isRemote).toBe(true)
+    expect(r.cachesReads).toBe(true)
     expect(r.indexTtl).toBe(600)
     expect(r.config).toEqual({ proxyUrl: '/api/slack' })
     expect(typeof r.prompt).toBe('string')
@@ -69,8 +69,8 @@ describe('SlackResource (browser)', () => {
     const r = new SlackResource({ proxyUrl: '/api/slack', getHeaders: headers })
     const state = await r.getState()
     expect(state.type).toBe(ResourceName.SLACK)
-    expect(state.needsOverride).toBe(true)
-    expect(state.redactedFields).toEqual(['getHeaders'])
+    expect(state).not.toHaveProperty('needsOverride')
+    expect(state).not.toHaveProperty('redactedFields')
     expect(state.config).toEqual({ proxyUrl: '/api/slack', getHeaders: '<REDACTED>' })
   })
 

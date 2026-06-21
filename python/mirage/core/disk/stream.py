@@ -39,16 +39,22 @@ async def read_stream(accessor: DiskAccessor,
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
+    virtual = path
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     root = accessor.root
     rec = record_stream("read", path, "disk")
     p = _resolve(root, path)
-    async with aiofiles.open(p, "rb") as f:
-        while True:
-            chunk = await f.read(chunk_size)
-            if not chunk:
-                break
-            if rec is not None:
-                rec.bytes += len(chunk)
-            yield chunk
+    try:
+        async with aiofiles.open(p, "rb") as f:
+            while True:
+                chunk = await f.read(chunk_size)
+                if not chunk:
+                    break
+                if rec is not None:
+                    rec.bytes += len(chunk)
+                yield chunk
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(virtual) from exc

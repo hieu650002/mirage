@@ -13,53 +13,30 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { GitHubCIAccessor } from '../../../accessor/github_ci.ts'
+import { stream as github_ciStream } from '../../../core/github_ci/read.ts'
 import { resolveGlob } from '../../../core/github_ci/glob.ts'
-import { read as ciRead } from '../../../core/github_ci/read.ts'
-import { AsyncLineIterator } from '../../../io/async_line_iterator.ts'
-import { IOResult } from '../../../io/types.ts'
+import { stat as github_ciStat } from '../../../core/github_ci/stat.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { resolveSource, wrapBytes } from '../utils/stream.ts'
+import { catGeneric } from '../generic/cat.ts'
 import { fileReadProvision } from './provision.ts'
-
-const ENC = new TextEncoder()
-
-async function* numberLinesStream(source: AsyncIterable<Uint8Array>): AsyncIterable<Uint8Array> {
-  let num = 1
-  const lineIter = new AsyncLineIterator(source)
-  for await (const line of lineIter) {
-    yield ENC.encode(`     ${String(num)}\t`)
-    yield line
-    yield ENC.encode('\n')
-    num += 1
-  }
-}
 
 async function catCommand(
   accessor: GitHubCIAccessor,
   paths: PathSpec[],
-  _texts: string[],
+  texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const nFlag = opts.flags.n === true
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const first = resolved[0]
-    if (first === undefined) return [null, new IOResult()]
-    const data = await ciRead(accessor, first, opts.index ?? undefined)
-    const io = new IOResult({ reads: { [first.stripPrefix]: data }, cache: [first.stripPrefix] })
-    if (nFlag) return [numberLinesStream(wrapBytes(data)), io]
-    return [data, io]
-  }
-  try {
-    const source = resolveSource(opts.stdin, 'cat: missing operand')
-    if (nFlag) return [numberLinesStream(source), new IOResult()]
-    return [source, new IOResult()]
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${msg}\n`) })]
-  }
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return catGeneric(
+    resolved,
+    texts,
+    opts,
+    (p) => github_ciStat(accessor, p, opts.index ?? undefined),
+    (p) => github_ciStream(accessor, p, opts.index ?? undefined),
+  )
 }
 
 export const GITHUB_CI_CAT = command({

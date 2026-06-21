@@ -12,18 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from datetime import datetime, timezone
-
 from mirage.accessor.redis import RedisAccessor
+from mirage.cache.context import invalidate_after_write
+from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def create(accessor: RedisAccessor, path: PathSpec) -> None:
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     await store.set_file(p, b"")
-    await store.set_modified(p, datetime.now(timezone.utc).isoformat())
+    await store.set_modified(p, now_iso())
+    await invalidate_after_write(path)

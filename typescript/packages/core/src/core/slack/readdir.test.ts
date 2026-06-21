@@ -123,8 +123,8 @@ describe('readdir /channels', () => {
     expect(out).toEqual(['/mnt/slack/channels/general__C1', '/mnt/slack/channels/eng__C2'])
     const listing = await idx.listDir('/mnt/slack/channels')
     expect(listing.entries).toEqual([
-      '/mnt/slack/channels/eng__C2',
       '/mnt/slack/channels/general__C1',
+      '/mnt/slack/channels/eng__C2',
     ])
     const lookup = await idx.get('/mnt/slack/channels/general__C1')
     expect(lookup.entry?.id).toBe('C1')
@@ -243,13 +243,13 @@ describe('readdir channel/<id> (history dates)', () => {
       idx,
     )
     expect(out).toEqual([
-      '/mnt/slack/channels/general__C1/2024-01-03.jsonl',
-      '/mnt/slack/channels/general__C1/2024-01-02.jsonl',
-      '/mnt/slack/channels/general__C1/2024-01-01.jsonl',
+      '/mnt/slack/channels/general__C1/2024-01-03',
+      '/mnt/slack/channels/general__C1/2024-01-02',
+      '/mnt/slack/channels/general__C1/2024-01-01',
     ])
-    const lookup = await idx.get('/mnt/slack/channels/general__C1/2024-01-02.jsonl')
+    const lookup = await idx.get('/mnt/slack/channels/general__C1/2024-01-02')
     expect(lookup.entry?.id).toBe('C1:2024-01-02')
-    expect(lookup.entry?.resourceType).toBe('slack/history')
+    expect(lookup.entry?.resourceType).toBe('slack/date_dir')
   })
 
   it('auto-bootstraps parent listing when not in cache', async () => {
@@ -275,8 +275,8 @@ describe('readdir channel/<id> (history dates)', () => {
       idx,
     )
     expect(out).toEqual([
-      '/mnt/slack/channels/general__C1/2024-01-02.jsonl',
-      '/mnt/slack/channels/general__C1/2024-01-01.jsonl',
+      '/mnt/slack/channels/general__C1/2024-01-02',
+      '/mnt/slack/channels/general__C1/2024-01-01',
     ])
     const endpoints = t.calls.map((c) => c.endpoint)
     expect(endpoints).toContain('conversations.list')

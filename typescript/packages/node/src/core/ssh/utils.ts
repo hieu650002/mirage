@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { PathSpec } from '@struktoai/mirage-core'
+import { lstripSlash, rstripSlash } from '@struktoai/mirage-core'
 
 const S_IFMT = 0o170000
 const S_IFDIR = 0o040000
@@ -26,17 +27,11 @@ export function stripPrefix(p: PathSpec): string {
 }
 
 export function joinRoot(root: string, rel: string): string {
-  const r = root.replace(/\/+$/, '')
-  const stripped = rel.replace(/^\/+/, '')
+  const r = rstripSlash(root)
+  const stripped = lstripSlash(rel)
   if (stripped === '') return r === '' ? '/' : r
   if (r === '') return `/${stripped}`
   return `${r}/${stripped}`
-}
-
-export function enoent(path: string): Error & { code: 'ENOENT' } {
-  const err = new Error(`file not found: ${path}`) as Error & { code: 'ENOENT' }
-  err.code = 'ENOENT'
-  return err
 }
 
 export function isNoSuchFile(err: unknown): boolean {

@@ -12,12 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from datetime import timezone
-
 from mirage.accessor.s3 import S3Accessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.s3._client import _client_kwargs, _key, async_session
+from mirage.core.timeutil import to_iso_z
 from mirage.types import FileStat, FileType, PathSpec
+from mirage.utils.errors import enoent
 from mirage.utils.filetype import guess_type
 
 
@@ -33,6 +33,7 @@ async def stat(accessor: S3Accessor,
                index: IndexCacheStore = None) -> FileStat:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     original_prefix = ""
     if isinstance(path, PathSpec):
         original_prefix = path.prefix
@@ -70,27 +71,30 @@ async def stat(accessor: S3Accessor,
         parent = virtual_key.rsplit("/", 1)[0] or "/"
         parent_listing = await index.list_dir(parent)
         if parent_listing.entries is not None:
-            raise FileNotFoundError(path)
+            raise enoent(virtual)
 
     # Slow path: no index cache available, or parent directory not yet
     # listed. Hit the network.
     config = accessor.config
-    key = _key(path)
+    key = _key(path, config)
     session = async_session(config)
     async with session.client(**_client_kwargs(config)) as client:
         # Try head_object first — works for files.
         try:
             resp = await client.head_object(Bucket=config.bucket, Key=key)
-            modified = resp["LastModified"].astimezone(
-                timezone.utc).isoformat()
-            etag = resp.get("ETag", "").strip('"')
+            modified = to_iso_z(resp["LastModified"])
+            etag_raw = resp.get("ETag", "").strip('"')
+            vid_raw = resp.get("VersionId")
+            if vid_raw == "null":
+                vid_raw = None
             return FileStat(
                 name=path.rstrip("/").rsplit("/", 1)[-1],
                 size=resp["ContentLength"],
                 modified=modified,
                 type=guess_type(path),
-                fingerprint=etag or None,
-                extra={"etag": etag},
+                fingerprint=etag_raw or None,
+                revision=vid_raw or None,
+                extra={"etag": etag_raw},
             )
         except Exception as exc:
             if not _is_not_found(exc):
@@ -112,4 +116,4 @@ async def stat(accessor: S3Accessor,
                 type=FileType.DIRECTORY,
             )
 
-        raise FileNotFoundError(path)
+        raise enoent(virtual)

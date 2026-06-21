@@ -36,14 +36,12 @@ import { redactGSheetsConfig, type GSheetsConfig, type GSheetsConfigRedacted } f
 
 export interface GSheetsResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: GSheetsConfigRedacted
 }
 
 export class GSheetsResource implements Resource {
   readonly kind: string = ResourceName.GSHEETS
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 86_400
   readonly prompt: string = GSHEETS_PROMPT
   readonly writePrompt: string = GSHEETS_WRITE_PROMPT
@@ -117,8 +115,6 @@ export class GSheetsResource implements Resource {
   getState(): Promise<GSheetsResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['clientSecret', 'refreshToken'],
       config: redactGSheetsConfig(this.config),
     })
   }

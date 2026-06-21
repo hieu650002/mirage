@@ -14,51 +14,11 @@
 
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
-import { read as s3Read } from '../../../core/s3/read.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
+import { stream as s3Stream } from '../../../core/s3/stream.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function expandTabs(text: string, tabsize: number): string {
-  const out: string[] = []
-  let col = 0
-  for (const ch of text) {
-    if (ch === '\t') {
-      const spaces = tabsize - (col % tabsize)
-      out.push(' '.repeat(spaces))
-      col += spaces
-    } else if (ch === '\n') {
-      out.push(ch)
-      col = 0
-    } else {
-      out.push(ch)
-      col += 1
-    }
-  }
-  return out.join('')
-}
-
-function expandLeadingTabs(text: string, tabsize: number): string {
-  const lines = text.split('\n')
-  const result: string[] = []
-  for (const line of lines) {
-    let i = 0
-    while (i < line.length && line[i] === '\t') i += 1
-    if (i === 0) {
-      result.push(line)
-    } else {
-      const leading = line.slice(0, i)
-      const rest = line.slice(i)
-      result.push(expandTabs(leading, tabsize) + rest)
-    }
-  }
-  return result.join('\n')
-}
+import { expandGeneric } from '../generic/expand.ts'
 
 async function expandCommand(
   accessor: S3Accessor,
@@ -66,27 +26,9 @@ async function expandCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const tabsize = typeof opts.flags.t === 'string' ? Number.parseInt(opts.flags.t, 10) : 8
-  const leadingOnly = opts.flags.i === true
-  const expander = (txt: string): string =>
-    leadingOnly ? expandLeadingTabs(txt, tabsize) : expandTabs(txt, tabsize)
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const parts: string[] = []
-    for (const p of resolved) {
-      const data = DEC.decode(await s3Read(accessor, p, opts.index ?? undefined))
-      parts.push(expander(data))
-    }
-    const result: ByteSource = ENC.encode(parts.join(''))
-    return [result, new IOResult()]
-  }
-  const stdinData = await readStdinAsync(opts.stdin)
-  if (stdinData === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('expand: missing operand\n') })]
-  }
-  const text = DEC.decode(stdinData)
-  const result: ByteSource = ENC.encode(expander(text))
-  return [result, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return expandGeneric(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_EXPAND = command({

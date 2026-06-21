@@ -16,15 +16,15 @@ from mirage.accessor.notion import NotionAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.notion.normalize import (normalize_database, normalize_page,
                                           to_json_bytes)
-from mirage.core.notion.pages import (get_database, get_page,
-                                      list_block_children, query_database)
+from mirage.core.notion.pages import get_database, get_page, list_block_tree
 from mirage.core.notion.pathing import split_suffix_id
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 
 async def read_page_json(config, page_id: str) -> bytes:
     page = await get_page(config, page_id)
-    blocks = await list_block_children(config, page_id)
+    blocks = await list_block_tree(config, page_id)
     normalized = normalize_page(page, blocks)
     return to_json_bytes(normalized)
 
@@ -36,40 +36,38 @@ async def read(
 ) -> bytes:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
 
     key = path.strip("/")
     parts = key.split("/")
 
     if not key or key in ("pages", "databases"):
-        raise IsADirectoryError(path)
+        raise IsADirectoryError(virtual)
 
     if len(parts) >= 3 and parts[0] == "pages" and parts[-1] == "page.json":
         _, page_id = split_suffix_id(parts[-2])
         return await read_page_json(accessor.config, page_id)
 
-    if len(parts
-           ) == 3 and parts[0] == "databases" and parts[-1] == "database.json":
+    if (len(parts) == 3 and parts[0] == "databases"
+            and parts[-1] == "database.json"):
         _, database_id = split_suffix_id(parts[-2])
         database = await get_database(accessor.config, database_id)
-        rows = await query_database(accessor.config, database_id)
-        return to_json_bytes(normalize_database(database, rows))
+        return to_json_bytes(normalize_database(database))
 
-    if len(parts
-           ) >= 4 and parts[0] == "databases" and parts[-1] == "page.json":
+    if (len(parts) >= 4 and parts[0] == "databases"
+            and parts[-1] == "page.json"):
         _, page_id = split_suffix_id(parts[-2])
         return await read_page_json(accessor.config, page_id)
 
-    if len(parts
-           ) >= 2 and parts[0] == "pages" and not parts[-1].endswith(".json"):
-        raise IsADirectoryError(path)
+    if (len(parts) >= 2 and parts[0] in ("pages", "databases")
+            and not parts[-1].endswith(".json")):
+        raise IsADirectoryError(virtual)
 
-    if len(parts) >= 2 and parts[0] == "databases" and not parts[-1].endswith(
-            ".json"):
-        raise IsADirectoryError(path)
-
-    raise FileNotFoundError(path)
+    raise enoent(virtual)

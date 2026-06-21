@@ -2,6 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Mirage",
+  "description": "Mirage gives AI agents one virtual filesystem for S3, Google Drive, Slack, GitHub, Notion, Postgres, and SSH, so shell commands work across services.",
   "colors": {
     "primary": "#0C0C0C",
     "light": "#FAFAFA",
@@ -26,9 +27,6 @@
   },
   "seo": {
     "metatags": {
-      "charset": "UTF-8",
-      "viewport": "width=device-width, initial-scale=1.0",
-      "description": "Mirage gives AI agents one virtual filesystem for S3, Google Drive, Slack, GitHub, Notion, Postgres, and SSH, so shell commands can read, write, and pipe across services.",
       "keywords": "Mirage, filesystem for AI agents, virtual filesystem, AI agent tools, agent infrastructure, MCP alternative, bash for agents, S3 filesystem, Google Drive filesystem, Slack filesystem, GitHub filesystem, agent sandbox, Strukto",
       "author": "Strukto",
       "robots": "index, follow",
@@ -39,24 +37,17 @@
       "language": "en",
       "category": "Technology",
       "target": "developers",
-      "title": "Mirage · Unified Virtual Filesystem for AI Agents | Strukto",
-      "application-name": "Mirage",
-      "apple-mobile-web-app-title": "Mirage",
       "apple-mobile-web-app-capable": "yes",
       "apple-mobile-web-app-status-bar-style": "black-translucent",
-      "og:title": "Mirage · Unified Virtual Filesystem for AI Agents | Strukto",
       "og:type": "website",
       "og:url": "https://docs.mirage.strukto.ai",
       "og:image": "https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-og-light.png",
       "og:image:alt": "Mirage virtual filesystem for AI agents",
-      "og:description": "Mount S3, Google Drive, Slack, GitHub, Notion, Postgres, SSH, and more behind one filesystem. Agents read, write, and pipe across services with shell commands.",
       "og:site_name": "Mirage",
       "og:locale": "en_US",
       "twitter:card": "summary_large_image",
       "twitter:site": "@struktoai",
       "twitter:creator": "@struktoai",
-      "twitter:title": "Mirage · Unified Virtual Filesystem for AI Agents | Strukto",
-      "twitter:description": "Mount S3, Google Drive, Slack, GitHub, Notion, Postgres, SSH, and more behind one filesystem. Agents read, write, and pipe across services with familiar shell commands.",
       "twitter:image": "https://raw.githubusercontent.com/strukto-ai/mirage/main/assets/mirage-og-light.png",
       "twitter:image:alt": "Mirage · Unified Virtual Filesystem for AI Agents | Strukto"
     }
@@ -79,8 +70,12 @@
             "group": "Learn",
             "pages": [
               "home/architecture",
-              "home/shell",
-              "home/resource-matrix"
+              "home/bash",
+              "home/resource-matrix",
+              "home/cache",
+              "home/snapshot",
+              "home/observer",
+              "home/auth"
             ]
           },
           {
@@ -108,7 +103,27 @@
                   "home/setup/r2",
                   "home/setup/gcs",
                   "home/setup/oci",
-                  "home/setup/supabase"
+                  "home/setup/supabase",
+                  "home/setup/minio",
+                  "home/setup/ceph",
+                  "home/setup/seaweedfs",
+                  "home/setup/wasabi",
+                  "home/setup/backblaze",
+                  "home/setup/digitalocean",
+                  "home/setup/tencent",
+                  "home/setup/aliyun",
+                  "home/setup/scaleway",
+                  "home/setup/qingstor"
+                ]
+              },
+              {
+                "group": "Hugging Face",
+                "icon": "/images/huggingface-logo.svg",
+                "pages": [
+                  "home/setup/hf_buckets",
+                  "home/setup/hf_datasets",
+                  "home/setup/hf_models",
+                  "home/setup/hf_spaces"
                 ]
               },
               {
@@ -119,11 +134,20 @@
                 ]
               },
               {
+                "group": "Microsoft",
+                "icon": "microsoft",
+                "pages": [
+                  "home/setup/onedrive"
+                ]
+              },
+              {
                 "group": "Cloud Files",
                 "icon": "folder-open",
                 "pages": [
                   "home/setup/dropbox",
-                  "home/setup/box"
+                  "home/setup/box",
+                  "home/setup/nextcloud",
+                  "home/setup/databricks"
                 ]
               },
               {
@@ -142,7 +166,6 @@
                 "pages": [
                   "home/setup/slack",
                   "home/setup/discord",
-                  "home/setup/telegram",
                   "home/setup/email"
                 ]
               },
@@ -151,7 +174,16 @@
                 "icon": "database",
                 "pages": [
                   "home/setup/mongodb",
-                  "home/setup/postgres"
+                  "home/setup/postgres",
+                  "home/setup/chroma",
+                  "home/setup/lancedb"
+                ]
+              },
+              {
+                "group": "Knowledge",
+                "icon": "brain",
+                "pages": [
+                  "home/setup/dify"
                 ]
               },
               {
@@ -165,9 +197,7 @@
                 "group": "Others",
                 "icon": "ellipsis",
                 "pages": [
-                  "home/setup/trello",
-                  "home/setup/paperclip",
-                  "home/setup/sscholar"
+                  "home/setup/trello"
                 ]
               }
             ]
@@ -196,7 +226,9 @@
               "python/agents/openhands",
               "python/agents/pydantic-ai",
               "python/agents/camel",
+              "python/agents/agno",
               "python/agents/claude-code",
+              "python/agents/claude-agent-sdk",
               "python/agents/codex"
             ]
           },
@@ -222,7 +254,27 @@
                   "python/resource/r2",
                   "python/resource/gcs",
                   "python/resource/supabase",
-                  "python/resource/oci"
+                  "python/resource/oci",
+                  "python/resource/minio",
+                  "python/resource/ceph",
+                  "python/resource/seaweedfs",
+                  "python/resource/wasabi",
+                  "python/resource/backblaze",
+                  "python/resource/digitalocean",
+                  "python/resource/tencent",
+                  "python/resource/aliyun",
+                  "python/resource/scaleway",
+                  "python/resource/qingstor"
+                ]
+              },
+              {
+                "group": "Hugging Face",
+                "icon": "/images/huggingface-logo.svg",
+                "pages": [
+                  "python/resource/hf_buckets",
+                  "python/resource/hf_datasets",
+                  "python/resource/hf_models",
+                  "python/resource/hf_spaces"
                 ]
               },
               {
@@ -234,6 +286,21 @@
                   "python/resource/gdocs",
                   "python/resource/gsheets",
                   "python/resource/gslides"
+                ]
+              },
+              {
+                "group": "Microsoft",
+                "icon": "microsoft",
+                "pages": [
+                  "python/resource/onedrive"
+                ]
+              },
+              {
+                "group": "Cloud Files",
+                "icon": "folder-open",
+                "pages": [
+                  "python/resource/nextcloud",
+                  "python/resource/databricks_volume"
                 ]
               },
               {
@@ -252,7 +319,6 @@
                 "pages": [
                   "python/resource/slack",
                   "python/resource/discord",
-                  "python/resource/telegram",
                   "python/resource/email"
                 ]
               },
@@ -261,7 +327,16 @@
                 "icon": "database",
                 "pages": [
                   "python/resource/mongodb",
-                  "python/resource/postgres"
+                  "python/resource/postgres",
+                  "python/resource/chroma",
+                  "python/resource/lancedb"
+                ]
+              },
+              {
+                "group": "Knowledge",
+                "icon": "brain",
+                "pages": [
+                  "python/resource/dify"
                 ]
               },
               {
@@ -275,8 +350,7 @@
                 "group": "Others",
                 "icon": "ellipsis",
                 "pages": [
-                  "python/resource/trello",
-                  "python/resource/paperclip"
+                  "python/resource/trello"
                 ]
               },
               "python/resource/new"
@@ -310,7 +384,9 @@
               "typescript/agents/pi",
               "typescript/agents/vercel",
               "typescript/agents/mastra",
+              "typescript/agents/opencode",
               "typescript/agents/claude-code",
+              "typescript/agents/claude-agent-sdk",
               "typescript/agents/codex"
             ]
           },
@@ -335,7 +411,27 @@
                   "typescript/setup/r2",
                   "typescript/setup/gcs",
                   "typescript/setup/oci",
-                  "typescript/setup/supabase"
+                  "typescript/setup/supabase",
+                  "typescript/setup/minio",
+                  "typescript/setup/ceph",
+                  "typescript/setup/seaweedfs",
+                  "typescript/setup/wasabi",
+                  "typescript/setup/backblaze",
+                  "typescript/setup/digitalocean",
+                  "typescript/setup/tencent",
+                  "typescript/setup/aliyun",
+                  "typescript/setup/scaleway",
+                  "typescript/setup/qingstor"
+                ]
+              },
+              {
+                "group": "Hugging Face",
+                "icon": "/images/huggingface-logo.svg",
+                "pages": [
+                  "typescript/setup/hf_buckets",
+                  "typescript/setup/hf_datasets",
+                  "typescript/setup/hf_models",
+                  "typescript/setup/hf_spaces"
                 ]
               },
               {
@@ -353,8 +449,9 @@
                 "group": "Cloud Files",
                 "icon": "folder-open",
                 "pages": [
-                  "typescript/setup/dropbox",
-                  "typescript/setup/box"
+                  "typescript/dropbox",
+                  "typescript/box",
+                  "typescript/setup/databricks_volume"
                 ]
               },
               {
@@ -381,7 +478,9 @@
                 "icon": "database",
                 "pages": [
                   "typescript/setup/mongodb",
-                  "typescript/setup/postgres"
+                  "typescript/setup/postgres",
+                  "typescript/setup/chroma",
+                  "typescript/setup/lancedb"
                 ]
               },
               {
@@ -395,10 +494,7 @@
                 "group": "Others",
                 "icon": "ellipsis",
                 "pages": [
-                  "typescript/setup/trello",
-                  "typescript/setup/sscholar",
-                  "typescript/setup/posthog",
-                  "typescript/setup/vercel"
+                  "typescript/setup/trello"
                 ]
               }
             ]
@@ -426,7 +522,7 @@
       },
       {
         "label": "strukto-ai/mirage",
-      "icon": "github",
+        "icon": "github",
         "href": "https://github.com/strukto-ai/mirage"
       }
     ]

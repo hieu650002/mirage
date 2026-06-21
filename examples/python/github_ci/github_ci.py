@@ -34,6 +34,14 @@ resource = GitHubCIResource(config=config)
 async def main():
     ws = Workspace({"/ci": resource}, mode=MountMode.READ)
 
+    print("=== not-found errors show the full virtual path ===")
+    for cmd in ("cat /ci/__nf_missing__.txt", "head /ci/__nf_missing__.txt",
+                "stat /ci/__nf_missing__.txt"):
+        result = await ws.execute(cmd)
+        print(f"$ {cmd}")
+        print(f"  exit={result.exit_code}  "
+              f"{(await result.stderr_str()).strip()}")
+
     # ── discover structure ────────────────────────────
     print("=== ls /ci/ (root) ===")
     r = await ws.execute("ls /ci/")
@@ -146,13 +154,13 @@ async def main():
     r = await ws.execute("tree -L 2 /ci/")
     print(await r.stdout_str())
 
-    # ── find ──────────────────────────────────────────
-    print("=== find /ci/runs/ -name '*.log' | head -n 10 ===")
-    r = await ws.execute('find /ci/runs/ -name "*.log" | head -n 10')
+    # ── find (scoped to a single run) ─────────────────
+    print(f"=== find {run_path}/ -name '*.log' | head -n 10 ===")
+    r = await ws.execute(f'find "{run_path}/" -name "*.log" | head -n 10')
     print(await r.stdout_str())
 
-    print("=== find /ci/runs/ -name '*.json' | head -n 10 ===")
-    r = await ws.execute('find /ci/runs/ -name "*.json" | head -n 10')
+    print(f"=== find {run_path}/ -name '*.json' | head -n 10 ===")
+    r = await ws.execute(f'find "{run_path}/" -name "*.json" | head -n 10')
     print(await r.stdout_str())
 
     # ── cd into a run ─────────────────────────────────

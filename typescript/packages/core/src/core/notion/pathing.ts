@@ -12,32 +12,22 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-const ID_PATTERN = /^[0-9a-f]{32}$/
-const TRAILING_ID_PATTERN = /__([0-9a-f]{32})$/
+import { parseIdName } from '../../utils/naming.ts'
+import { sanitizeName } from '../../utils/sanitize.ts'
 
-export function sanitizeTitle(title: string): string {
-  const trimmed = title.trim()
-  if (trimmed === '') return 'untitled'
-  return trimmed.replace(/\//g, '-')
-}
+export { sanitizeName } from '../../utils/sanitize.ts'
+export { parseIdName as splitSuffixId } from '../../utils/naming.ts'
 
 export function stripDashes(id: string): string {
   return id.replace(/-/g, '')
 }
 
 export function formatSegment(page: { id: string; title: string }): string {
-  return `${sanitizeTitle(page.title)}__${page.id.toLowerCase()}`
+  const label = page.title !== '' ? sanitizeName(page.title) : 'untitled'
+  return `${label}__${page.id}`
 }
 
 export function parseSegment(segment: string): { title: string; id: string } {
-  const match = TRAILING_ID_PATTERN.exec(segment)
-  if (match === null) {
-    throw new Error(`invalid notion segment: ${segment}`)
-  }
-  const id = match[1] ?? ''
-  if (!ID_PATTERN.test(id)) {
-    throw new Error(`invalid notion segment: ${segment}`)
-  }
-  const title = segment.slice(0, segment.length - id.length - 2)
+  const [title, id] = parseIdName(segment)
   return { title, id }
 }

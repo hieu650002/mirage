@@ -12,10 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { FileStat, PathSpec } from '../../types.ts'
+import type { FileStat } from '../../types.ts'
 import { FileType } from '../../types.ts'
+import { rstripSlash } from '../../utils/slash.ts'
+import { gnuBasename } from '../../utils/path.ts'
 import { getExtension } from '../resolve.ts'
-import { compilePattern, grepLines } from './grep_helper.ts'
+import { BINARY_EXTENSIONS, compilePattern, grepLines } from './grep_helper.ts'
+import { fnmatch } from '../../utils/fnmatch.ts'
 
 export const TYPE_EXTENSIONS: Record<string, string[]> = {
   py: ['.py'],
@@ -50,27 +53,13 @@ export interface RgFilterOptions {
   hidden: boolean
 }
 
-function basename(path: string): string {
-  const i = path.lastIndexOf('/')
-  return i === -1 ? path : path.slice(i + 1)
-}
-
-function fnmatch(name: string, pattern: string): boolean {
-  // Convert shell glob to regex
-  const re = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\?/g, '.')
-    .replace(/\*/g, '.*')
-  return new RegExp(`^${re}$`).test(name)
-}
-
 export function rgMatchesFilter(
   entry: string,
   fileType: string | null,
   globPattern: string | null,
   hidden: boolean,
 ): boolean {
-  const base = basename(entry)
+  const base = gnuBasename(entry)
   if (!hidden && base.startsWith('.')) return false
   if (fileType !== null) {
     const exts = TYPE_EXTENSIONS[fileType] ?? [`.${fileType}`]
@@ -134,7 +123,8 @@ function searchFile(
     if (opts.maxCount !== null && count.n >= opts.maxCount) break
   }
   if (opts.countOnly) {
-    return [String(count.n)]
+    if (count.n === 0) return []
+    return prefixPath !== null ? [`${prefixPath}:${String(count.n)}`] : [String(count.n)]
   }
   return results
 }
@@ -147,6 +137,7 @@ export async function rgFull(
   pattern: string,
   opts: RgFullOptions,
   warnings: string[] | null,
+  filePrefix: string | null = null,
 ): Promise<string[]> {
   const compiled = compilePattern(pattern, opts.ignoreCase, opts.fixedString, opts.wholeWord)
 
@@ -176,7 +167,7 @@ export async function rgFull(
       if (warnings !== null) warnings.push(`rg: ${path}: ${String(err)}`)
       return []
     }
-    return searchFile(data, compiled, opts, null)
+    return searchFile(data, compiled, opts, filePrefix)
   }
 
   const results: string[] = []
@@ -198,13 +189,17 @@ export async function rgFull(
     }
 
     if (s.type === FileType.DIRECTORY) {
-      const base = basename(entry)
+      // box/dropbox readdir marks folders with a trailing slash; strip it so
+      // basename sees the real directory name (hidden-dir skip).
+      const child = rstripSlash(entry)
+      const base = gnuBasename(child)
       if (!opts.hidden && base.startsWith('.')) continue
-      const sub = await rgFull(readdirFn, statFn, readBytesFn, entry, pattern, opts, warnings)
+      const sub = await rgFull(readdirFn, statFn, readBytesFn, child, pattern, opts, warnings)
       results.push(...sub)
       continue
     }
 
+    if (BINARY_EXTENSIONS.has(getExtension(entry) ?? '')) continue
     if (!rgMatchesFilter(entry, opts.fileType, opts.globPattern, opts.hidden)) continue
 
     let data: string[]
@@ -222,12 +217,6 @@ export async function rgFull(
 
   return results
 }
-
-export type FiletypeFn = (
-  paths: PathSpec[],
-  pattern: string,
-  opts: { stdin: null; ignoreCase: boolean },
-) => Promise<[AsyncIterable<Uint8Array> | Uint8Array | null, unknown]>
 
 export interface RgFolderFiletypeOptions {
   ignoreCase: boolean
@@ -250,7 +239,6 @@ export async function rgFolderFiletype(
   readBytesFn: AsyncReadBytesFn,
   path: string,
   pattern: string,
-  filetypeFns: Record<string, FiletypeFn>,
   opts: RgFolderFiletypeOptions,
   warnings: string[] | null,
 ): Promise<string[]> {
@@ -282,7 +270,6 @@ export async function rgFolderFiletype(
         readBytesFn,
         entry,
         pattern,
-        filetypeFns,
         opts,
         warnings,
       )
@@ -290,16 +277,9 @@ export async function rgFolderFiletype(
       continue
     }
 
+    if (BINARY_EXTENSIONS.has(getExtension(entry) ?? '')) continue
     if (!rgMatchesFilter(entry, opts.fileType, opts.globPattern, opts.hidden)) continue
 
-    const ext = getExtension(entry)
-    const filetypeFn = ext !== null ? filetypeFns[ext] : undefined
-    if (filetypeFn !== undefined) {
-      // Filetype-specific extraction path (feather/parquet/hdf5 etc.)
-      // Skipped here; fall through to text scan below.
-    }
-
-    // Plain text scan
     let raw: Uint8Array
     try {
       raw = await readBytesFn(entry)
@@ -318,7 +298,8 @@ export async function rgFolderFiletype(
       maxCount: opts.maxCount,
     })
     if (opts.countOnly) {
-      if (hits.length > 0) results.push(`${entry}:${hits[0] ?? ''}`)
+      const c = hits[0] ?? '0'
+      if (c !== '0') results.push(`${entry}:${c}`)
     } else if (opts.filesOnly) {
       for (const h of hits) results.push(h)
     } else {

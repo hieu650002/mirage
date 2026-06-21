@@ -12,14 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from datetime import datetime, timezone
-
 from mirage.accessor.redis import RedisAccessor
+from mirage.cache.context import (invalidate_after_unlink,
+                                  invalidate_after_write)
+from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def rename(
@@ -36,8 +34,8 @@ async def rename(
     if isinstance(dst, PathSpec):
         dst = dst.strip_prefix
     store = accessor.store
-    s, d = _norm(src), _norm(dst)
-    now = datetime.now(timezone.utc).isoformat()
+    s, d = norm(src), norm(dst)
+    now = now_iso()
     if await store.has_file(s):
         data = await store.get_file(s)
         mod = await store.get_modified(s)
@@ -61,3 +59,5 @@ async def rename(
                 await store.set_file(new_key, data)
     else:
         raise FileNotFoundError(s)
+    await invalidate_after_write(d)
+    await invalidate_after_unlink(s)

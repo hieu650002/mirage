@@ -17,8 +17,10 @@ import { parquetWriteBuffer } from 'hyparquet-writer'
 import { materialize } from '../../../../io/types.ts'
 import { RAMResource } from '../../../../resource/ram/ram.ts'
 import { PathSpec } from '../../../../types.ts'
+import { RAM_COMMANDS } from '../index.ts'
 import { RAM_LS } from './ls.ts'
-import { RAM_LS_PARQUET } from './ls_parquet.ts'
+
+const RAM_LS_PARQUET = RAM_COMMANDS.filter((c) => c.name === 'ls' && c.filetype === '.parquet')
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
@@ -26,7 +28,7 @@ const DEC = new TextDecoder()
 async function runLs(
   resource: RAMResource,
   paths: PathSpec[],
-  flags: Record<string, string | boolean> = {},
+  flags: Record<string, string | boolean | string[]> = {},
 ): Promise<string> {
   const cmd = RAM_LS[0]
   if (cmd === undefined) throw new Error('ls not registered')

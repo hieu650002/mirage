@@ -23,9 +23,15 @@ export const NOTION_PROMPT = `{prefix}
       database.json
       <row-page-title>__<page-id>/
         page.json
-  Hierarchical page tree plus shared databases. cat shows page/database content as JSON.
+  Hierarchical page tree plus shared databases. cat page.json shows
+  metadata, the page body rendered as markdown, and raw blocks (nested
+  blocks under "children"). cat database.json shows the database metadata
+  and its typed property schema (not the rows); ls the database dir to
+  list row pages.
 
-  Titles are sanitized — don't construct paths; ls the parent dir.`
+  Titles are sanitized; don't construct paths, ls the parent dir.`
 
 export const NOTION_WRITE_PROMPT = `  Write commands:
-    notion-page-create --parent <parent-path> --title "title"`
+    notion-page-create --parent <parent-path> --title "title"
+    notion-block-append --params '{"block_id":"..."}' --json '{"children":[...]}'
+    notion-comment-add --json '{"parent":{"page_id":"..."},"rich_text":[{"text":{"content":"Comment"}}]}'`

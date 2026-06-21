@@ -17,6 +17,12 @@ import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { buildApp, type BuildAppOptions, type MirageApp } from '../app.ts'
+import {
+  ENV_DAEMON_PORT,
+  ENV_IDLE_GRACE_SECONDS,
+  ENV_SNAPSHOT_ROOT,
+  ENV_VERSION_ROOT,
+} from '../env.ts'
 
 const DEFAULT_PORT = 8765
 
@@ -26,11 +32,15 @@ export interface DaemonEnvOpts {
 }
 
 export function buildDaemonOpts(env: Record<string, string | undefined>): DaemonEnvOpts {
-  const port = Number(env.MIRAGE_DAEMON_PORT ?? DEFAULT_PORT)
-  const idleGraceSeconds = Number(env.MIRAGE_IDLE_GRACE_SECONDS ?? '30')
-  const opts: Omit<BuildAppOptions, 'onIdleExit'> = { idleGraceSeconds }
-  const persistDir = env.MIRAGE_PERSIST_DIR ?? ''
-  if (persistDir !== '') opts.persistDir = persistDir
+  const port = Number(env[ENV_DAEMON_PORT] ?? DEFAULT_PORT)
+  const idleGraceSeconds = Number(env[ENV_IDLE_GRACE_SECONDS] ?? '30')
+  const versionRoot = env[ENV_VERSION_ROOT]
+  const snapshotRoot = env[ENV_SNAPSHOT_ROOT]
+  const opts: Omit<BuildAppOptions, 'onIdleExit'> = {
+    idleGraceSeconds,
+    ...(versionRoot !== undefined ? { versionRoot } : {}),
+    ...(snapshotRoot !== undefined ? { snapshotRoot } : {}),
+  }
   return { port, opts }
 }
 
@@ -72,7 +82,6 @@ async function main(): Promise<void> {
   app = buildApp({ ...opts, onIdleExit: triggerExit })
   process.on('SIGTERM', triggerExit)
   process.on('SIGINT', triggerExit)
-  await app.restorePromise
   await app.listen({ port, host: '127.0.0.1' })
   writePidFile()
 }

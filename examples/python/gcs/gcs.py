@@ -13,7 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import json
 import os
+import time
 
 from dotenv import load_dotenv
 
@@ -106,7 +108,7 @@ async def main():
     r = await ws.execute("jq .metadata /gcs/data/example.json")
     print(f"  {(await r.stdout_str()).strip()[:200]}")
 
-    print("\n=== jq -r '.departments[].teams[].name'"
+    print("\n=== jq '.departments[].teams[].name'"
           " /gcs/data/example.json ===")
     r = await ws.execute(
         'jq ".departments[].teams[].name" /gcs/data/example.json')
@@ -271,21 +273,24 @@ async def main():
     print("\n=== echo \"\\$X\" (escaped dollar stays literal) ===")
     await ws.execute("export X=expanded")
     r = await ws.execute('echo "\\$X"')
-    print(f"  stdout: {(await r.stdout_str()).strip()!r} (expect '$X')")
+    print(f"  stdout: {json.dumps((await r.stdout_str()).strip())}"
+          " (expect '$X')")
 
     print("\n=== echo \"$X\" (unescaped dollar expands) ===")
     r = await ws.execute('echo "$X"')
-    print(f"  stdout: {(await r.stdout_str()).strip()!r} (expect 'expanded')")
+    print(f"  stdout: {json.dumps((await r.stdout_str()).strip())}"
+          " (expect 'expanded')")
 
     print("\n=== echo '$X' (single quotes keep $X literal) ===")
     r = await ws.execute("echo '$X'")
-    print(f"  stdout: {(await r.stdout_str()).strip()!r} (expect '$X')")
+    print(f"  stdout: {json.dumps((await r.stdout_str()).strip())}"
+          " (expect '$X')")
 
     print("\n=== cat \"$DIR/example.json\" (env var in path) ===")
     await ws.execute("export DIR=/gcs/data")
     r = await ws.execute('cat "$DIR/example.json" | head -n 3')
     out = (await r.stdout_str()).strip().splitlines()
-    print(f"  first lines: {out}")
+    print(f"  first lines: {json.dumps(out, separators=(',', ':'))}")
 
     print("\n=== cat $(echo /gcs/data/example.json) | head -n 1"
           " (command sub as path) ===")
@@ -305,13 +310,13 @@ async def main():
     # IS populated. Drain tasks are awaited explicitly (vs sleeping)
     # so we don't race the network.
     target = "/gcs/data/example.jsonl"
-    await ws.reset()
+    await ws.cache.clear()
     print("\n=== max_drain_bytes=1MB then cat | head (drain cancelled) ===")
     ws.max_drain_bytes = 1_000_000
     r = await ws.execute(f"cat {target} | head -n 3")
     print(f"  head returned {len((await r.stdout_str()).splitlines())} lines")
     drain_keys = list(ws.cache._drain_tasks.keys())
-    print(f"  drain tasks: {drain_keys}")
+    print(f"  drain tasks: {json.dumps(drain_keys, separators=(',', ':'))}")
     for k in drain_keys:
         await ws.cache._drain_tasks[k]
     cached = None
@@ -323,13 +328,13 @@ async def main():
         status = "EMPTY (drain cancelled, as expected)"
     print(f"  cache after small budget: {status}")
 
-    await ws.reset()
+    await ws.cache.clear()
     print("\n=== max_drain_bytes=None then cat | head (drain completes) ===")
     ws.max_drain_bytes = None
     r = await ws.execute(f"cat {target} | head -n 3")
     print(f"  head returned {len((await r.stdout_str()).splitlines())} lines")
     drain_keys = list(ws.cache._drain_tasks.keys())
-    print(f"  drain tasks: {drain_keys}")
+    print(f"  drain tasks: {json.dumps(drain_keys, separators=(',', ':'))}")
     for k in drain_keys:
         await ws.cache._drain_tasks[k]
     cached = None
@@ -340,6 +345,51 @@ async def main():
     else:
         status = "EMPTY"
     print(f"  cache after unbounded: {status}")
+
+    # ── chunk-level streaming + multi-stage pipe backpressure ─────────
+    print("\n=== STREAMING (single command) ===")
+    target = "/gcs/data/example.jsonl"
+    r = await ws.execute(f"stat -c '%s' {target}")
+    size = int((await r.stdout_str()).strip())
+    print(f"  object size: {size:,} bytes")
+
+    async def measure(label: str, cmd: str) -> None:
+        before = sum(rec.bytes for rec in ws.ops.records)
+        t0 = time.monotonic()
+        r = await ws.execute(cmd)
+        dt = time.monotonic() - t0
+        net = sum(rec.bytes for rec in ws.ops.records) - before
+        head = (await r.stdout_str()).strip().splitlines()
+        first = head[0][:48] if head else ""
+        print(f"  {label:42s} bytes={net:>10,}  t={dt:4.2f}s  "
+              f"lines={len(head):>4}  out0={json.dumps(first)}")
+
+    await ws.cache.clear()
+    await measure("head -n 1 (line-streamed)", f"head -n 1 {target}")
+    await ws.cache.clear()
+    await measure("head -c 100 (byte-range)", f"head -c 100 {target}")
+    await ws.cache.clear()
+    await measure("grep -m 1 (early-exit)", f"grep -m 1 mirage {target}")
+
+    print("\n=== STREAMING CHAIN (multi-stage pipe backpressure) ===")
+    await ws.cache.clear()
+    await measure("cat | head -n 1", f"cat {target} | head -n 1")
+    await ws.cache.clear()
+    await measure("cat | tr A-Z a-z | head -n 1",
+                  f"cat {target} | tr A-Z a-z | head -n 1")
+    await ws.cache.clear()
+    await measure("cat | grep mirage | head -n 1",
+                  f"cat {target} | grep mirage | head -n 1")
+    await ws.cache.clear()
+    await measure("4-stage: cat|tr|grep|head -n 1",
+                  f"cat {target} | tr A-Z a-z | grep mirage | head -n 1")
+    await ws.cache.clear()
+    await measure(
+        "5-stage: cat|tr|grep|head|wc -l",
+        f"cat {target} | tr A-Z a-z | grep mirage | head -n 1 "
+        "| wc -l")
+    await ws.cache.clear()
+    await measure("non-cancellable: cat | wc -l", f"cat {target} | wc -l")
 
     print(f"\nStats: {ops_summary()}")
 

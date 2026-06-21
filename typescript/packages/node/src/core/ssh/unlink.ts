@@ -12,9 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { invalidateAfterUnlink } from '@struktoai/mirage-core'
 import type { PathSpec } from '@struktoai/mirage-core'
+import { enoent } from '@struktoai/mirage-core'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
-import { enoent, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
+import { isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
 
 export async function unlink(accessor: SSHAccessor, p: PathSpec): Promise<void> {
   const sftp = await accessor.sftp()
@@ -26,8 +28,9 @@ export async function unlink(accessor: SSHAccessor, p: PathSpec): Promise<void> 
         resolveFn()
         return
       }
-      if (isNoSuchFile(err)) rejectFn(enoent(virtual))
+      if (isNoSuchFile(err)) rejectFn(enoent(p))
       else rejectFn(err)
     })
   })
+  await invalidateAfterUnlink(p)
 }

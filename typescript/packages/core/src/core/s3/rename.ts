@@ -12,14 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { invalidateAfterUnlink, invalidateAfterWrite } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
 import type { S3Accessor } from '../../accessor/s3.ts'
 import { loadS3Module, rawPathOf, s3Key, withClient } from './_client.ts'
 
 export async function rename(accessor: S3Accessor, src: PathSpec, dst: PathSpec): Promise<void> {
   const { CopyObjectCommand, DeleteObjectCommand } = await loadS3Module(accessor.config)
-  const srcKey = s3Key(rawPathOf(src))
-  const dstKey = s3Key(rawPathOf(dst))
+  const srcKey = s3Key(rawPathOf(src), accessor.config)
+  const dstKey = s3Key(rawPathOf(dst), accessor.config)
   const { bucket } = accessor.config
   await withClient(accessor.config, async (client) => {
     await client.send(
@@ -31,4 +32,6 @@ export async function rename(accessor: S3Accessor, src: PathSpec, dst: PathSpec)
     )
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: srcKey }))
   })
+  await invalidateAfterWrite(dst)
+  await invalidateAfterUnlink(src)
 }

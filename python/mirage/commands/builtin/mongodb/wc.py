@@ -15,12 +15,20 @@
 from collections.abc import AsyncIterator
 
 from mirage.accessor.mongodb import MongoDBAccessor
+from mirage.cache.index import IndexCacheStore
+from mirage.commands.builtin.generic.wc import (WCCounts, format_wc,
+                                                format_wc_lines)
+from mirage.commands.builtin.generic.wc import wc as generic_wc
 from mirage.commands.builtin.mongodb._provision import file_read_provision
+from mirage.commands.builtin.utils.output import format_records
+from mirage.commands.builtin.utils.stream import _read_stdin_async
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.core.mongodb._client import count_documents
 from mirage.core.mongodb.glob import resolve_glob
+from mirage.core.mongodb.read import read as mongodb_read
 from mirage.core.mongodb.scope import detect_scope
+from mirage.core.mongodb.types import ScopeLevel
 from mirage.io.types import ByteSource, IOResult
 from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
@@ -38,10 +46,6 @@ async def wc_provision(
                          for p in paths))
 
 
-def _is_single_db(config) -> bool:
-    return (config.databases is not None and len(config.databases) == 1)
-
-
 @command("wc", resource="mongodb", spec=SPECS["wc"], provision=wc_provision)
 async def wc(
     accessor: MongoDBAccessor,
@@ -53,42 +57,44 @@ async def wc(
     c: bool = False,
     m: bool = False,
     L: bool = False,
+    index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    if w or m or L:
-        msg = "wc: only -l and -c supported for MongoDB"
-        return None, IOResult(
-            exit_code=1,
-            stderr=msg.encode(),
-        )
-
-    if not paths:
+    if paths:
+        paths = await resolve_glob(accessor, paths, index)
+        # Line counts on collections come from a server-side count_documents
+        # instead of reading every document. -l only (default prints words
+        # and bytes too, which needs the content).
+        count_only = args_l and not (w or c or m or L)
+        scopes = [detect_scope(p) for p in paths]
+        rows: list[tuple[WCCounts, str | None]] = []
+        if count_only and all(
+                s.level == ScopeLevel.DOCUMENTS and s.database and s.name
+                for s in scopes):
+            total = 0
+            for p, scope in zip(paths, scopes):
+                count = await count_documents(accessor.client, scope.database,
+                                              scope.name)
+                rows.append((WCCounts(lines=count), p.original))
+                total += count
+            if len(paths) > 1:
+                rows.append((WCCounts(lines=total), "total"))
+            return format_records(format_wc_lines(rows,
+                                                  args_l=True)), IOResult()
+        totals = WCCounts()
+        for p in paths:
+            data = await mongodb_read(accessor, p, index)
+            counts = await generic_wc(data)
+            rows.append((counts, p.original))
+            totals.merge(counts)
+        if len(paths) > 1:
+            rows.append((totals, "total"))
+        return format_records(
+            format_wc_lines(rows, args_l=args_l, w=w, c=c, m=m,
+                            L=L)), IOResult()
+    data = await _read_stdin_async(stdin)
+    if data is None:
         raise ValueError("wc: missing operand")
-
-    single_db = _is_single_db(accessor.config)
-    dbs = accessor.config.databases
-    single_db_name = dbs[0] if single_db else None
-    scope = detect_scope(
-        paths[0],
-        single_db=single_db,
-        single_db_name=single_db_name,
-    )
-
-    if scope.level == "file" and scope.database and scope.collection:
-        count = await count_documents(
-            accessor.client,
-            scope.database,
-            scope.collection,
-        )
-        if c:
-            paths = await resolve_glob(accessor, paths)
-            from mirage.core.mongodb.read import read
-            data = await read(
-                accessor,
-                paths[0].original,
-                _extra.get("index"),
-            )
-            return str(len(data)).encode(), IOResult()
-        return str(count).encode(), IOResult()
-
-    raise ValueError("wc: path must target a collection file")
+    counts = await generic_wc(data)
+    return format_wc(counts, args_l=args_l, w=w, c=c, m=m,
+                     L=L).encode() + b"\n", IOResult()

@@ -19,10 +19,20 @@ import type { PostgresAccessor } from '../../accessor/postgres.ts'
 import { estimateSize, fetchRows } from './_client.ts'
 import { buildDatabaseJson, buildEntitySchemaJson } from './_schema_json.ts'
 import { detectScope } from './scope.ts'
+import { enoent } from '../../utils/errors.ts'
 
 export interface ReadOptions {
   limit?: number | null
   offset?: number | null
+}
+
+export async function* readStream(
+  accessor: PostgresAccessor,
+  path: PathSpec | string,
+  index?: IndexCacheStore,
+  options: ReadOptions = {},
+): AsyncIterable<Uint8Array> {
+  yield await read(accessor, path, index, options)
 }
 
 export async function read(
@@ -51,9 +61,7 @@ export async function read(
   if (scope.level === 'entity_rows') {
     return readRows(accessor, scope.schema, scope.kind, scope.entity, options)
   }
-  const err = new Error(raw) as Error & { code?: string }
-  err.code = 'ENOENT'
-  throw err
+  throw enoent(spec)
 }
 
 async function readRows(

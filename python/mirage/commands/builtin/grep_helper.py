@@ -13,15 +13,32 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 
+from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.constants import PatternType
 from mirage.commands.builtin.grep_context import grep_context_lines
 from mirage.commands.builtin.utils.types import (_AsyncReadBytes,
                                                  _AsyncReaddir, _AsyncStat)
+from mirage.commands.builtin.utils.wrap import call_read_bytes
+from mirage.commands.errors import UsageError
 from mirage.commands.resolve import COMPOUND_EXTENSIONS
+from mirage.commands.spec.types import FlagView
 from mirage.io.async_line_iterator import AsyncLineIterator
+from mirage.io.types import IOResult
 from mirage.types import FileType, PathSpec
+
+BINARY_EXTENSIONS = frozenset({
+    ".parquet",
+    ".orc",
+    ".feather",
+    ".arrow",
+    ".ipc",
+    ".hdf5",
+    ".h5",
+})
+
+NEVER_MATCH = r"(?!)"
 
 
 def classify_pattern(
@@ -37,11 +54,134 @@ def classify_pattern(
     Returns:
         PatternType: EXACT, SIMPLE, or REGEX.
     """
+    if "\n" in pattern:
+        return PatternType.REGEX
     if fixed_string:
         return PatternType.EXACT
     if re.fullmatch(r'[\w\s\-_.]+', pattern):
         return PatternType.SIMPLE
     return PatternType.REGEX
+
+
+def pattern_arg(texts: Sequence[str], flags: FlagView) -> str | None:
+    """Resolve the pattern-list argument from -e values or the positional.
+
+    Args:
+        texts (Sequence[str]): positional TEXT operands.
+        flags (FlagView): typed view over raw flag kwargs.
+
+    Returns:
+        str | None: POSIX newline-joined pattern list (each -e value may
+            itself be a newline-separated list), or None when neither -e nor
+            a positional pattern was supplied.
+    """
+    e_values = flags.list("e")
+    if e_values:
+        return "\n".join(e_values)
+    if texts:
+        return texts[0]
+    return None
+
+
+async def resolve_pattern(
+    texts: Sequence[str],
+    flags: FlagView,
+    read_bytes: Callable[..., Awaitable[bytes]],
+    accessor: object,
+    index: IndexCacheStore | None,
+    usage: str,
+) -> tuple[str, bool]:
+    """Resolve the search pattern from -e/positional/-f flag arguments.
+
+    Args:
+        texts (Sequence[str]): positional TEXT operands.
+        flags (FlagView): typed view over raw flag kwargs.
+        read_bytes (Callable[..., Awaitable[bytes]]): whole-file reader used
+            for -f pattern files.
+        accessor (object): backend accessor for read_bytes.
+        index (IndexCacheStore | None): optional cache index.
+        usage (str): usage error message when no pattern was supplied.
+
+    Returns:
+        tuple[str, bool]: (newline-separated pattern list, never_match) where
+            never_match is True when -f supplied zero patterns (GNU: match
+            nothing; -F escaping must be skipped for the sentinel).
+    """
+    pattern = pattern_arg(texts, flags)
+
+    pattern_file = flags.raw("f")
+    if isinstance(pattern_file, (PathSpec, list)):
+        files = (pattern_file
+                 if isinstance(pattern_file, list) else [pattern_file])
+        for pf in files:
+            file_data = await call_read_bytes(read_bytes,
+                                              accessor,
+                                              pf,
+                                              index=index,
+                                              prefix=pf.prefix)
+            pattern = merge_pattern_list(pattern, file_data)
+        if pattern is None:
+            return NEVER_MATCH, True
+    if pattern is None:
+        raise UsageError(usage)
+    return pattern, False
+
+
+def merge_pattern_list(
+    pattern: str | None,
+    file_data: bytes | None,
+) -> str | None:
+    """Merge a pattern list with the content of a -f pattern file.
+
+    Args:
+        pattern (str | None): newline-separated pattern list from -e or the
+            positional argument, or None when only -f supplied patterns.
+        file_data (bytes | None): raw -f file content, or None without -f.
+
+    Returns:
+        str | None: merged newline-separated pattern list, or None when the
+            list is empty (GNU: zero patterns match nothing).
+    """
+    parts: list[str] = [] if pattern is None else pattern.split("\n")
+    if file_data:
+        text = file_data.decode(errors="replace")
+        if text.endswith("\n"):
+            text = text[:-1]
+        parts.extend(text.split("\n"))
+    if not parts:
+        return None
+    return "\n".join(parts)
+
+
+def build_pattern_str(
+    pattern: str,
+    fixed_string: bool = False,
+    whole_word: bool = False,
+) -> str:
+    """Build a regex source string from a POSIX pattern list.
+
+    Args:
+        pattern (str): newline-separated pattern list; a line matches when
+            any of the patterns matches.
+        fixed_string (bool): True if -F flag is set.
+        whole_word (bool): True if -w flag is set.
+
+    Returns:
+        str: regex source string.
+    """
+    parts = pattern.split("\n")
+    if len(parts) == 1:
+        pat_str = re.escape(pattern) if fixed_string else pattern
+        if whole_word:
+            pat_str = r"\b" + pat_str + r"\b"
+        return pat_str
+    subs: list[str] = []
+    for part in parts:
+        sub = re.escape(part) if fixed_string else f"(?:{part})"
+        if whole_word:
+            sub = r"\b" + sub + r"\b"
+        subs.append(sub)
+    return "|".join(subs)
 
 
 def compile_pattern(
@@ -51,10 +191,8 @@ def compile_pattern(
     whole_word: bool = False,
 ) -> re.Pattern[str]:
     flags = re.IGNORECASE if ignore_case else 0
-    pat_str = re.escape(pattern) if fixed_string else pattern
-    if whole_word:
-        pat_str = r"\b" + pat_str + r"\b"
-    return re.compile(pat_str, flags)
+    return re.compile(build_pattern_str(pattern, fixed_string, whole_word),
+                      flags)
 
 
 def get_extension(path: str) -> str | None:
@@ -101,6 +239,85 @@ def grep_lines(
     if files_only:
         return [path] if count > 0 else []
     return results
+
+
+def grep_count_value(results: list[str]) -> int:
+    """Return the numeric value from count-only grep results.
+
+    Args:
+        results (list[str]): `grep_lines(..., count_only=True)` output.
+
+    Returns:
+        int: The parsed match count, or zero when the result is empty.
+    """
+    if not results:
+        return 0
+    return int(results[0])
+
+
+def grep_count_has_matches(results: list[str]) -> bool:
+    """Return whether count-only grep results contain any matches.
+
+    Args:
+        results (list[str]): `grep_lines(..., count_only=True)` output.
+
+    Returns:
+        bool: True when the parsed count is greater than zero.
+    """
+    return grep_count_value(results) > 0
+
+
+async def nonzero_count_stream(
+        source: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """Drop zero-count chunks for `rg -c` fallback streams.
+
+    Args:
+        source (AsyncIterator[bytes]): Count-only grep stream.
+
+    Yields:
+        bytes: Count chunks whose parsed value is greater than zero.
+    """
+    async for chunk in source:
+        count = int(chunk.decode(errors="replace").strip() or "0")
+        if count > 0:
+            yield chunk
+
+
+def count_records_have_matches(results: list[str]) -> bool:
+    """Return whether any `path:count` record has a nonzero count.
+
+    Args:
+        results (list[str]): Count-only records in `path:count` form.
+
+    Returns:
+        bool: True when any parsed count is greater than zero.
+    """
+    return any(int(r.rsplit(":", 1)[-1]) > 0 for r in results)
+
+
+async def count_exit_stream(
+    source: AsyncIterator[bytes],
+    io: IOResult,
+) -> AsyncIterator[bytes]:
+    """Yield count-only grep output, setting exit 1 when all counts are zero.
+
+    GNU grep -c prints the count but still exits 1 when no lines were
+    selected, so emptiness-based exit detection cannot apply.
+
+    Args:
+        source (AsyncIterator[bytes]): Count-only grep stream.
+        io (IOResult): Result whose exit_code becomes 1 when nothing matched.
+
+    Yields:
+        bytes: The unchanged count chunks.
+    """
+    any_match = False
+    async for chunk in source:
+        if int(chunk.decode(errors="replace").strip() or "0") > 0:
+            any_match = True
+        yield chunk
+    if not any_match:
+        io.exit_code = 1
 
 
 async def grep_stream(
@@ -164,134 +381,6 @@ async def grep_stream(
         yield str(match_count).encode() + b"\n"
 
 
-async def grep_folder_filetype(
-    readdir_fn: _AsyncReaddir,
-    stat_fn: _AsyncStat,
-    read_bytes_fn: _AsyncReadBytes,
-    path: str,
-    pattern: str,
-    filetype_fns: dict,
-    ignore_case: bool,
-    invert: bool,
-    line_numbers: bool,
-    count_only: bool,
-    files_only: bool,
-    only_matching: bool,
-    max_count: int | None,
-    fixed_string: bool,
-    whole_word: bool,
-    warnings: list[str] | None,
-    prefix: str = "",
-) -> list[str]:
-    results: list[str] = []
-    try:
-        entries = await readdir_fn(path)
-    except (FileNotFoundError, ValueError) as exc:
-        if warnings is not None:
-            warnings.append(f"grep: {path}: {exc}")
-        return results
-
-    pat = compile_pattern(pattern, ignore_case, fixed_string, whole_word)
-
-    for entry in entries:
-        try:
-            s = await stat_fn(entry)
-        except (FileNotFoundError, ValueError) as exc:
-            if warnings is not None:
-                warnings.append(f"grep: {entry}: {exc}")
-            continue
-
-        if s.type == FileType.DIRECTORY:
-            sub = await grep_folder_filetype(
-                readdir_fn,
-                stat_fn,
-                read_bytes_fn,
-                entry,
-                pattern,
-                filetype_fns,
-                ignore_case,
-                invert,
-                line_numbers,
-                count_only,
-                files_only,
-                only_matching,
-                max_count,
-                fixed_string,
-                whole_word,
-                warnings,
-                prefix,
-            )
-            results.extend(sub)
-            continue
-
-        ext = get_extension(entry)
-        if ext in filetype_fns:
-            try:
-                fn = filetype_fns[ext]
-                scope = PathSpec(
-                    original=entry,
-                    directory=entry.rsplit("/", 1)[0] or "/",
-                    resolved=True,
-                    prefix=prefix,
-                )
-                stdout, io = await fn(
-                    [scope],
-                    pattern,
-                    stdin=None,
-                    i=ignore_case,
-                )
-                if stdout is None:
-                    continue
-                if isinstance(stdout, bytes):
-                    data = stdout
-                else:
-                    chunks = [chunk async for chunk in stdout]
-                    data = b"".join(chunks)
-                text = data.decode(errors="replace").strip()
-                lines = text.splitlines() if text else []
-                has_csv_header = bool(lines) and "," in lines[0]
-                data_lines = lines[1:] if has_csv_header else lines
-                if not data_lines:
-                    continue
-                if files_only:
-                    results.append(entry)
-                elif count_only:
-                    results.append(str(len(data_lines)))
-                else:
-                    for line in data_lines:
-                        results.append(f"{entry}:{line}")
-            except Exception as exc:
-                if warnings is not None:
-                    warnings.append(f"grep: {entry}: {exc}")
-            continue
-
-        try:
-            raw = await read_bytes_fn(entry)
-            text_lines = raw.decode(errors="replace").splitlines()
-            for i_line, line in enumerate(text_lines, 1):
-                m = pat.search(line)
-                matched = bool(m) != invert
-                if not matched:
-                    continue
-                if files_only:
-                    results.append(entry)
-                    break
-                elif count_only:
-                    pass
-                elif only_matching and m and not invert:
-                    pfx = f"{i_line}:{m.group()}" if line_numbers else m.group(
-                    )
-                    results.append(f"{entry}:{pfx}")
-                else:
-                    pfx = f"{i_line}:{line}" if line_numbers else line
-                    results.append(f"{entry}:{pfx}")
-        except Exception as exc:
-            if warnings is not None:
-                warnings.append(f"grep: {entry}: {exc}")
-
-    return results
-
-
 async def grep_recursive(
     readdir_fn: _AsyncReaddir,
     stat_fn: _AsyncStat,
@@ -337,7 +426,10 @@ async def grep_recursive(
                 warnings,
                 read_stream_fn,
             ))
-        elif read_stream_fn is not None:
+            continue
+        if get_extension(entry) in BINARY_EXTENSIONS:
+            continue
+        if read_stream_fn is not None:
             try:
                 source = read_stream_fn(entry)
                 file_results: list[str] = []

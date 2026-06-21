@@ -16,8 +16,11 @@ import fnmatch
 import posixpath
 import re
 
-from mirage.commands.builtin.grep_helper import (compile_pattern,
-                                                 get_extension, grep_lines)
+from mirage.commands.builtin.grep_helper import (BINARY_EXTENSIONS,
+                                                 compile_pattern,
+                                                 get_extension,
+                                                 grep_count_has_matches,
+                                                 grep_lines)
 from mirage.commands.builtin.utils.types import (_AsyncReadBytes,
                                                  _AsyncReaddir, _AsyncStat,
                                                  _ReadBytes)
@@ -100,6 +103,8 @@ def rg_search_file(
             only_matching,
             max_count,
         )
+        if count_only and not grep_count_has_matches(lines):
+            return []
         if prefix_path and not count_only and not files_only:
             return [f"{entry}:{ln}" for ln in lines]
         return lines
@@ -117,7 +122,7 @@ def rg_search_file(
                 break
 
     if count_only:
-        return [str(count)]
+        return [str(count)] if count > 0 else []
     if files_only:
         return [entry] if count > 0 else []
 
@@ -144,13 +149,12 @@ def rg_search_file(
     return results
 
 
-async def rg_folder_filetype(
+async def rg_folder(
     readdir_fn: _AsyncReaddir,
     stat_fn: _AsyncStat,
     read_bytes_fn: _AsyncReadBytes,
     path: str,
     pattern: str,
-    filetype_fns: dict,
     ignore_case: bool,
     invert: bool,
     line_numbers: bool,
@@ -184,13 +188,12 @@ async def rg_folder_filetype(
             continue
 
         if s.type == FileType.DIRECTORY:
-            sub = await rg_folder_filetype(
+            sub = await rg_folder(
                 readdir_fn,
                 stat_fn,
                 read_bytes_fn,
                 entry,
                 pattern,
-                filetype_fns,
                 ignore_case,
                 invert,
                 line_numbers,
@@ -208,57 +211,28 @@ async def rg_folder_filetype(
             results.extend(sub)
             continue
 
-        if not rg_matches_filter(entry, file_type, glob_pattern, hidden):
+        if get_extension(entry) in BINARY_EXTENSIONS:
             continue
 
-        ext = get_extension(entry)
-        if ext in filetype_fns:
-            try:
-                fn = filetype_fns[ext]
-                stdout, io = await fn(
-                    [entry],
-                    pattern,
-                    stdin=None,
-                    i=ignore_case,
-                )
-                if stdout is None:
-                    continue
-                if isinstance(stdout, bytes):
-                    data = stdout
-                else:
-                    chunks = [chunk async for chunk in stdout]
-                    data = b"".join(chunks)
-                text = data.decode(errors="replace").strip()
-                lines = text.splitlines() if text else []
-                has_csv_header = bool(lines) and "," in lines[0]
-                data_lines = lines[1:] if has_csv_header else lines
-                if not data_lines:
-                    continue
-                if files_only:
-                    results.append(entry)
-                elif count_only:
-                    results.append(str(len(data_lines)))
-                else:
-                    for line in data_lines:
-                        results.append(f"{entry}:{line}")
-            except Exception as exc:
-                if warnings is not None:
-                    warnings.append(f"rg: {entry}: {exc}")
+        if not rg_matches_filter(entry, file_type, glob_pattern, hidden):
             continue
 
         try:
             raw = await read_bytes_fn(entry)
             text_lines = raw.decode(errors="replace").splitlines()
+            file_count = 0
             for i_line, line in enumerate(text_lines, 1):
                 m = pat.search(line)
                 matched = bool(m) != invert
                 if not matched:
                     continue
+                file_count += 1
                 if files_only:
                     results.append(entry)
                     break
                 elif count_only:
-                    pass
+                    if max_count is not None and file_count >= max_count:
+                        break
                 elif only_matching and m and not invert:
                     pfx = (f"{i_line}:{m.group()}"
                            if line_numbers else m.group())
@@ -266,6 +240,8 @@ async def rg_folder_filetype(
                 else:
                     pfx = f"{i_line}:{line}" if line_numbers else line
                     results.append(f"{entry}:{pfx}")
+            if count_only and file_count > 0:
+                results.append(f"{entry}:{file_count}")
         except Exception as exc:
             if warnings is not None:
                 warnings.append(f"rg: {entry}: {exc}")
@@ -294,6 +270,7 @@ async def rg_full(
     glob_pattern: str | None,
     hidden: bool,
     warnings: list[str] | None,
+    file_prefix: str | None = None,
 ) -> list[str]:
     compiled = compile_pattern(pattern, ignore_case, fixed_string, whole_word)
 
@@ -333,11 +310,16 @@ async def rg_full(
             else:
                 text = line
             pfx = f"{i_ln}:{text}" if line_numbers else text
+            if file_prefix is not None:
+                pfx = f"{file_prefix}:{pfx}"
             results.append(pfx)
             if max_count is not None and count >= max_count:
                 break
         if count_only:
-            return [str(count)]
+            if count == 0:
+                return []
+            return [f"{file_prefix}:{count}"
+                    ] if file_prefix is not None else [str(count)]
         return results
 
     results = []
@@ -383,25 +365,35 @@ async def rg_full(
                 warnings,
             ))
         else:
+            if get_extension(entry) in BINARY_EXTENSIONS:
+                continue
             if not rg_matches_filter(entry, file_type, glob_pattern, hidden):
                 continue
             try:
                 data = (await read_bytes_fn(entry)).decode(
                     errors="replace").splitlines()
+                file_count = 0
                 for i_ln, line in enumerate(data, 1):
                     m = compiled.search(line)
                     matched = bool(m) != invert
                     if not matched:
                         continue
+                    file_count += 1
                     if files_only:
                         results.append(entry)
                         break
+                    if count_only:
+                        if max_count is not None and file_count >= max_count:
+                            break
+                        continue
                     if only_matching and m and not invert:
                         text = m.group(0)
                     else:
                         text = line
                     pfx = f"{i_ln}:{text}" if line_numbers else text
                     results.append(f"{entry}:{pfx}")
+                if count_only and file_count > 0:
+                    results.append(f"{entry}:{file_count}")
             except Exception as exc:
                 if warnings is not None:
                     warnings.append(f"rg: {entry}: {exc}")

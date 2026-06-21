@@ -15,14 +15,10 @@
 import type { LangfuseAccessor } from '../../accessor/langfuse.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, type PathSpec } from '../../types.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 const TOP_LEVEL_DIRS = new Set(['traces', 'sessions', 'prompts', 'datasets'])
-
-function enoent(path: string): Error {
-  const err = new Error(`ENOENT: ${path}`) as Error & { code: string }
-  err.code = 'ENOENT'
-  return err
-}
 
 export async function stat(
   accessor: LangfuseAccessor,
@@ -35,7 +31,7 @@ export async function stat(
   if (prefix !== '' && p.startsWith(prefix)) {
     p = p.slice(prefix.length) || '/'
   }
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
 
   if (key === '') {
     return Promise.resolve(new FileStat({ name: '/', type: FileType.DIRECTORY }))
@@ -44,7 +40,7 @@ export async function stat(
   const parts = key.split('/')
 
   for (const part of parts) {
-    if (part.startsWith('.')) throw enoent(p)
+    if (part.startsWith('.')) throw enoent(path)
   }
 
   if (parts.length === 1 && TOP_LEVEL_DIRS.has(parts[0] ?? '')) {
@@ -110,5 +106,5 @@ export async function stat(
     return Promise.resolve(new FileStat({ name: parts[3] ?? '', type: FileType.TEXT }))
   }
 
-  throw enoent(p)
+  throw enoent(path)
 }

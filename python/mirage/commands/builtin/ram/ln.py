@@ -15,6 +15,7 @@
 from collections.abc import AsyncIterator
 
 from mirage.accessor.ram import RAMAccessor
+from mirage.cache.index import IndexCacheStore
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.core.ram.exists import exists
@@ -35,11 +36,12 @@ async def ln(
     f: bool = False,
     n: bool = False,
     v: bool = False,
+    index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
     if accessor.store is None or len(paths) < 2:
         raise ValueError("ln: usage: ln [-s] [-f] source dest")
-    paths = await resolve_glob(accessor, paths, _extra.get("index"))
+    paths = await resolve_glob(accessor, paths, index)
     source_path = paths[0]
     dest_path = paths[1]
     if n and await exists(accessor, dest_path):
@@ -48,4 +50,4 @@ async def ln(
     await _write_bytes(accessor, dest_path, data)
     output = f"'{source_path.original}' -> '{dest_path.original}'\n".encode(
     ) if v else None
-    return output, IOResult(writes={dest_path.original: data})
+    return output, IOResult(writes={dest_path.strip_prefix: data})

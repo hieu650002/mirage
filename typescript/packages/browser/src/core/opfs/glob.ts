@@ -13,27 +13,14 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { PathSpec } from '@struktoai/mirage-core'
+import type { OPFSAccessor } from '../../accessor/opfs.ts'
 import { SCOPE_ERROR } from './constants.ts'
 import { readdir } from './readdir.ts'
-
-function fnmatch(name: string, pattern: string): boolean {
-  let re = '^'
-  for (const ch of pattern) {
-    if (ch === '*') re += '.*'
-    else if (ch === '?') re += '.'
-    else if (/[.+^${}()|[\]\\]/.test(ch)) re += '\\' + ch
-    else re += ch
-  }
-  re += '$'
-  return new RegExp(re).test(name)
-}
-
-function basenameOf(p: string): string {
-  return p.slice(p.lastIndexOf('/') + 1)
-}
+import { fnmatch } from '@struktoai/mirage-core'
+import { gnuBasename } from '@struktoai/mirage-core'
 
 export async function resolveGlob(
-  root: FileSystemDirectoryHandle,
+  accessor: OPFSAccessor,
   paths: readonly PathSpec[],
 ): Promise<PathSpec[]> {
   const result: PathSpec[] = []
@@ -47,10 +34,10 @@ export async function resolveGlob(
         resolved: true,
         prefix: p.prefix,
       })
-      const entries = await readdir(root, dirSpec)
+      const entries = await readdir(accessor, dirSpec)
       const matched: PathSpec[] = []
       for (const e of entries) {
-        if (fnmatch(basenameOf(e), p.pattern)) {
+        if (fnmatch(gnuBasename(e), p.pattern)) {
           matched.push(
             new PathSpec({
               original: e,

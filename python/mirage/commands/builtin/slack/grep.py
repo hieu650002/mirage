@@ -1,0 +1,121 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import logging
+from collections.abc import AsyncIterator
+
+from mirage.accessor.slack import SlackAccessor
+from mirage.cache.index import IndexCacheStore
+from mirage.commands.builtin.generic.grep import grep as generic_grep
+from mirage.commands.builtin.grep_helper import pattern_arg
+from mirage.commands.builtin.slack._provision import file_read_provision
+from mirage.commands.builtin.utils.output import format_records
+from mirage.commands.registry import command
+from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import FlagView
+from mirage.core.slack.formatters import (build_query,
+                                          format_file_grep_results,
+                                          format_grep_results)
+from mirage.core.slack.glob import resolve_glob
+from mirage.core.slack.read import read as slack_read
+from mirage.core.slack.readdir import readdir as _readdir
+from mirage.core.slack.scope import coalesce_scopes, detect_scope
+from mirage.core.slack.search import (search_available, search_files,
+                                      search_messages)
+from mirage.core.slack.stat import stat as _stat
+from mirage.io.types import ByteSource, IOResult
+from mirage.provision.types import ProvisionResult
+from mirage.types import PathSpec
+
+logger = logging.getLogger(__name__)
+
+
+async def grep_provision(
+    accessor: SlackAccessor,
+    paths: list[PathSpec],
+    *texts: str,
+    **_extra: object,
+) -> ProvisionResult:
+    return await file_read_provision(
+        accessor, paths,
+        "grep " + " ".join(texts + tuple(str(p) for p in paths)))
+
+
+@command("grep",
+         resource="slack",
+         spec=SPECS["grep"],
+         provision=grep_provision)
+async def grep(
+    accessor: SlackAccessor,
+    paths: list[PathSpec],
+    *texts: str,
+    stdin: AsyncIterator[bytes] | bytes | None = None,
+    prefix: str = "",
+    index: IndexCacheStore = None,
+    **flags: object,
+) -> tuple[ByteSource | None, IOResult]:
+    fl = FlagView(flags, spec=SPECS["grep"])
+    pattern = pattern_arg(texts, fl)
+    max_count = fl.int("m")
+
+    if paths and pattern is not None:
+        scope = detect_scope(paths[0])
+        if not scope.use_native:
+            scope = coalesce_scopes(paths) or scope
+
+        if (scope.use_native and getattr(scope, "target", None) != "files"
+                and search_available(accessor.config)):
+            file_prefix = paths[0].prefix or ""
+            query = build_query(pattern, scope)
+            target = getattr(scope, "target", None)
+            do_msgs = target in (None, "date", "messages")
+            do_files = target in (None, "date", "files")
+            native_lines: list[str] = []
+            err: Exception | None = None
+            try:
+                if do_msgs:
+                    raw = await search_messages(accessor.config,
+                                                query,
+                                                count=max_count or 100)
+                    native_lines.extend(
+                        format_grep_results(raw, scope, file_prefix))
+                if do_files:
+                    raw_f = await search_files(accessor.config,
+                                               query,
+                                               count=max_count or 100)
+                    native_lines.extend(
+                        format_file_grep_results(raw_f, scope, file_prefix))
+            except Exception as exc:
+                err = exc
+            if err is None:
+                if not native_lines:
+                    return b"", IOResult(exit_code=1)
+                return format_records(native_lines), IOResult()
+            logger.warning(
+                "slack search push-down failed (%s); "
+                "falling back to per-file scan", err)
+
+    resolved = await resolve_glob(accessor, paths, index) if paths else []
+    return await generic_grep(
+        resolved,
+        texts,
+        flags,
+        readdir=_readdir,
+        stat=_stat,
+        read_bytes=slack_read,
+        read_stream=None,
+        accessor=accessor,
+        stdin=stdin,
+        index=index,
+    )

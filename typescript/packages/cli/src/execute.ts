@@ -12,9 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { makeClient } from './client.ts'
-import { emit, handleResponse } from './output.ts'
+import { emit, exitCodeFromResponse, handleResponse } from './output.ts'
 import { loadDaemonSettings } from './settings.ts'
 
 export function registerExecuteCommand(program: Command): void {
@@ -29,11 +30,18 @@ export function registerExecuteCommand(program: Command): void {
       async (opts: { workspace: string; command: string; session?: string; bg?: boolean }) => {
         const body: Record<string, unknown> = { command: opts.command, provision: false }
         if (opts.session !== undefined) body.sessionId = opts.session
+        if (opts.bg !== true && !process.stdin.isTTY) {
+          body.stdinBase64 = readFileSync(0).toString('base64')
+        }
         const path =
           `/v1/workspaces/${opts.workspace}/execute` + (opts.bg === true ? '?background=true' : '')
         const c = makeClient(loadDaemonSettings())
         await c.ensureRunning({ allowSpawn: false })
-        emit(await handleResponse(await c.request('POST', path, { body: JSON.stringify(body) })))
+        const response = await handleResponse(
+          await c.request('POST', path, { body: JSON.stringify(body) }),
+        )
+        emit(response)
+        process.exit(exitCodeFromResponse(response))
       },
     )
 }

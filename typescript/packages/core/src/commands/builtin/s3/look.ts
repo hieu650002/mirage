@@ -13,21 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { S3Accessor } from '../../../accessor/s3.ts'
-import { read as s3Read } from '../../../core/s3/read.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
+import { stream as s3Stream } from '../../../core/s3/stream.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function splitLinesNoTrailing(text: string): string[] {
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped === '' ? [] : stripped.split('\n')
-}
+import { lookGeneric } from '../generic/look.ts'
 
 async function lookCommand(
   accessor: S3Accessor,
@@ -35,34 +26,9 @@ async function lookCommand(
   texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  if (texts.length === 0) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('look: missing prefix\n') })]
-  }
-  const prefix = texts[0] ?? ''
-  const caseInsensitive = opts.flags.f === true
-  let raw: Uint8Array
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const first = resolved[0]
-    if (first === undefined) return [null, new IOResult()]
-    raw = await s3Read(accessor, first)
-  } else {
-    const stdinData = await readStdinAsync(opts.stdin)
-    if (stdinData === null) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('look: missing input\n') })]
-    }
-    raw = stdinData
-  }
-  const lines = splitLinesNoTrailing(DEC.decode(raw))
-  const cmpPrefix = caseInsensitive ? prefix.toLowerCase() : prefix
-  const matched: string[] = []
-  for (const line of lines) {
-    const cmpLine = caseInsensitive ? line.toLowerCase() : line
-    if (cmpLine.startsWith(cmpPrefix)) matched.push(line)
-  }
-  if (matched.length === 0) return [null, new IOResult({ exitCode: 1 })]
-  const result: ByteSource = ENC.encode(matched.join('\n') + '\n')
-  return [result, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return lookGeneric(resolved, texts, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_LOOK = command({

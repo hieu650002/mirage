@@ -1,0 +1,725 @@
+name: CLI exit codes
+
+permissions:
+  contents: read
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - python/**
+      - typescript/**
+      - .github/workflows/test_cli.yml
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: read
+    outputs:
+      hit: ${{ steps.filter.outputs.hit }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            hit:
+              - 'python/**'
+              - 'typescript/**'
+              - 'integ/cross.sh'
+              - 'integ/cross.yaml'
+              - 'integ/parity.sh'
+              - 'integ/cli_fuse.sh'
+              - '.github/workflows/test_cli.yml'
+
+  python:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.hit == 'true') }}
+    name: Python CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python dependencies
+        working-directory: python
+        run: uv sync --all-extras --no-extra camel
+
+      - name: Install mirage package
+        working-directory: python
+        run: uv pip install .
+
+      - name: Smoke test exit code propagation
+        working-directory: python
+        shell: bash
+        run: |
+          set -u
+          MIRAGE=".venv/bin/mirage"
+          cat > /tmp/ws.yaml <<'YAML'
+          mounts:
+            /:
+              resource: ram
+              mode: WRITE
+          YAML
+
+          $MIRAGE workspace delete smoke > /dev/null 2>&1 || true
+          $MIRAGE workspace create /tmp/ws.yaml --id smoke
+
+          fail=0
+          check() {
+            local desc="$1"
+            local expected_exit="$2"
+            local expected_field="$3"
+            shift 3
+            echo
+            echo "--- $desc"
+            echo "+ $*"
+            set +e
+            out=$("$@")
+            got_exit=$?
+            set -e
+            echo "stdout:"
+            echo "$out" | sed 's/^/  /'
+            echo "process exit: $got_exit (expected $expected_exit)"
+            if [ "$got_exit" != "$expected_exit" ]; then
+              echo "FAIL: process exit code mismatch"
+              fail=1
+              return
+            fi
+            if [ -n "$expected_field" ]; then
+              field_val=$(echo "$out" | jq -r '.exit_code // .result.exit_code // empty')
+              echo "json exit_code: $field_val (expected $expected_field)"
+              if [ "$field_val" != "$expected_field" ]; then
+                echo "FAIL: json exit_code mismatch"
+                fail=1
+                return
+              fi
+            fi
+            echo "PASS"
+          }
+
+          check "echo ok succeeds" 0 0 $MIRAGE execute -w smoke -c 'echo ok'
+          check "false exits 1" 1 1 $MIRAGE execute -w smoke -c 'false'
+          check "false | echo: pipefail off => last cmd wins" 0 0 \
+            $MIRAGE execute -w smoke -c 'false | echo done'
+          check "pipefail on => rightmost failure wins" 1 1 \
+            $MIRAGE execute -w smoke -c 'set -o pipefail; false | echo done'
+
+          echo
+          echo "--- background + job wait"
+          submit=$($MIRAGE execute -w smoke --bg -c 'false')
+          echo "submit response:"
+          echo "$submit" | sed 's/^/  /'
+          JID=$(echo "$submit" | jq -r .job_id)
+          echo "job id: $JID"
+          check "job wait on failing job" 1 1 $MIRAGE job wait "$JID"
+
+          echo
+          echo "--- shell composition (&& and ||)"
+          if $MIRAGE execute -w smoke -c 'false' > /dev/null && echo "should not print"; then
+            echo "FAIL: && short-circuit did not work"
+            fail=1
+          else
+            echo "PASS: && correctly short-circuited on inner failure"
+          fi
+          if $MIRAGE execute -w smoke -c 'echo ok' > /dev/null && echo "should print"; then
+            echo "PASS: && correctly proceeded on inner success"
+          else
+            echo "FAIL: && incorrectly short-circuited on success"
+            fail=1
+          fi
+
+          echo
+          echo "--- per-mount command safeguards"
+          cat > /tmp/sg.yaml <<'YAML'
+          mounts:
+            /:
+              resource: ram
+              mode: WRITE
+              command_safeguards:
+                cat:
+                  max_lines: 2
+                  on_exceed: truncate
+          YAML
+          cat > /tmp/sgerr.yaml <<'YAML'
+          mounts:
+            /:
+              resource: ram
+              mode: WRITE
+              command_safeguards:
+                cat:
+                  max_lines: 2
+                  on_exceed: error
+          YAML
+          $MIRAGE workspace delete sg > /dev/null 2>&1 || true
+          $MIRAGE workspace delete sgerr > /dev/null 2>&1 || true
+          $MIRAGE workspace create /tmp/sg.yaml --id sg
+          $MIRAGE workspace create /tmp/sgerr.yaml --id sgerr
+          $MIRAGE execute -w sg -c "printf '1\n2\n3\n4\n5\n' > /f.txt" > /dev/null
+          $MIRAGE execute -w sgerr -c "printf '1\n2\n3\n4\n5\n' > /f.txt" > /dev/null
+
+          check "cat over max_lines, on_exceed=truncate => exit 0" 0 0 \
+            $MIRAGE execute -w sg -c 'cat /f.txt'
+          echo "+ verify truncated to 2 lines"
+          lines=$($MIRAGE execute -w sg -c 'cat /f.txt' | jq -r '.stdout' | grep -c .)
+          echo "  truncated stdout lines: $lines (expected 2)"
+          if [ "$lines" != "2" ]; then
+            echo "FAIL: truncate did not cap to 2 lines"
+            fail=1
+          else
+            echo "PASS"
+          fi
+          check "cat over max_lines, on_exceed=error => exit 1" 1 1 \
+            $MIRAGE execute -w sgerr -c 'cat /f.txt'
+          $MIRAGE workspace delete sg
+          $MIRAGE workspace delete sgerr
+
+          echo
+          echo "--- top-level snake_case config keys"
+          cat > /tmp/cfgkeys.yaml <<'YAML'
+          mounts:
+            /:
+              resource: ram
+              mode: WRITE
+          default_session_id: mysess
+          default_agent_id: myagent
+          cache:
+            type: ram
+            limit: 256MB
+            max_drain_bytes: 1048576
+          index:
+            type: ram
+            ttl: 600
+          YAML
+          $MIRAGE workspace delete cfgkeys > /dev/null 2>&1 || true
+          sid=$($MIRAGE workspace create /tmp/cfgkeys.yaml --id cfgkeys | jq -r '.sessions[0].sessionId // .sessions[0].session_id')
+          echo "  default_session_id (snake) => $sid (expected mysess)"
+          if [ "$sid" != "mysess" ]; then
+            echo "FAIL: snake_case top-level keys not applied"
+            fail=1
+          else
+            echo "PASS"
+          fi
+          $MIRAGE execute -w cfgkeys -c "printf 'x\ny\n' > /f.txt" > /dev/null
+          check "ops work with snake_case cache/index configured => exit 0" 0 0 \
+            $MIRAGE execute -w cfgkeys -c 'cat /f.txt'
+          $MIRAGE workspace delete cfgkeys
+
+          curl_check() {
+            local desc="$1"
+            local expected="$2"
+            shift 2
+            local got
+            got=$(curl -s -o /dev/null -w "%{http_code}" "$@")
+            echo "  $desc: got $got (expected $expected)"
+            if [ "$got" != "$expected" ]; then
+              echo "  FAIL"
+              fail=1
+            fi
+          }
+
+          echo
+          echo "===== auth: mode=local (daemon spawned by CLI, token auto-minted) ====="
+          TOKEN=$(cat "$HOME/.mirage/auth_token")
+          MODE=$(stat -c "%a" "$HOME/.mirage/auth_token" 2>/dev/null || stat -f "%Lp" "$HOME/.mirage/auth_token")
+          echo "token file mode: $MODE (expected 600)"
+          if [ "$MODE" != "600" ]; then
+            echo "FAIL: token file must be 0o600"
+            fail=1
+          fi
+          curl_check "correct bearer => 200" 200 \
+            -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/v1/workspaces
+          curl_check "wrong bearer => 401" 401 \
+            -H "Authorization: Bearer wrong-token" http://127.0.0.1:8765/v1/workspaces
+          curl_check "no header => 401" 401 http://127.0.0.1:8765/v1/workspaces
+          curl_check "/v1/health bypass => 200" 200 http://127.0.0.1:8765/v1/health
+          curl_check "JWT-shaped value treated as opaque => 401" 401 \
+            -H "Authorization: Bearer aaaa.bbbb.cccc" http://127.0.0.1:8765/v1/workspaces
+
+          $MIRAGE workspace delete smoke
+          $MIRAGE daemon stop || true
+          sleep 2
+
+          echo
+          echo "===== auth: mode=token (operator PAT) ====="
+          MIRAGE_AUTH_MODE=token MIRAGE_AUTH_TOKEN=operator-pat-xyz \
+            .venv/bin/python -m uvicorn mirage.server.daemon:app \
+            --host 127.0.0.1 --port 8765 --log-level warning >/tmp/auth-token.log 2>&1 &
+          TOKEN_PID=$!
+          sleep 2
+          curl_check "correct PAT => 200" 200 \
+            -H "Authorization: Bearer operator-pat-xyz" http://127.0.0.1:8765/v1/workspaces
+          curl_check "wrong PAT => 401" 401 \
+            -H "Authorization: Bearer something-else" http://127.0.0.1:8765/v1/workspaces
+          curl_check "no header => 401" 401 http://127.0.0.1:8765/v1/workspaces
+          curl_check "/v1/health bypass => 200" 200 http://127.0.0.1:8765/v1/health
+          kill $TOKEN_PID 2>/dev/null || true
+          sleep 2
+
+          echo
+          echo "===== auth: mode=jwt (RS256, external issuer) ====="
+          mkdir -p /tmp/jwt-test
+          .venv/bin/python - <<'PYEOF'
+          import time, jwt
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric import rsa
+          d = Path("/tmp/jwt-test")
+          priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+          priv_pem = priv.private_bytes(
+              encoding=serialization.Encoding.PEM,
+              format=serialization.PrivateFormat.PKCS8,
+              encryption_algorithm=serialization.NoEncryption())
+          (d / "pub.pem").write_bytes(priv.public_key().public_bytes(
+              encoding=serialization.Encoding.PEM,
+              format=serialization.PublicFormat.SubjectPublicKeyInfo))
+          now = int(time.time())
+          (d / "good.jwt").write_text(jwt.encode(
+              {"sub": "agent", "exp": now + 60}, priv_pem, algorithm="RS256"))
+          (d / "expired.jwt").write_text(jwt.encode(
+              {"sub": "agent", "exp": now - 60}, priv_pem, algorithm="RS256"))
+          PYEOF
+
+          MIRAGE_AUTH_MODE=jwt \
+            MIRAGE_JWT_PUBKEY_FILE=/tmp/jwt-test/pub.pem \
+            MIRAGE_JWT_ALG=RS256 \
+            .venv/bin/python -m uvicorn mirage.server.daemon:app \
+            --host 127.0.0.1 --port 8765 --log-level warning >/tmp/auth-jwt.log 2>&1 &
+          JWT_PID=$!
+          sleep 2
+          GOOD=$(cat /tmp/jwt-test/good.jwt)
+          EXPIRED=$(cat /tmp/jwt-test/expired.jwt)
+          curl_check "valid signed JWT => 200" 200 \
+            -H "Authorization: Bearer $GOOD" http://127.0.0.1:8765/v1/workspaces
+          curl_check "expired JWT => 401" 401 \
+            -H "Authorization: Bearer $EXPIRED" http://127.0.0.1:8765/v1/workspaces
+          curl_check "opaque (not 3-part) => 401" 401 \
+            -H "Authorization: Bearer opaque-not-a-jwt" http://127.0.0.1:8765/v1/workspaces
+          curl_check "/v1/health bypass => 200" 200 http://127.0.0.1:8765/v1/health
+          kill $JWT_PID 2>/dev/null || true
+          sleep 2
+
+          if [ "$fail" != "0" ]; then
+            echo
+            echo "One or more checks failed."
+            exit 1
+          fi
+
+  typescript:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.hit == 'true') }}
+    name: TypeScript CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.32.1
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: typescript/pnpm-lock.yaml
+
+      - name: Install node-gyp
+        run: npm install -g node-gyp
+
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile
+
+      - name: Build TypeScript packages
+        working-directory: typescript
+        run: pnpm -r build
+
+      - name: Smoke test exit code propagation
+        working-directory: typescript
+        shell: bash
+        run: |
+          set -u
+          MIRAGE="node packages/cli/dist/bin/mirage.js"
+          cat > /tmp/ws.yaml <<'YAML'
+          mounts:
+            /:
+              resource: ram
+              mode: WRITE
+          YAML
+
+          $MIRAGE workspace delete smoke > /dev/null 2>&1 || true
+          $MIRAGE workspace create /tmp/ws.yaml --id smoke
+
+          fail=0
+          check() {
+            local desc="$1"
+            local expected_exit="$2"
+            local expected_field="$3"
+            shift 3
+            echo
+            echo "--- $desc"
+            echo "+ $*"
+            set +e
+            out=$("$@")
+            got_exit=$?
+            set -e
+            echo "stdout:"
+            echo "$out" | sed 's/^/  /'
+            echo "process exit: $got_exit (expected $expected_exit)"
+            if [ "$got_exit" != "$expected_exit" ]; then
+              echo "FAIL: process exit code mismatch"
+              fail=1
+              return
+            fi
+            if [ -n "$expected_field" ]; then
+              field_val=$(echo "$out" | jq -r '.exitCode // .result.exitCode // empty')
+              echo "json exitCode: $field_val (expected $expected_field)"
+              if [ "$field_val" != "$expected_field" ]; then
+                echo "FAIL: json exitCode mismatch"
+                fail=1
+                return
+              fi
+            fi
+            echo "PASS"
+          }
+
+          check "echo ok succeeds" 0 0 $MIRAGE execute -w smoke -c 'echo ok'
+          check "false exits 1" 1 1 $MIRAGE execute -w smoke -c 'false'
+          check "false | echo: pipefail off => last cmd wins" 0 0 \
+            $MIRAGE execute -w smoke -c 'false | echo done'
+          check "pipefail on => rightmost failure wins" 1 1 \
+            $MIRAGE execute -w smoke -c 'set -o pipefail; false | echo done'
+
+          echo
+          echo "--- background + job wait"
+          submit=$($MIRAGE execute -w smoke --bg -c 'false')
+          echo "submit response:"
+          echo "$submit" | sed 's/^/  /'
+          JID=$(echo "$submit" | jq -r .jobId)
+          echo "job id: $JID"
+          check "job wait on failing job" 1 1 $MIRAGE job wait "$JID"
+
+          echo
+          echo "--- shell composition (&& and ||)"
+          if $MIRAGE execute -w smoke -c 'false' > /dev/null && echo "should not print"; then
+            echo "FAIL: && short-circuit did not work"
+            fail=1
+          else
+            echo "PASS: && correctly short-circuited on inner failure"
+          fi
+          if $MIRAGE execute -w smoke -c 'echo ok' > /dev/null && echo "should print"; then
+            echo "PASS: && correctly proceeded on inner success"
+          else
+            echo "FAIL: && incorrectly short-circuited on success"
+            fail=1
+          fi
+
+          echo
+          echo "--- per-mount command safeguards"
+          cat > /tmp/sg.yaml <<'YAML'
+          mounts:
+            /:
+              resource: ram
+              mode: WRITE
+              command_safeguards:
+                cat:
+                  max_lines: 2
+                  on_exceed: truncate
+          YAML
+          cat > /tmp/sgerr.yaml <<'YAML'
+          mounts:
+            /:
+              resource: ram
+              mode: WRITE
+              command_safeguards:
+                cat:
+                  max_lines: 2
+                  on_exceed: error
+          YAML
+          $MIRAGE workspace delete sg > /dev/null 2>&1 || true
+          $MIRAGE workspace delete sgerr > /dev/null 2>&1 || true
+          $MIRAGE workspace create /tmp/sg.yaml --id sg
+          $MIRAGE workspace create /tmp/sgerr.yaml --id sgerr
+          $MIRAGE execute -w sg -c "printf '1\n2\n3\n4\n5\n' > /f.txt" > /dev/null
+          $MIRAGE execute -w sgerr -c "printf '1\n2\n3\n4\n5\n' > /f.txt" > /dev/null
+
+          check "cat over max_lines, on_exceed=truncate => exit 0" 0 0 \
+            $MIRAGE execute -w sg -c 'cat /f.txt'
+          echo "+ verify truncated to 2 lines"
+          lines=$($MIRAGE execute -w sg -c 'cat /f.txt' | jq -r '.stdout' | grep -c .)
+          echo "  truncated stdout lines: $lines (expected 2)"
+          if [ "$lines" != "2" ]; then
+            echo "FAIL: truncate did not cap to 2 lines"
+            fail=1
+          else
+            echo "PASS"
+          fi
+          check "cat over max_lines, on_exceed=error => exit 1" 1 1 \
+            $MIRAGE execute -w sgerr -c 'cat /f.txt'
+          $MIRAGE workspace delete sg
+          $MIRAGE workspace delete sgerr
+
+          echo
+          echo "--- top-level snake_case config keys"
+          cat > /tmp/cfgkeys.yaml <<'YAML'
+          mounts:
+            /:
+              resource: ram
+              mode: WRITE
+          default_session_id: mysess
+          default_agent_id: myagent
+          cache:
+            type: ram
+            limit: 256MB
+            max_drain_bytes: 1048576
+          index:
+            type: ram
+            ttl: 600
+          YAML
+          $MIRAGE workspace delete cfgkeys > /dev/null 2>&1 || true
+          sid=$($MIRAGE workspace create /tmp/cfgkeys.yaml --id cfgkeys | jq -r '.sessions[0].sessionId // .sessions[0].session_id')
+          echo "  default_session_id (snake) => $sid (expected mysess)"
+          if [ "$sid" != "mysess" ]; then
+            echo "FAIL: snake_case top-level keys not applied"
+            fail=1
+          else
+            echo "PASS"
+          fi
+          $MIRAGE execute -w cfgkeys -c "printf 'x\ny\n' > /f.txt" > /dev/null
+          check "ops work with snake_case cache/index configured => exit 0" 0 0 \
+            $MIRAGE execute -w cfgkeys -c 'cat /f.txt'
+          $MIRAGE workspace delete cfgkeys
+
+          curl_check() {
+            local desc="$1"
+            local expected="$2"
+            shift 2
+            local got
+            got=$(curl -s -o /dev/null -w "%{http_code}" "$@")
+            echo "  $desc: got $got (expected $expected)"
+            if [ "$got" != "$expected" ]; then
+              echo "  FAIL"
+              fail=1
+            fi
+          }
+
+          echo
+          echo "===== auth: mode=local (TS daemon spawned by CLI, token auto-minted) ====="
+          TOKEN=$(cat "$HOME/.mirage/auth_token")
+          MODE=$(stat -c "%a" "$HOME/.mirage/auth_token" 2>/dev/null || stat -f "%Lp" "$HOME/.mirage/auth_token")
+          echo "token file mode: $MODE (expected 600)"
+          if [ "$MODE" != "600" ]; then
+            echo "FAIL: token file must be 0o600"
+            fail=1
+          fi
+          curl_check "correct bearer => 200" 200 \
+            -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/v1/workspaces
+          curl_check "wrong bearer => 401" 401 \
+            -H "Authorization: Bearer wrong-token" http://127.0.0.1:8765/v1/workspaces
+          curl_check "no header => 401" 401 http://127.0.0.1:8765/v1/workspaces
+          curl_check "/v1/health bypass => 200" 200 http://127.0.0.1:8765/v1/health
+          curl_check "JWT-shaped value treated as opaque => 401" 401 \
+            -H "Authorization: Bearer aaaa.bbbb.cccc" http://127.0.0.1:8765/v1/workspaces
+
+          $MIRAGE workspace delete smoke
+          $MIRAGE daemon stop || true
+          sleep 2
+
+          echo
+          echo "===== auth: mode=token (TS daemon, operator PAT) ====="
+          MIRAGE_AUTH_MODE=token MIRAGE_AUTH_TOKEN=operator-pat-xyz \
+            node packages/server/dist/bin/daemon.js >/tmp/auth-token-ts.log 2>&1 &
+          TOKEN_PID=$!
+          sleep 2
+          curl_check "correct PAT => 200" 200 \
+            -H "Authorization: Bearer operator-pat-xyz" http://127.0.0.1:8765/v1/workspaces
+          curl_check "wrong PAT => 401" 401 \
+            -H "Authorization: Bearer something-else" http://127.0.0.1:8765/v1/workspaces
+          curl_check "no header => 401" 401 http://127.0.0.1:8765/v1/workspaces
+          curl_check "/v1/health bypass => 200" 200 http://127.0.0.1:8765/v1/health
+          kill $TOKEN_PID 2>/dev/null || true
+          sleep 2
+
+          echo
+          echo "===== auth: mode=jwt (TS daemon, RS256, external issuer) ====="
+          mkdir -p /tmp/jwt-test-ts
+          cat > packages/server/mint-jwt.mjs <<'NODEEOF'
+          import { writeFileSync } from 'node:fs'
+          import { generateKeyPair, SignJWT, exportSPKI } from 'jose'
+          const { publicKey, privateKey } = await generateKeyPair('RS256', { modulusLength: 2048 })
+          writeFileSync('/tmp/jwt-test-ts/pub.pem', await exportSPKI(publicKey))
+          const now = Math.floor(Date.now() / 1000)
+          const sign = (exp) => new SignJWT({ sub: 'agent' })
+            .setProtectedHeader({ alg: 'RS256' })
+            .setExpirationTime(exp)
+            .sign(privateKey)
+          writeFileSync('/tmp/jwt-test-ts/good.jwt', await sign(now + 60))
+          writeFileSync('/tmp/jwt-test-ts/expired.jwt', await sign(now - 60))
+          NODEEOF
+          node packages/server/mint-jwt.mjs
+          rm packages/server/mint-jwt.mjs
+
+          MIRAGE_AUTH_MODE=jwt \
+            MIRAGE_JWT_PUBKEY_FILE=/tmp/jwt-test-ts/pub.pem \
+            MIRAGE_JWT_ALG=RS256 \
+            node packages/server/dist/bin/daemon.js >/tmp/auth-jwt-ts.log 2>&1 &
+          JWT_PID=$!
+          sleep 2
+          GOOD=$(cat /tmp/jwt-test-ts/good.jwt)
+          EXPIRED=$(cat /tmp/jwt-test-ts/expired.jwt)
+          curl_check "valid signed JWT => 200" 200 \
+            -H "Authorization: Bearer $GOOD" http://127.0.0.1:8765/v1/workspaces
+          curl_check "expired JWT => 401" 401 \
+            -H "Authorization: Bearer $EXPIRED" http://127.0.0.1:8765/v1/workspaces
+          curl_check "opaque (not 3-part) => 401" 401 \
+            -H "Authorization: Bearer opaque-not-a-jwt" http://127.0.0.1:8765/v1/workspaces
+          curl_check "/v1/health bypass => 200" 200 http://127.0.0.1:8765/v1/health
+          kill $JWT_PID 2>/dev/null || true
+          sleep 2
+
+          if [ "$fail" != "0" ]; then
+            echo
+            echo "One or more checks failed."
+            exit 1
+          fi
+
+  cross:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.hit == 'true') }}
+    name: Cross-language snapshot interop
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379/0
+      S3_BUCKET: mirage-cross
+      S3_ENDPOINT: http://localhost:9000
+      S3_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+      CROSS_DISK_ROOT: /tmp/mirage-cross-disk
+      CROSS_REDIS_PREFIX: mirage-cross/
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install libfuse (mfusepy + @zkochan/fuse-native, for the CLI FUSE e2e)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse3 libfuse3-dev libfuse2t64 || \
+            sudo apt-get install -y fuse3 libfuse3-dev libfuse2
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python dependencies
+        working-directory: python
+        run: uv sync --all-extras --no-extra camel
+
+      - name: Install mirage package
+        working-directory: python
+        run: uv pip install .
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.32.1
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Build TypeScript packages
+        working-directory: typescript
+        run: pnpm -r build
+
+      - name: Start MinIO
+        run: |
+          for i in $(seq 1 5); do
+            docker pull minio/minio:latest && break
+            echo "docker pull failed (attempt $i), retrying"; sleep 10
+          done
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio123 \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && break
+            sleep 1
+          done
+
+      - name: Create MinIO bucket
+        run: |
+          curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /tmp/mc
+          chmod +x /tmp/mc
+          /tmp/mc alias set local http://localhost:9000 minio minio123
+          /tmp/mc mb local/mirage-cross || true
+
+      - name: Run cross-language snapshot interop (both directions)
+        run: |
+          bash integ/cross.sh \
+            "python/.venv/bin/mirage" \
+            "node typescript/packages/cli/dist/bin/mirage.js"
+
+      - name: Run CLI feature parity (subshell, sessions, versioning, fuse)
+        run: |
+          bash integ/parity.sh \
+            "python/.venv/bin/mirage" \
+            "node typescript/packages/cli/dist/bin/mirage.js"
+
+      - name: Run CLI end-to-end FUSE (two per-mount subtrees, real libfuse)
+        run: |
+          bash integ/cli_fuse.sh \
+            "python/.venv/bin/mirage" \
+            "node typescript/packages/cli/dist/bin/mirage.js"
+
+  gate:
+    name: cli-gate
+    runs-on: ubuntu-latest
+    needs: [changes, python, typescript, cross]
+    if: always()
+    steps:
+      - name: Check required jobs
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "$results"
+          case "$results" in
+            *failure*|*cancelled*) exit 1 ;;
+          esac

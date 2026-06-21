@@ -19,6 +19,8 @@ import { PathSpec } from '../../types.ts'
 import { listArtifacts } from './artifacts.ts'
 import { listJobsForRun, listRuns } from './runs.ts'
 import { listWorkflows } from './workflows.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 function safeName(name: string | undefined): string {
   if (name === undefined || name === '') return 'unknown'
@@ -34,12 +36,6 @@ function stripPrefix(path: PathSpec): string {
   return p
 }
 
-function enoent(p: string): Error {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
-
 export async function readdir(
   accessor: GitHubCIAccessor,
   path: PathSpec,
@@ -47,7 +43,7 @@ export async function readdir(
 ): Promise<string[]> {
   const prefix = path.prefix
   const stripped = stripPrefix(path)
-  const key = stripped.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(stripped)
   const virtualKey = key === '' ? (prefix === '' ? '/' : prefix) : `${prefix}/${key}`
 
   if (key === '') {

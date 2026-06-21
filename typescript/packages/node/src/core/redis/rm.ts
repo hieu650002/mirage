@@ -15,11 +15,12 @@
 import type { PathSpec } from '@struktoai/mirage-core'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { norm } from './utils.ts'
+import { invalidateAfterUnlink, rstripSlash } from '@struktoai/mirage-core'
 
 export async function rmR(accessor: RedisAccessor, path: PathSpec): Promise<void> {
   const p = norm(path.stripPrefix)
   const store = accessor.store
-  const prefix = p.replace(/\/+$/, '') + '/'
+  const prefix = rstripSlash(p) + '/'
   const files = await store.listFiles()
   for (const key of files) {
     if (key === p || key.startsWith(prefix)) {
@@ -34,4 +35,5 @@ export async function rmR(accessor: RedisAccessor, path: PathSpec): Promise<void
       await store.delModified(key)
     }
   }
+  await invalidateAfterUnlink(path)
 }

@@ -13,9 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { FileStat, FileType, guessType, type PathSpec } from '@struktoai/mirage-core'
+import { enoent } from '@struktoai/mirage-core'
+import type { OPFSAccessor } from '../../accessor/opfs.ts'
 import { isNotFound, resolveDirHandle, resolveParentDirHandle, splitSegments } from './utils.ts'
 
-export async function stat(root: FileSystemDirectoryHandle, p: PathSpec): Promise<FileStat> {
+export async function stat(accessor: OPFSAccessor, p: PathSpec): Promise<FileStat> {
+  const root = accessor.rootHandle
   const virtual = p.stripPrefix
   const segs = splitSegments(virtual)
   const last = segs.at(-1)
@@ -33,7 +36,7 @@ export async function stat(root: FileSystemDirectoryHandle, p: PathSpec): Promis
   try {
     ;[parentDir, entryName] = await resolveParentDirHandle(root, virtual, { create: false })
   } catch (err) {
-    if (isNotFound(err)) throw new Error(`file not found: ${virtual}`)
+    if (isNotFound(err)) throw enoent(p)
     throw err
   }
   try {
@@ -61,7 +64,7 @@ export async function stat(root: FileSystemDirectoryHandle, p: PathSpec): Promis
       type: FileType.DIRECTORY,
     })
   } catch (err) {
-    if (isNotFound(err)) throw new Error(`file not found: ${virtual}`)
+    if (isNotFound(err)) throw enoent(p)
     throw err
   }
 }

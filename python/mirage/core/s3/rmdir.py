@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.s3 import S3Accessor
+from mirage.cache.context import invalidate_after_unlink
 from mirage.core.s3._client import _client_kwargs, _prefix, async_session
 from mirage.types import PathSpec
 
@@ -23,7 +24,7 @@ async def rmdir(accessor: S3Accessor, path: PathSpec) -> None:
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     config = accessor.config
-    pfx = _prefix(path)
+    pfx = _prefix(path, config)
     session = async_session(config)
     async with session.client(**_client_kwargs(config)) as client:
         paginator = client.get_paginator("list_objects_v2")
@@ -32,3 +33,4 @@ async def rmdir(accessor: S3Accessor, path: PathSpec) -> None:
             if keys:
                 await client.delete_objects(Bucket=config.bucket,
                                             Delete={"Objects": keys})
+    await invalidate_after_unlink(path)

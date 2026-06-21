@@ -50,17 +50,18 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
   }),
   find: new CommandSpec({
     options: [
-      new Option({ short: '-name', valueKind: OperandKind.TEXT }),
-      new Option({ short: '-type', valueKind: OperandKind.TEXT }),
-      new Option({ short: '-maxdepth', valueKind: OperandKind.TEXT }),
-      new Option({ short: '-size', valueKind: OperandKind.TEXT }),
-      new Option({ short: '-mtime', valueKind: OperandKind.TEXT }),
-      new Option({ short: '-iname', valueKind: OperandKind.TEXT }),
-      new Option({ short: '-path', valueKind: OperandKind.TEXT }),
-      new Option({ short: '-mindepth', valueKind: OperandKind.TEXT }),
+      new Option({ short: '-name', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-type', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-maxdepth', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-size', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-mtime', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-iname', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-path', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-mindepth', valueKind: OperandKind.TEXT, repeatable: true }),
       new Option({ short: '-print' }),
       new Option({ short: '-print0' }),
       new Option({ short: '-delete' }),
+      new Option({ short: '-depth' }),
       new Option({ short: '-prune' }),
       new Option({ short: '-ls' }),
       new Option({ short: '-empty' }),
@@ -110,6 +111,7 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
       new Option({ short: '-c', valueKind: OperandKind.TEXT }),
       new Option({ short: '-q' }),
       new Option({ short: '-v' }),
+      new Option({ short: '-f', long: '--follow' }),
     ],
     rest: new Operand({ kind: OperandKind.PATH }),
   }),
@@ -142,11 +144,11 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
   }),
   python: new CommandSpec({
     options: [new Option({ short: '-c', valueKind: OperandKind.TEXT })],
-    rest: new Operand({ kind: OperandKind.PATH }),
+    rest: new Operand({ kind: OperandKind.TEXT }),
   }),
   python3: new CommandSpec({
     options: [new Option({ short: '-c', valueKind: OperandKind.TEXT })],
-    rest: new Operand({ kind: OperandKind.PATH }),
+    rest: new Operand({ kind: OperandKind.TEXT }),
   }),
   nl: new CommandSpec({
     options: [
@@ -179,9 +181,10 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
       new Option({ short: '-A', valueKind: OperandKind.TEXT }),
       new Option({ short: '-B', valueKind: OperandKind.TEXT }),
       new Option({ short: '-C', valueKind: OperandKind.TEXT }),
-      new Option({ short: '-e', valueKind: OperandKind.TEXT }),
+      new Option({ short: '-e', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-f', valueKind: OperandKind.PATH, repeatable: true }),
     ],
-    positional: [new Operand({ kind: OperandKind.TEXT })],
+    positional: [new Operand({ kind: OperandKind.TEXT, providedBy: ['-e', '-f'] })],
     rest: new Operand({ kind: OperandKind.PATH }),
   }),
   rg: new CommandSpec({
@@ -194,6 +197,8 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
       new Option({ short: '-w' }),
       new Option({ short: '-F' }),
       new Option({ short: '-o' }),
+      new Option({ short: '-e', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-f', valueKind: OperandKind.PATH, repeatable: true }),
       new Option({ short: '-m', valueKind: OperandKind.TEXT }),
       new Option({ short: '-A', valueKind: OperandKind.TEXT }),
       new Option({ short: '-B', valueKind: OperandKind.TEXT }),
@@ -201,6 +206,15 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
       new Option({ long: '--hidden' }),
       new Option({ long: '--type', valueKind: OperandKind.TEXT }),
       new Option({ long: '--glob', valueKind: OperandKind.TEXT }),
+    ],
+    positional: [new Operand({ kind: OperandKind.TEXT, providedBy: ['-e', '-f'] })],
+    rest: new Operand({ kind: OperandKind.PATH }),
+  }),
+  search: new CommandSpec({
+    options: [
+      new Option({ long: '--method', valueKind: OperandKind.TEXT }),
+      new Option({ long: '--top-k', valueKind: OperandKind.TEXT }),
+      new Option({ long: '--threshold', valueKind: OperandKind.TEXT }),
     ],
     positional: [new Operand({ kind: OperandKind.TEXT })],
     rest: new Operand({ kind: OperandKind.PATH }),
@@ -286,9 +300,11 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
   sed: new CommandSpec({
     options: [
       new Option({ short: '-i' }),
-      new Option({ short: '-e' }),
+      // -e takes a script and may repeat; multiple -e are joined with newlines.
+      new Option({ short: '-e', valueKind: OperandKind.TEXT, repeatable: true }),
       new Option({ short: '-n' }),
       new Option({ short: '-E' }),
+      new Option({ short: '-r' }),
     ],
     positional: [new Operand({ kind: OperandKind.TEXT })],
     rest: new Operand({ kind: OperandKind.PATH }),
@@ -617,7 +633,8 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
       new Option({ short: '-l' }),
       new Option({ short: '-n' }),
       new Option({ short: '-v' }),
-      new Option({ short: '-e', valueKind: OperandKind.TEXT }),
+      new Option({ short: '-e', valueKind: OperandKind.TEXT, repeatable: true }),
+      new Option({ short: '-f', valueKind: OperandKind.PATH, repeatable: true }),
       new Option({ short: '-E' }),
       new Option({ short: '-F' }),
       new Option({ short: '-H' }),
@@ -627,7 +644,7 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
       new Option({ short: '-q' }),
       new Option({ short: '-w' }),
     ],
-    positional: [new Operand({ kind: OperandKind.TEXT })],
+    positional: [new Operand({ kind: OperandKind.TEXT, providedBy: ['-e', '-f'] })],
     rest: new Operand({ kind: OperandKind.PATH }),
   }),
   mktemp: new CommandSpec({
@@ -652,7 +669,23 @@ export const BUILTIN_SPECS: Readonly<Record<string, CommandSpec>> = Object.freez
   }),
   history: new CommandSpec({
     description: 'Show command history for the session.',
-    options: [new Option({ short: '-c', description: 'Clear the command history.' })],
+    options: [
+      new Option({ short: '-c', description: 'Clear the command history.' }),
+      new Option({
+        short: '-d',
+        valueKind: OperandKind.TEXT,
+        description: 'Delete the history entry at the given offset.',
+      }),
+      new Option({
+        short: '-s',
+        description: 'Append the args as a single entry without running.',
+      }),
+      new Option({ short: '-p', description: 'Print the args without storing them.' }),
+      new Option({ short: '-a', description: 'Append: no-op (file and store are the same).' }),
+      new Option({ short: '-r', description: 'Read: no-op (file and store are the same).' }),
+      new Option({ short: '-w', description: 'Write: no-op (file and store are the same).' }),
+      new Option({ short: '-n', description: 'Read-new: no-op (file and store are the same).' }),
+    ],
     rest: new Operand({ kind: OperandKind.TEXT }),
   }),
   date: new CommandSpec({

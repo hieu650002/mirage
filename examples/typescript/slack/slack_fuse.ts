@@ -14,6 +14,8 @@
 
 import { readdir, readFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline/promises'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
 import {
   FuseManager,
@@ -23,7 +25,8 @@ import {
   type SlackConfig,
 } from '@struktoai/mirage-node'
 
-dotenv.config({ path: '.env.development' })
+const __HERE = fileURLToPath(new URL('.', import.meta.url))
+dotenv.config({ path: resolve(__HERE, '../../../.env.development') })
 
 function buildConfig(): SlackConfig {
   const token = process.env.SLACK_BOT_TOKEN
@@ -78,7 +81,7 @@ async function main(): Promise<void> {
       if (dates.length > 0) {
         let found = false
         for (const d of [...dates].reverse()) {
-          const path = `${mp}/slack/channels/${ch}/${d}`
+          const path = `${mp}/slack/channels/${ch}/${d}/chat.jsonl`
           const text = (await readFile(path, 'utf-8')).trim()
           if (text !== '') {
             const lines = text.split('\n').filter((ln) => ln.trim() !== '')
@@ -135,7 +138,7 @@ async function main(): Promise<void> {
     console.log(`\n>>> FUSE mounted at: ${mp}`)
     console.log('>>> Open another terminal and run:')
     console.log(`>>>   ls ${mp}/slack/`)
-    console.log(`>>>   cat ${mp}/slack/channels/<channel>/<date>.jsonl`)
+    console.log(`>>>   cat ${mp}/slack/channels/<channel>/<date>/chat.jsonl`)
     console.log('>>> Press Enter to unmount and exit...')
 
     const rl = createInterface({ input: process.stdin, output: process.stdout })

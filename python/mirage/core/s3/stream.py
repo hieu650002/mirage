@@ -18,8 +18,17 @@ from collections.abc import AsyncIterator
 from mirage.accessor.s3 import S3Accessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.s3._client import _client_kwargs, _key, async_session
-from mirage.observe.context import record, record_stream
+from mirage.core.s3.read import _fp_rev_from_response
+from mirage.observe.context import record, record_stream, revision_for
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
+
+
+def _is_not_found(exc: Exception) -> bool:
+    if hasattr(exc, "response"):
+        code = exc.response.get("Error", {}).get("Code")
+        return code in ("404", "NoSuchKey")
+    return False
 
 
 async def read_stream(
@@ -34,22 +43,36 @@ async def read_stream(
         accessor (S3Accessor): S3 accessor.
         path (PathSpec | str): Object path.
         index: Index cache store.
-        prefix (str): Mount prefix.
         chunk_size (int): Size of each chunk in bytes.
     """
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
+    pinned_revision = revision_for(virtual)
     config = accessor.config
     rec = record_stream("read", path, "s3")
     session = async_session(config)
     async with session.client(**_client_kwargs(config)) as client:
-        response = await client.get_object(Bucket=config.bucket,
-                                           Key=_key(path))
+        kwargs: dict = {"Bucket": config.bucket, "Key": _key(path, config)}
+        if pinned_revision is not None:
+            kwargs["VersionId"] = pinned_revision
+        try:
+            response = await client.get_object(**kwargs)
+        except Exception as exc:
+            if _is_not_found(exc):
+                raise enoent(virtual) from exc
+            raise
+        if rec is not None:
+            fingerprint, revision = _fp_rev_from_response(response)
+            rec.fingerprint = fingerprint
+            rec.revision = revision
         async for chunk in response["Body"].iter_chunks(chunk_size):
             if rec is not None:
                 rec.bytes += len(chunk)
@@ -68,17 +91,34 @@ async def range_read(accessor: S3Accessor, path: PathSpec, start: int,
     """
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     config = accessor.config
     start_ms = int(time.monotonic() * 1000)
     session = async_session(config)
     async with session.client(**_client_kwargs(config)) as client:
-        response = await client.get_object(
-            Bucket=config.bucket,
-            Key=_key(path),
-            Range=f"bytes={start}-{end - 1}",
-        )
+        kwargs: dict = {
+            "Bucket": config.bucket,
+            "Key": _key(path, config),
+            "Range": f"bytes={start}-{end - 1}",
+        }
+        pinned_revision = revision_for(virtual)
+        if pinned_revision is not None:
+            kwargs["VersionId"] = pinned_revision
+        try:
+            response = await client.get_object(**kwargs)
+        except Exception as exc:
+            if _is_not_found(exc):
+                raise enoent(virtual) from exc
+            raise
         data = await response["Body"].read()
-        record("read", path, "s3", len(data), start_ms)
+        fingerprint, revision = _fp_rev_from_response(response)
+        record("read",
+               path,
+               "s3",
+               len(data),
+               start_ms,
+               fingerprint=fingerprint,
+               revision=revision)
         return data

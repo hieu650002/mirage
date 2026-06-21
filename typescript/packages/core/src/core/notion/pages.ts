@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { NotionTransport } from './_client.ts'
-import { stripDashes } from './pathing.ts'
 
 type Json = Record<string, unknown>
 
@@ -90,6 +89,25 @@ export async function getChildBlocks(transport: NotionTransport, blockId: string
   })
 }
 
+const MAX_BLOCK_DEPTH = 10
+
+export async function getBlockTree(
+  transport: NotionTransport,
+  blockId: string,
+  depth = 0,
+): Promise<Json[]> {
+  const blocks = await getChildBlocks(transport, blockId)
+  if (depth >= MAX_BLOCK_DEPTH) return blocks
+  for (const block of blocks) {
+    const btype = block.type
+    if (btype === 'child_page' || btype === 'child_database') continue
+    if (block.has_children === true && typeof block.id === 'string') {
+      block.children = await getBlockTree(transport, block.id, depth + 1)
+    }
+  }
+  return blocks
+}
+
 export interface ChildPageRef {
   id: string
   title: string
@@ -108,11 +126,36 @@ export async function getChildPages(
     const childPage = asObject(block.child_page)
     const title = childPage.title
     refs.push({
-      id: stripDashes(id).toLowerCase(),
-      title: typeof title === 'string' ? title : '',
+      id,
+      title: typeof title === 'string' ? title : 'untitled',
     })
   }
   return refs
+}
+
+export async function searchPages(
+  transport: NotionTransport,
+  query: string,
+  pageSize: number,
+): Promise<Json[]> {
+  const baseArgs: Json = {
+    filter: { value: 'page', property: 'object' },
+    page_size: pageSize,
+  }
+  if (query !== '') baseArgs.query = query
+  return paginateTool(transport, 'API-post-search', baseArgs)
+}
+
+export async function appendBlocks(
+  transport: NotionTransport,
+  blockId: string,
+  body: Json,
+): Promise<Json> {
+  return transport.callTool('API-patch-block-children', { ...body, block_id: blockId })
+}
+
+export async function createComment(transport: NotionTransport, body: Json): Promise<Json> {
+  return transport.callTool('API-create-a-comment', body)
 }
 
 export interface CreatePageInput {

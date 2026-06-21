@@ -48,7 +48,7 @@ describe('ConsistencyPolicy', () => {
 })
 
 describe('ResourceName', () => {
-  it('exposes the 24 documented backend kinds with matching string values', () => {
+  it('exposes the documented backend kinds with matching string values', () => {
     expect(ResourceName.DISK).toBe('disk')
     expect(ResourceName.S3).toBe('s3')
     expect(ResourceName.RAM).toBe('ram')
@@ -71,14 +71,23 @@ describe('ResourceName', () => {
     expect(ResourceName.GITHUB_CI).toBe('github_ci')
     expect(ResourceName.GCS).toBe('gcs')
     expect(ResourceName.EMAIL).toBe('email')
-    expect(ResourceName.PAPERCLIP).toBe('paperclip')
     expect(ResourceName.OPFS).toBe('opfs')
     expect(ResourceName.SUPABASE).toBe('supabase')
     expect(ResourceName.POSTGRES).toBe('postgres')
+    expect(ResourceName.MINIO).toBe('minio')
+    expect(ResourceName.CEPH).toBe('ceph')
+    expect(ResourceName.SEAWEEDFS).toBe('seaweedfs')
+    expect(ResourceName.WASABI).toBe('wasabi')
+    expect(ResourceName.BACKBLAZE).toBe('backblaze')
+    expect(ResourceName.DIGITALOCEAN).toBe('digitalocean')
+    expect(ResourceName.TENCENT).toBe('tencent')
+    expect(ResourceName.ALIYUN).toBe('aliyun')
+    expect(ResourceName.SCALEWAY).toBe('scaleway')
+    expect(ResourceName.QINGSTOR).toBe('qingstor')
   })
 
-  it('contains exactly 34 entries', () => {
-    expect(Object.keys(ResourceName)).toHaveLength(34)
+  it('contains exactly 47 entries', () => {
+    expect(Object.keys(ResourceName)).toHaveLength(47)
   })
 
   it('is frozen at runtime', () => {

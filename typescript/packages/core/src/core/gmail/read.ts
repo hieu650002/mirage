@@ -17,26 +17,16 @@ import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { PathSpec } from '../../types.ts'
 import { getAttachment, getMessageProcessed } from './messages.ts'
 import { readdir } from './readdir.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { gnuDirname } from '../../utils/path.ts'
+import { enoent } from '../../utils/errors.ts'
 
 const ENC = new TextEncoder()
-
-function enoent(p: string): Error {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
 
 function eisdir(p: string): Error {
   const e = new Error(`EISDIR: ${p}`) as Error & { code: string }
   e.code = 'EISDIR'
   return e
-}
-
-function dirname(p: string): string {
-  const norm = p.replace(/\/+$/, '')
-  const idx = norm.lastIndexOf('/')
-  if (idx <= 0) return '/'
-  return norm.slice(0, idx)
 }
 
 export async function read(
@@ -47,12 +37,12 @@ export async function read(
   const prefix = path.prefix
   let p = path.original
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   if (index === undefined) throw enoent(path.original)
   const virtualKey = prefix !== '' ? `${prefix}/${key}` : `/${key}`
   let result = await index.get(virtualKey)
   if (result.entry === undefined || result.entry === null) {
-    const parentKey = dirname(virtualKey)
+    const parentKey = gnuDirname(virtualKey)
     if (parentKey !== virtualKey) {
       const parentPath = PathSpec.fromStrPath(parentKey, prefix)
       try {
@@ -69,7 +59,7 @@ export async function read(
     throw eisdir(path.original)
   }
   if (rt === 'gmail/attachment') {
-    const parentKey = dirname(virtualKey)
+    const parentKey = gnuDirname(virtualKey)
     const parentResult = await index.get(parentKey)
     if (parentResult.entry === undefined || parentResult.entry === null) {
       throw enoent(path.original)

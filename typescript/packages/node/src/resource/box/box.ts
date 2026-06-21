@@ -13,15 +13,14 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import {
+  BaseResource,
   BOX_COMMANDS,
   BOX_PROMPT,
   BOX_VFS_OPS,
   BoxAccessor,
   BoxTokenManager,
   type FileStat,
-  type IndexCacheStore,
   PathSpec,
-  RAMIndexCacheStore,
   type RegisteredCommand,
   type RegisteredOp,
   type Resource,
@@ -35,26 +34,25 @@ import { redactBoxConfig, type BoxConfig, type BoxConfigRedacted } from './confi
 
 export interface BoxResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: BoxConfigRedacted
 }
 
-export class BoxResource implements Resource {
+export class BoxResource extends BaseResource implements Resource {
   readonly kind: string = ResourceName.BOX
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 86_400
   readonly prompt: string = BOX_PROMPT
   readonly config: BoxConfig
   readonly accessor: BoxAccessor
-  readonly index: IndexCacheStore
 
   constructor(config: BoxConfig) {
+    super()
     this.config = config
     const tm = new BoxTokenManager({
       ...(config.clientId !== undefined ? { clientId: config.clientId } : {}),
       ...(config.clientSecret !== undefined ? { clientSecret: config.clientSecret } : {}),
       ...(config.refreshToken !== undefined ? { refreshToken: config.refreshToken } : {}),
+      ...(config.enterpriseId !== undefined ? { enterpriseId: config.enterpriseId } : {}),
       ...(config.accessToken !== undefined ? { accessToken: config.accessToken } : {}),
       ...(config.refreshFn !== undefined ? { refreshFn: config.refreshFn } : {}),
       ...(config.onRefreshTokenRotated !== undefined
@@ -62,7 +60,6 @@ export class BoxResource implements Resource {
         : {}),
     })
     this.accessor = new BoxAccessor({ tokenManager: tm })
-    this.index = new RAMIndexCacheStore({ ttl: 86_400 })
   }
 
   open(): Promise<void> {
@@ -119,8 +116,6 @@ export class BoxResource implements Resource {
   getState(): Promise<BoxResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['clientSecret', 'refreshToken', 'accessToken'],
       config: redactBoxConfig(this.config),
     })
   }

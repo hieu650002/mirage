@@ -27,6 +27,15 @@ if (TOKEN === undefined || TOKEN === '') {
 const PREFIX = '/api/slack/'
 const HOST = '127.0.0.1'
 const PORT = 8901
+const UPSTREAM_ORIGIN = 'https://slack.com'
+const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/
+
+function isSafeEndpoint(endpoint: string): boolean {
+  if (endpoint === '') return false
+  return endpoint
+    .split('/')
+    .every((seg) => seg !== '.' && seg !== '..' && SAFE_SEGMENT.test(seg))
+}
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = []
@@ -45,7 +54,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return
   }
   const endpoint = url.pathname.slice(PREFIX.length)
-  const upstream = new URL(`https://slack.com/api/${endpoint}`)
+  if (!isSafeEndpoint(endpoint)) {
+    res.statusCode = 400
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ error: 'invalid slack api endpoint' }))
+    return
+  }
+  const upstream = new URL(`/api/${endpoint}`, UPSTREAM_ORIGIN)
   upstream.search = url.search
 
   const method = (req.method ?? 'GET').toUpperCase()
@@ -75,9 +90,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (upstreamCt !== null) res.setHeader('content-type', upstreamCt)
     res.end(text)
   } catch (err) {
+    console.error('upstream fetch error:', err)
     res.statusCode = 502
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ error: 'upstream error', message: String(err) }))
+    res.end(JSON.stringify({ error: 'upstream error' }))
   }
 }
 

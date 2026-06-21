@@ -13,9 +13,21 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { PathSpec } from '../../types.ts'
+import { stripSlash } from '../../utils/slash.ts'
+
+export type DiscordLevel =
+  | 'root'
+  | 'guild'
+  | 'channel'
+  | 'date'
+  | 'messages'
+  | 'files'
+  | 'file_blob'
+  | 'member'
+  | 'file'
 
 export interface DiscordScope {
-  level: 'root' | 'guild' | 'channel' | 'file'
+  level: DiscordLevel
   useNative: boolean
   guildName?: string
   guildId?: string
@@ -28,15 +40,15 @@ export interface DiscordScope {
   resourcePath: string
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
 function stripSlashes(s: string): string {
-  return s.replace(/^\/+|\/+$/g, '')
+  return stripSlash(s)
 }
 
 function splitDirname(dirname: string): [string, string | undefined] {
   const idx = dirname.lastIndexOf('__')
-  if (idx === -1) {
-    return [dirname, undefined]
-  }
+  if (idx === -1) return [dirname, undefined]
   const name = dirname.slice(0, idx)
   const cid = dirname.slice(idx + 2)
   return [name, cid.length > 0 ? cid : undefined]
@@ -49,20 +61,12 @@ export function detectScope(path: PathSpec): DiscordScope {
     let dirKey = stripSlashes(path.directory)
     if (prefix) {
       const stripped = stripSlashes(prefix) + '/'
-      if (dirKey.startsWith(stripped)) {
-        dirKey = dirKey.slice(stripped.length)
-      }
+      if (dirKey.startsWith(stripped)) dirKey = dirKey.slice(stripped.length)
     }
-    const dirParts = dirKey ? dirKey.split('/') : []
-    const [dirGuild, dirContainer, dirChannel] = dirParts
-    if (
-      dirParts.length === 3 &&
-      dirGuild !== undefined &&
-      dirChannel !== undefined &&
-      dirContainer === 'channels'
-    ) {
-      const [guildName, guildId] = splitDirname(dirGuild)
-      const [channelName, channelId] = splitDirname(dirChannel)
+    const dp = dirKey ? dirKey.split('/') : []
+    if (dp.length === 3 && dp[1] === 'channels' && dp[0] && dp[2]) {
+      const [guildName, guildId] = splitDirname(dp[0])
+      const [channelName, channelId] = splitDirname(dp[2])
       return {
         level: 'channel',
         useNative: true,
@@ -74,15 +78,35 @@ export function detectScope(path: PathSpec): DiscordScope {
         resourcePath: dirKey,
       }
     }
+    if (
+      dp.length === 4 &&
+      dp[1] === 'channels' &&
+      dp[0] !== undefined &&
+      dp[2] !== undefined &&
+      dp[3] !== undefined &&
+      DATE_RE.test(dp[3])
+    ) {
+      const [guildName, guildId] = splitDirname(dp[0])
+      const [channelName, channelId] = splitDirname(dp[2])
+      return {
+        level: 'messages',
+        useNative: true,
+        guildName,
+        ...(guildId !== undefined ? { guildId } : {}),
+        channelName,
+        ...(channelId !== undefined ? { channelId } : {}),
+        container: 'channels',
+        dateStr: dp[3],
+        resourcePath: dirKey,
+      }
+    }
   }
 
   const key = path.key
-  if (!key) {
-    return { level: 'root', useNative: true, resourcePath: '/' }
-  }
+  if (!key) return { level: 'root', useNative: true, resourcePath: '/' }
 
   const parts = key.split('/')
-  const [first, second, third, fourth] = parts
+  const [first, second, third, fourth, fifth, sixth] = parts
 
   if (first === undefined) {
     return { level: 'guild', useNative: false, resourcePath: key }
@@ -139,7 +163,7 @@ export function detectScope(path: PathSpec): DiscordScope {
       const stem = third.endsWith('.json') ? third.slice(0, -5) : third
       const [memberName, memberId] = splitDirname(stem)
       return {
-        level: 'file',
+        level: 'member',
         useNative: false,
         guildName,
         ...(guildId !== undefined ? { guildId } : {}),
@@ -151,24 +175,88 @@ export function detectScope(path: PathSpec): DiscordScope {
     }
   }
 
+  // /<guild>/channels/<ch>/<date>
   if (
     parts.length === 4 &&
     second === 'channels' &&
     third !== undefined &&
-    fourth?.endsWith('.jsonl')
+    fourth !== undefined &&
+    DATE_RE.test(fourth)
   ) {
     const [guildName, guildId] = splitDirname(first)
     const [channelName, channelId] = splitDirname(third)
-    const dateStr = fourth.slice(0, -'.jsonl'.length)
     return {
-      level: 'file',
+      level: 'date',
+      useNative: true,
+      guildName,
+      ...(guildId !== undefined ? { guildId } : {}),
+      channelName,
+      ...(channelId !== undefined ? { channelId } : {}),
+      container: 'channels',
+      dateStr: fourth,
+      resourcePath: key,
+    }
+  }
+
+  // /<guild>/channels/<ch>/<date>/chat.jsonl or /<date>/files
+  if (
+    parts.length === 5 &&
+    second === 'channels' &&
+    third !== undefined &&
+    fourth !== undefined &&
+    DATE_RE.test(fourth)
+  ) {
+    const [guildName, guildId] = splitDirname(first)
+    const [channelName, channelId] = splitDirname(third)
+    if (fifth === 'chat.jsonl') {
+      return {
+        level: 'messages',
+        useNative: false,
+        guildName,
+        ...(guildId !== undefined ? { guildId } : {}),
+        channelName,
+        ...(channelId !== undefined ? { channelId } : {}),
+        container: 'channels',
+        dateStr: fourth,
+        resourcePath: key,
+      }
+    }
+    if (fifth === 'files') {
+      return {
+        level: 'files',
+        useNative: true,
+        guildName,
+        ...(guildId !== undefined ? { guildId } : {}),
+        channelName,
+        ...(channelId !== undefined ? { channelId } : {}),
+        container: 'channels',
+        dateStr: fourth,
+        resourcePath: key,
+      }
+    }
+  }
+
+  // /<guild>/channels/<ch>/<date>/files/<blob>
+  if (
+    parts.length === 6 &&
+    second === 'channels' &&
+    third !== undefined &&
+    fourth !== undefined &&
+    DATE_RE.test(fourth) &&
+    fifth === 'files' &&
+    sixth !== undefined
+  ) {
+    const [guildName, guildId] = splitDirname(first)
+    const [channelName, channelId] = splitDirname(third)
+    return {
+      level: 'file_blob',
       useNative: false,
       guildName,
       ...(guildId !== undefined ? { guildId } : {}),
       channelName,
       ...(channelId !== undefined ? { channelId } : {}),
       container: 'channels',
-      dateStr,
+      dateStr: fourth,
       resourcePath: key,
     }
   }

@@ -15,13 +15,9 @@
 import type { GDriveAccessor } from '../../accessor/gdrive.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
-import { readdir as coreReaddir } from './readdir.ts'
-
-function enoent(p: string): Error & { code: string } {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
+import { DIRECTORY_RESOURCE_TYPES, readdir as coreReaddir } from './readdir.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 function guessType(name: string): FileType {
   const lower = name.toLowerCase()
@@ -57,7 +53,7 @@ export async function stat(
   const prefix = path.prefix
   let p = path.original
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   if (key === '') return new FileStat({ name: '/', type: FileType.DIRECTORY })
 
   if (index === undefined) throw enoent(path.original)
@@ -86,7 +82,7 @@ export async function stat(
       throw enoent(path.original)
     }
   }
-  if (result.entry.resourceType === 'gdrive/folder') {
+  if (DIRECTORY_RESOURCE_TYPES.has(result.entry.resourceType)) {
     return new FileStat({
       name: result.entry.vfsName !== '' ? result.entry.vfsName : result.entry.name,
       type: FileType.DIRECTORY,

@@ -12,16 +12,20 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import posixpath
 from collections.abc import AsyncIterator
 
 from mirage.accessor.gdrive import GDriveAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.gdocs.read import read_doc
+from mirage.core.gdrive import DIRECTORY_RESOURCE_TYPES
+from mirage.core.gdrive.readdir import readdir
 from mirage.core.google.drive import download_file_stream
 from mirage.core.gsheets.read import read_spreadsheet
 from mirage.core.gslides.read import read_presentation
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 
 async def read_stream(
@@ -32,20 +36,37 @@ async def read_stream(
 ) -> AsyncIterator[bytes] | bytes:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
 
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     key = path.strip("/")
     if index is None:
-        raise FileNotFoundError(path)
+        raise enoent(virtual)
     virtual_key = prefix + "/" + key if prefix else "/" + key
     result = await index.get(virtual_key)
     if result.entry is None:
-        raise FileNotFoundError(path)
+        # cold index: list the parent directory to populate the entry,
+        # then retry
+        parent_key = posixpath.dirname(virtual_key) or "/"
+        if parent_key != virtual_key:
+            parent_path = PathSpec.from_str_path(parent_key, prefix=prefix)
+            try:
+                await readdir(accessor, parent_path, index)
+                result = await index.get(virtual_key)
+            except Exception:
+                # parent refresh failed; fall through to FileNotFoundError
+                pass
+        if result.entry is None:
+            raise enoent(virtual)
     rt = result.entry.resource_type
+    if rt in DIRECTORY_RESOURCE_TYPES:
+        raise IsADirectoryError(virtual)
     if rt == "gdrive/gdoc":
         return await read_doc(accessor.token_manager, result.entry.id)
     if rt == "gdrive/gsheet":
@@ -53,6 +74,20 @@ async def read_stream(
     if rt == "gdrive/gslide":
         return await read_presentation(accessor.token_manager, result.entry.id)
     return _stream_file(accessor, result.entry.id, path, chunk_size)
+
+
+async def stream(
+    accessor: GDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = None,
+    chunk_size: int = 8192,
+) -> AsyncIterator[bytes]:
+    result = await read_stream(accessor, path, index, chunk_size)
+    if isinstance(result, bytes):
+        yield result
+        return
+    async for chunk in result:
+        yield chunk
 
 
 async def _stream_file(

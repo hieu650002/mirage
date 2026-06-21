@@ -16,7 +16,7 @@ from mirage.commands.builtin.notion.basename import basename
 from mirage.commands.builtin.notion.cat import cat
 from mirage.commands.builtin.notion.dirname import dirname
 from mirage.commands.builtin.notion.find import find
-from mirage.commands.builtin.notion.grep import COMMANDS as _GREP_COMMANDS
+from mirage.commands.builtin.notion.grep import grep
 from mirage.commands.builtin.notion.head import head
 from mirage.commands.builtin.notion.jq import jq
 from mirage.commands.builtin.notion.ls import ls
@@ -32,6 +32,7 @@ from mirage.commands.builtin.notion.rg import rg
 from mirage.commands.builtin.notion.stat import stat
 from mirage.commands.builtin.notion.tail import tail
 from mirage.commands.builtin.notion.tree import tree
+from mirage.commands.builtin.notion.wc import wc
 
 COMMANDS = [
     basename,
@@ -50,5 +51,6 @@ COMMANDS = [
     stat,
     tail,
     tree,
-    *_GREP_COMMANDS,
+    wc,
+    grep,
 ]

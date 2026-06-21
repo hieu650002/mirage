@@ -16,14 +16,65 @@ import dataclasses
 import inspect
 from typing import Any, Callable
 
+from mirage.cache.context import push_cache_manager
+from mirage.cache.manager import CacheManager
+from mirage.commands.builtin.utils.safeguard import (apply_op_safeguard,
+                                                     run_with_timeout)
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.resolve import get_extension
+from mirage.commands.safeguard import CommandSafeguard, resolve_safeguard
 from mirage.commands.spec import CommandSpec
 from mirage.io.types import ByteSource, IOResult
-from mirage.observe.context import set_virtual_prefix
+from mirage.observe.context import (push_mount_prefix, push_revisions,
+                                    reset_revisions, with_mount_prefix,
+                                    with_revisions)
 from mirage.ops.registry import RegisteredOp
 from mirage.resource.base import BaseResource
 from mirage.types import ConsistencyPolicy, MountMode, PathSpec
+
+
+def _wrap_cmd_streams(
+    result: tuple[ByteSource | None, IOResult],
+    mount_prefix: str,
+    revisions: dict[str, str] | None,
+) -> tuple[ByteSource | None, IOResult]:
+    """Wrap any async-iterator streams in ``result`` with the mount
+    prefix and active revisions, so ``record_stream`` and
+    ``revision_for`` calls inside the lazy backend body see the right
+    context when consumed after this frame exits.
+
+    Mirrors the ``exit_on_empty`` pattern: thin async-gen wrapper that
+    side-effects the recorder state as bytes flow through. Same object
+    appearing in both the primary stream and IOResult.reads/writes is
+    wrapped once (dedup by identity).
+
+    Args:
+        result: ``(stream, io)`` as returned by a command handler.
+        mount_prefix: prefix to push during stream consumption.
+        revisions: revisions map to push during stream consumption
+            (None when the mount has no pins installed).
+    """
+    stream, io = result
+    seen: dict[int, ByteSource] = {}
+
+    def _wrap(obj: ByteSource | None) -> ByteSource | None:
+        if obj is None or isinstance(obj, (bytes, bytearray)):
+            return obj
+        oid = id(obj)
+        if oid in seen:
+            return seen[oid]
+        wrapped = with_mount_prefix(mount_prefix, obj)
+        if revisions:
+            wrapped = with_revisions(revisions, wrapped)
+        seen[oid] = wrapped
+        return wrapped
+
+    stream = _wrap(stream)
+    for k, v in list(io.reads.items()):
+        io.reads[k] = _wrap(v)
+    for k, v in list(io.writes.items()):
+        io.writes[k] = _wrap(v)
+    return stream, io
 
 
 class Mount:
@@ -56,9 +107,18 @@ class Mount:
         self.resource = resource
         self.mode = mode
         self.consistency = consistency
+        self.cache_manager: CacheManager | None = None
+        # Per-path revision pins installed at Workspace.load time. Read
+        # functions consult these via the ``revision_for`` contextvar
+        # lookup; on a hit, the backend GET pins to the recorded
+        # revision so replay serves the exact bytes the agent saw.
+        # Empty during normal runs; populated only by the snapshot
+        # loader.
+        self.revisions: dict[str, str] = {}
         self._cmds: dict[tuple, RegisteredCommand] = {}
         self._general_cmds: dict[str, RegisteredCommand] = {}
         self._cmd_specs: dict[str, CommandSpec] = {}
+        self.command_safeguards: dict[str, CommandSafeguard] = {}
         self._ops: dict[tuple, RegisteredOp] = {}
         self._general_ops: dict[str, RegisteredOp] = {}
         # key: (cmd_name, target_resource_type)
@@ -171,17 +231,29 @@ class Mount:
         pname = self.resource.name
         for fn in fns:
             if hasattr(fn, "_registered_commands"):
-                for rc in fn._registered_commands:
-                    if rc.resource is not None and rc.resource != pname:
-                        raise ValueError(
-                            f"command {rc.name!r} is for resource "
-                            f"{rc.resource!r}, not {pname!r}")
+                rcs = fn._registered_commands
+                matching = [
+                    rc for rc in rcs
+                    if rc.resource is None or rc.resource == pname
+                ]
+                if rcs and not matching:
+                    resources = sorted({rc.resource for rc in rcs})
+                    raise ValueError(
+                        f"command {rcs[0].name!r} is for resource(s) "
+                        f"{resources!r}, not {pname!r}")
+                for rc in matching:
                     self.register(rc)
             if hasattr(fn, "_registered_ops"):
-                for ro in fn._registered_ops:
-                    if ro.resource is not None and ro.resource != pname:
-                        raise ValueError(f"op {ro.name!r} is for resource "
-                                         f"{ro.resource!r}, not {pname!r}")
+                ros = fn._registered_ops
+                matching_ops = [
+                    ro for ro in ros
+                    if ro.resource is None or ro.resource == pname
+                ]
+                if ros and not matching_ops:
+                    resources = sorted({ro.resource for ro in ros})
+                    raise ValueError(f"op {ros[0].name!r} is for resource(s) "
+                                     f"{resources!r}, not {pname!r}")
+                for ro in matching_ops:
                     self.register_op(ro)
 
     def unregister(self, names: list[str]) -> None:
@@ -306,8 +378,9 @@ class Mount:
         stdin: ByteSource | None = None,
         cwd: str = "/",
         dispatch: Callable | None = None,
-        history: Any = None,
         session_id: str | None = None,
+        env: dict[str, str] | None = None,
+        exec_allowed: bool = True,
     ) -> tuple[ByteSource | None, IOResult]:
         """Execute a command on this mount's resource.
 
@@ -342,12 +415,23 @@ class Mount:
                 p, PathSpec) else p for p in paths
         ]
 
-        kw = {
-            k:
-            dataclasses.replace(v, prefix=mount_prefix) if isinstance(
-                v, PathSpec) else v
-            for k, v in flag_kwargs.items()
-        }
+        # Attach this mount's prefix to path-shaped flag values so backend
+        # reads can strip it: a single PathSpec (e.g. awk -f, single grep -f)
+        # or a list of PathSpec (repeatable grep -f). Everything else (bools,
+        # strings, list[str] like repeated -e) is not a path and passes
+        # through unchanged.
+        kw = {}
+        for k, v in flag_kwargs.items():
+            if isinstance(v, PathSpec):
+                kw[k] = dataclasses.replace(v, prefix=mount_prefix)
+            elif isinstance(v, list) and v and all(
+                    isinstance(item, PathSpec) for item in v):
+                kw[k] = [
+                    dataclasses.replace(item, prefix=mount_prefix)
+                    for item in v
+                ]
+            else:
+                kw[k] = v
         kw["index"] = self.resource.index
         kw["cwd"] = PathSpec(
             original=cwd,
@@ -360,12 +444,15 @@ class Mount:
             kw["stdin"] = stdin
         if dispatch is not None:
             kw["dispatch"] = dispatch
-        if history is not None:
-            kw["history"] = history
         if session_id is not None:
             kw["session_id"] = session_id
+        if env is not None:
+            kw["env"] = env
+        kw["exec_allowed"] = exec_allowed
 
-        set_virtual_prefix(mount_prefix)
+        prev_prefix = push_mount_prefix(mount_prefix)
+        revs_token = push_revisions(self.revisions or None)
+        prev_manager = push_cache_manager(self.cache_manager)
         try:
             for cmd in handlers:
                 if cmd.write and self.mode == MountMode.READ:
@@ -376,10 +463,19 @@ class Mount:
                 result = await cmd.fn(self.resource.accessor, paths, *texts,
                                       **kw)
                 if result is not None:
-                    return result
+                    stream, io = _wrap_cmd_streams(result, mount_prefix,
+                                                   self.revisions or None)
+                    # TODO: hand back a finalization context separately
+                    # instead of stamping policy onto io.safeguard.
+                    io.safeguard = resolve_safeguard(
+                        cmd_name, cmd.safeguard,
+                        self.command_safeguards.get(cmd_name))
+                    return stream, io
             return None, IOResult()
         finally:
-            set_virtual_prefix("")
+            reset_revisions(revs_token)
+            push_mount_prefix(prev_prefix)
+            push_cache_manager(prev_manager)
 
     async def execute_op(
         self,
@@ -414,10 +510,20 @@ class Mount:
             prefix=mount_prefix,
         )
         kwargs.setdefault("index", self.resource.index)
-        for op in levels:
-            result = op.fn(self.resource.accessor, scope, *args, **kwargs)
-            if inspect.isawaitable(result):
-                result = await result
-            if result is not None:
-                return result
-        return None
+        op_override = self.command_safeguards.get(op_name)
+        op_timeout = (op_override.timeout_seconds
+                      if op_override is not None else None)
+        prev_prefix = push_mount_prefix(mount_prefix)
+        revs_token = push_revisions(self.revisions or None)
+        try:
+            for op in levels:
+                result = op.fn(self.resource.accessor, scope, *args, **kwargs)
+                if inspect.isawaitable(result):
+                    result = await run_with_timeout(result, op_timeout,
+                                                    op_name)
+                if result is not None:
+                    return await apply_op_safeguard(result, op_override)
+            return None
+        finally:
+            reset_revisions(revs_token)
+            push_mount_prefix(prev_prefix)

@@ -22,6 +22,8 @@ export default defineConfig({
     'src/pi/index.ts',
     'src/vercel/index.ts',
     'src/mastra/index.ts',
+    'src/opencode/index.ts',
+    'src/claude-agent-sdk/index.ts',
   ],
   format: ['esm'],
   dts: {

@@ -23,7 +23,7 @@ const DEC = new TextDecoder()
 
 async function runStat(
   paths: PathSpec[],
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   options: { index?: RAMIndexCacheStore; transport?: FakeSlackTransport } = {},
 ): Promise<{ stdout: string; exitCode: number }> {
   const cmd = SLACK_STAT[0]
@@ -84,7 +84,7 @@ describe('slack stat', () => {
       { c: '%n' },
       { index: idx },
     )
-    expect(out.stdout).toBe('general__C1')
+    expect(out.stdout).toBe('/mnt/slack/channels/general__C1\n')
   })
 
   it('returns exit 1 with no operand', async () => {

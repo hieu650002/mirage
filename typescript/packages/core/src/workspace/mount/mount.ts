@@ -16,7 +16,6 @@ import { type Accessor, NOOPAccessor } from '../../accessor/base.ts'
 import type {
   CommandDispatch,
   CommandFn,
-  CommandHistory,
   CommandOpts,
   RegisteredCommand,
 } from '../../commands/config.ts'
@@ -24,13 +23,19 @@ import type { OpKwargs } from '../../ops/registry.ts'
 
 const NOOP_ACCESSOR = new NOOPAccessor()
 import { getExtension } from '../../commands/resolve.ts'
+import { resolveSafeguard } from '../../commands/safeguard.ts'
+import { applyOpSafeguard, runWithTimeout } from '../../commands/builtin/utils/safeguard.ts'
 import type { CommandSpec } from '../../commands/spec/types.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult } from '../../io/types.ts'
-import { setVirtualPrefix } from '../../observe/context.ts'
+import { runWithCacheManager } from '../../cache/context.ts'
+import type { CacheManager } from '../../cache/manager.ts'
+import { runWithRevisions, setVirtualPrefix } from '../../observe/context.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import type { Resource } from '../../resource/base.ts'
-import { ConsistencyPolicy, MountMode, PathSpec } from '../../types.ts'
+import { type CommandSafeguard, ConsistencyPolicy, MountMode, PathSpec } from '../../types.ts'
+import type { PyodideRuntime } from '../executor/python/runtime.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 type CmdKey = string
 type OpKey = string
@@ -64,9 +69,21 @@ export class Mount {
   readonly mode: MountMode
   readonly consistency: ConsistencyPolicy
 
+  /**
+   * Per-path revision pins installed at Workspace.load time. Read
+   * functions consult these via the {@link revisionFor} contextvar
+   * lookup; on a hit, the backend GET pins to the recorded revision so
+   * replay serves the exact bytes the agent saw. Empty during normal
+   * runs; populated only by the snapshot loader.
+   */
+  readonly revisions = new Map<string, string>()
+
+  cacheManager: CacheManager | null = null
+
   private readonly cmds = new Map<CmdKey, RegisteredCommand>()
   private readonly generalCmds = new Map<string, RegisteredCommand>()
   private readonly cmdSpecs = new Map<string, CommandSpec>()
+  readonly commandSafeguards = new Map<string, CommandSafeguard>()
   private readonly ops = new Map<OpKey, RegisteredOp>()
   private readonly generalOps = new Map<string, RegisteredOp>()
   private readonly crossCmds = new Map<string, RegisteredCommand>()
@@ -216,25 +233,65 @@ export class Mount {
    * Batch-register commands and ops. Mirrors Python's
    * `Mount.register_fns(...)`. Each entry is a `RegisteredCommand` or
    * `RegisteredOp`; commands with `resource: null` go to the general
-   * table, ops with `resource: null` likewise. Resource-specific
-   * entries must match this mount's resource kind.
+   * table, ops with `resource: null` likewise. Multi-resource entries
+   * (sharing the same name across resources) are filtered to this
+   * mount's resource kind; if a name has entries but none match this
+   * mount, throw.
    */
   registerFns(items: readonly (RegisteredCommand | RegisteredOp)[]): void {
     const kind = this.resource.kind
+    interface Group<T> {
+      toRegister: T[]
+      attempted: Set<string>
+    }
+    const cmdGroups = new Map<string, Group<RegisteredCommand>>()
+    const opGroups = new Map<string, Group<RegisteredOp>>()
     for (const item of items) {
       if (isRegisteredOp(item)) {
-        if (item.resource !== null && item.resource !== kind) {
-          throw new Error(`op ${item.name} is for resource ${item.resource}, not ${kind}`)
+        let g = opGroups.get(item.name)
+        if (!g) {
+          g = { toRegister: [], attempted: new Set() }
+          opGroups.set(item.name, g)
         }
-        if (item.resource === null) this.registerGeneralOp(item)
-        else this.registerOp(item)
-        continue
+        if (item.resource === null || item.resource === kind) g.toRegister.push(item)
+        else g.attempted.add(item.resource)
+      } else {
+        let g = cmdGroups.get(item.name)
+        if (!g) {
+          g = { toRegister: [], attempted: new Set() }
+          cmdGroups.set(item.name, g)
+        }
+        if (item.resource === null || item.resource === kind) g.toRegister.push(item)
+        else g.attempted.add(item.resource)
       }
-      if (item.resource !== null && item.resource !== kind) {
-        throw new Error(`command ${item.name} is for resource ${item.resource}, not ${kind}`)
+    }
+    for (const [name, g] of cmdGroups) {
+      if (g.toRegister.length === 0) {
+        const list = [...g.attempted].sort()
+        throw new Error(
+          `command '${name}' is for resource(s) [${list.map((r) => `'${r}'`).join(', ')}], not '${kind}'`,
+        )
       }
-      if (item.resource === null) this.registerGeneral(item)
-      else this.register(item)
+    }
+    for (const [name, g] of opGroups) {
+      if (g.toRegister.length === 0) {
+        const list = [...g.attempted].sort()
+        throw new Error(
+          `op '${name}' is for resource(s) [${list.map((r) => `'${r}'`).join(', ')}], not '${kind}'`,
+        )
+      }
+    }
+    for (const g of cmdGroups.values()) {
+      for (const cmd of g.toRegister) {
+        if (cmd.resource === null) this.registerGeneral(cmd)
+        else this.register(cmd)
+      }
+    }
+    for (const g of opGroups.values()) {
+      for (const o of g.toRegister) {
+        if (o.resource === null) this.registerGeneralOp(o)
+        else this.registerOp(o)
+      }
     }
   }
 
@@ -262,13 +319,16 @@ export class Mount {
     cmdName: string,
     paths: PathSpec[],
     texts: string[],
-    flags: Record<string, string | boolean>,
+    flags: Record<string, string | boolean | string[]>,
     opts: {
       stdin?: ByteSource | null
       cwd?: string
       dispatch?: CommandDispatch
-      history?: CommandHistory
       sessionId?: string
+      env?: Record<string, string>
+      execAllowed?: boolean
+      pythonRuntime?: PyodideRuntime
+      safeguardOverride?: CommandSafeguard | null
     } = {},
   ): Promise<[ByteSource | null, IOResult]> {
     const extension =
@@ -285,7 +345,7 @@ export class Mount {
       ]
     }
 
-    const mountPrefix = this.prefix.replace(/\/+$/, '')
+    const mountPrefix = rstripSlash(this.prefix)
     const filetypeFns = this.filetypeHandlers(cmdName)
     const isFiletypeCmd =
       extension !== null && extension !== '' && this.cmds.has(cmdKey(cmdName, extension))
@@ -298,6 +358,7 @@ export class Mount {
           pattern: p.pattern,
           resolved: p.resolved,
           prefix: mountPrefix,
+          asTyped: p.asTyped,
         }),
     )
 
@@ -314,28 +375,48 @@ export class Mount {
       resource: this.resource,
       ...(this.resource.index !== undefined ? { index: this.resource.index } : {}),
       ...(opts.dispatch !== undefined ? { dispatch: opts.dispatch } : {}),
-      ...(opts.history !== undefined ? { history: opts.history } : {}),
       ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+      ...(opts.env !== undefined ? { env: opts.env } : {}),
+      ...(opts.execAllowed !== undefined ? { execAllowed: opts.execAllowed } : {}),
+      ...(opts.pythonRuntime !== undefined ? { pythonRuntime: opts.pythonRuntime } : {}),
     }
 
     setVirtualPrefix(mountPrefix)
     try {
-      for (const cmd of handlers) {
-        if (cmd.write && this.mode === MountMode.READ) {
-          return [
-            null,
-            new IOResult({
-              exitCode: 1,
-              stderr: new TextEncoder().encode(`${cmdName}: read-only mount at ${this.prefix}`),
-            }),
-          ]
-        }
-        const result = await cmd.fn(accessor, expandedPaths, texts, cmdOpts)
-        if (result !== null) {
-          return result
-        }
-      }
-      return [null, new IOResult()]
+      return await runWithCacheManager(this.cacheManager, () =>
+        runWithRevisions(
+          this.revisions.size > 0 ? this.revisions : null,
+          async (): Promise<[ByteSource | null, IOResult]> => {
+            for (const cmd of handlers) {
+              if (cmd.write && this.mode === MountMode.READ) {
+                return [
+                  null,
+                  new IOResult({
+                    exitCode: 1,
+                    stderr: new TextEncoder().encode(
+                      `${cmdName}: read-only mount at ${this.prefix}`,
+                    ),
+                  }),
+                ]
+              }
+              const result = await cmd.fn(accessor, expandedPaths, texts, cmdOpts)
+              if (result !== null) {
+                // TODO: hand back a finalization context separately
+                // instead of stamping policy onto io.safeguard.
+                result[1].safeguard = resolveSafeguard(
+                  cmdName,
+                  cmd.safeguard,
+                  opts.safeguardOverride !== undefined
+                    ? opts.safeguardOverride
+                    : (this.commandSafeguards.get(cmdName) ?? null),
+                )
+                return result
+              }
+            }
+            return [null, new IOResult()]
+          },
+        ),
+      )
     } finally {
       setVirtualPrefix('')
     }
@@ -355,7 +436,7 @@ export class Mount {
     if (this.mode === MountMode.READ && levels.some((o) => o.write)) {
       throw new Error(`mount ${this.prefix} is read-only`)
     }
-    const mountPrefix = this.prefix.replace(/\/+$/, '')
+    const mountPrefix = rstripSlash(this.prefix)
     const lastSlash = path.lastIndexOf('/')
     const scope = new PathSpec({
       original: path,
@@ -370,11 +451,19 @@ export class Mount {
       ...(filetype !== null && kwargs.filetype === undefined ? { filetype } : {}),
     }
     const accessor = this.resource.accessor ?? NOOP_ACCESSOR
-    for (const op of levels) {
-      const result = await op.fn(accessor, scope, args, effectiveKwargs)
-      if (result !== null && result !== undefined) return result
-    }
-    return null
+    const opOverride = this.commandSafeguards.get(opName) ?? null
+    const opTimeout = opOverride !== null ? opOverride.timeoutSeconds : null
+    return runWithRevisions(this.revisions.size > 0 ? this.revisions : null, async () => {
+      for (const op of levels) {
+        const result = await runWithTimeout(
+          Promise.resolve(op.fn(accessor, scope, args, effectiveKwargs)),
+          opTimeout,
+          opName,
+        )
+        if (result !== null && result !== undefined) return applyOpSafeguard(result, opOverride)
+      }
+      return null
+    })
   }
 }
 
@@ -386,7 +475,9 @@ function sortFiletypeMap(m: Map<string, (string | null)[]>): Record<string, (str
       const aKey = a === null ? 0 : 1
       const bKey = b === null ? 0 : 1
       if (aKey !== bKey) return aKey - bKey
-      return (a ?? '').localeCompare(b ?? '')
+      const as = a ?? ''
+      const bs = b ?? ''
+      return as < bs ? -1 : as > bs ? 1 : 0
     })
     out[k] = list
   }

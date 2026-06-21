@@ -49,9 +49,9 @@ def test_name() -> None:
     assert resource.name == ResourceName.GITHUB
 
 
-def test_is_remote() -> None:
+def test_caches_reads() -> None:
     resource = _make_resource()
-    assert resource.is_remote is True
+    assert resource.caches_reads is True
 
 
 def test_bind_args() -> None:
@@ -60,6 +60,44 @@ def test_bind_args() -> None:
     assert resource.accessor.owner == OWNER
     assert resource.accessor.repo == REPO
     assert resource.accessor.ref == "main"
+
+
+def test_owner_repo_ref_fall_back_to_config() -> None:
+    config = GitHubConfig(token="test-token",
+                          owner="cfg-owner",
+                          repo="cfg-repo",
+                          ref="cfg-ref")
+    with patch("mirage.resource.github.github.fetch_default_branch_sync",
+               return_value="main"), \
+         patch("mirage.resource.github.github.fetch_tree_sync",
+               return_value=({}, False)):
+        resource = GitHubResource(config=config)
+    assert resource.accessor.owner == "cfg-owner"
+    assert resource.accessor.repo == "cfg-repo"
+    assert resource.accessor.ref == "cfg-ref"
+
+
+def test_kwargs_take_precedence_over_config() -> None:
+    config = GitHubConfig(token="test-token",
+                          owner="cfg-owner",
+                          repo="cfg-repo",
+                          ref="cfg-ref")
+    with patch("mirage.resource.github.github.fetch_default_branch_sync",
+               return_value="main"), \
+         patch("mirage.resource.github.github.fetch_tree_sync",
+               return_value=({}, False)):
+        resource = GitHubResource(config=config,
+                                  owner="kw-owner",
+                                  repo="kw-repo",
+                                  ref="kw-ref")
+    assert resource.accessor.owner == "kw-owner"
+    assert resource.accessor.repo == "kw-repo"
+    assert resource.accessor.ref == "kw-ref"
+
+
+def test_missing_owner_repo_raises() -> None:
+    with pytest.raises(ValueError, match="requires owner and repo"):
+        GitHubResource(config=GitHubConfig(token="test-token"))
 
 
 def test_is_default_branch_true() -> None:

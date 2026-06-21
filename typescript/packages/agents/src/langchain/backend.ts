@@ -29,6 +29,7 @@ import type {
   WriteResult,
 } from 'deepagents'
 import { ioToExecuteResponse, ioToFileInfos, ioToGrepMatches } from './convert.ts'
+import { gnuDirname } from '@struktoai/mirage-core'
 
 const TEXT_EXTENSIONS = new Set([
   'txt',
@@ -75,16 +76,9 @@ function shellQuote(s: string): string {
   return `'${s.replaceAll(`'`, `'\\''`)}'`
 }
 
-function parentOf(path: string): string {
-  const trimmed = path.replace(/\/+$/, '')
-  const idx = trimmed.lastIndexOf('/')
-  if (idx <= 0) return '/'
-  return trimmed.slice(0, idx)
-}
-
 async function ensureParent(ws: Workspace, path: string): Promise<void> {
-  const parent = parentOf(path)
-  if (parent === '/' || parent === '') return
+  const parent = gnuDirname(path)
+  if (parent === '/' || parent === '' || parent === '.') return
   if (await ws.fs.exists(parent)) return
   await ensureParent(ws, parent)
   try {

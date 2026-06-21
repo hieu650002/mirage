@@ -17,6 +17,7 @@ from mirage.cache.index import IndexCacheStore
 from mirage.core.notion.pages import get_database
 from mirage.core.notion.pathing import split_suffix_id
 from mirage.types import FileStat, FileType, PathSpec
+from mirage.utils.errors import enoent
 from mirage.utils.filetype import guess_type
 
 
@@ -27,11 +28,14 @@ async def stat(
 ) -> FileStat:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
 
     key = path.strip("/")
 
@@ -52,28 +56,10 @@ async def stat(
             extra={"database_id": database_id},
         )
 
-    if len(parts) >= 2 and parts[0] == "pages":
-        _, page_id = split_suffix_id(parts[-1])
-        if index is not None:
-            idx_key = "/" + key
-            result = await index.get(idx_key)
-            if result.entry is not None:
-                return FileStat(
-                    name=result.entry.name,
-                    type=FileType.DIRECTORY,
-                    extra={"page_id": page_id},
-                )
-        return FileStat(
-            name=parts[-1],
-            type=FileType.DIRECTORY,
-            extra={"page_id": page_id},
-        )
-
     if len(parts) == 2 and parts[0] == "databases":
         _, database_id = split_suffix_id(parts[-1])
         if index is not None:
-            idx_key = "/" + key
-            result = await index.get(idx_key)
+            result = await index.get("/" + key)
             if result.entry is not None:
                 return FileStat(
                     name=result.entry.name,
@@ -88,11 +74,11 @@ async def stat(
             extra={"database_id": database_id},
         )
 
-    if len(parts) >= 3 and parts[0] == "databases":
+    if (parts[0] == "pages" and len(parts) >= 2) or (parts[0] == "databases"
+                                                     and len(parts) >= 3):
         _, page_id = split_suffix_id(parts[-1])
         if index is not None:
-            idx_key = "/" + key
-            result = await index.get(idx_key)
+            result = await index.get("/" + key)
             if result.entry is not None:
                 return FileStat(
                     name=result.entry.name,
@@ -105,4 +91,4 @@ async def stat(
             extra={"page_id": page_id},
         )
 
-    raise FileNotFoundError(path)
+    raise enoent(virtual)

@@ -23,6 +23,8 @@ export const StateKey = Object.freeze({
   CACHE: 'cache',
   HISTORY: 'history',
   JOBS: 'jobs',
+  FINGERPRINTS: 'fingerprints',
+  LIVE_ONLY_MOUNTS: 'live_only_mounts',
 } as const)
 
 export const MountKey = Object.freeze({
@@ -87,8 +89,6 @@ export const SessionKey = Object.freeze({
 
 export const ResourceStateKey = Object.freeze({
   TYPE: 'type',
-  NEEDS_OVERRIDE: 'needs_override',
-  REDACTED_FIELDS: 'redacted_fields',
   CONFIG: 'config',
   FILES: 'files',
   DIRS: 'dirs',

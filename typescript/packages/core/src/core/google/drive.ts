@@ -12,19 +12,35 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { DRIVE_API_BASE, googleGet, googleGetBytes, googleGetStream } from './_client.ts'
+import {
+  DRIVE_API_BASE,
+  googleDelete,
+  googleGet,
+  googleGetBytes,
+  googleGetStream,
+} from './_client.ts'
 import type { TokenManager } from './_client.ts'
 
 const FIELDS =
   'nextPageToken,' +
-  'files(id,name,mimeType,size,quotaBytesUsed,' +
+  'files(id,name,mimeType,driveId,size,quotaBytesUsed,' +
   'createdTime,modifiedTime,' +
   'owners,capabilities/canEdit,parents)'
 
+const DRIVE_FIELDS = 'nextPageToken,drives(id,name)'
+
+// Rendered vfs filename suffixes; readdir emits only folders and these.
+export const GoogleFileSuffix = Object.freeze({
+  GDOC: '.gdoc.json',
+  GSHEET: '.gsheet.json',
+  GSLIDE: '.gslide.json',
+  GMAIL: '.gmail.json',
+} as const)
+
 export const MIME_TO_EXT: Readonly<Record<string, string>> = Object.freeze({
-  'application/vnd.google-apps.document': '.gdoc.json',
-  'application/vnd.google-apps.spreadsheet': '.gsheet.json',
-  'application/vnd.google-apps.presentation': '.gslide.json',
+  'application/vnd.google-apps.document': GoogleFileSuffix.GDOC,
+  'application/vnd.google-apps.spreadsheet': GoogleFileSuffix.GSHEET,
+  'application/vnd.google-apps.presentation': GoogleFileSuffix.GSLIDE,
 })
 
 export const WORKSPACE_MIMES: ReadonlySet<string> = new Set(Object.keys(MIME_TO_EXT))
@@ -39,6 +55,7 @@ export interface DriveFile {
   id: string
   name: string
   mimeType?: string
+  driveId?: string
   size?: string
   quotaBytesUsed?: string
   createdTime?: string
@@ -53,10 +70,21 @@ interface ListResponse {
   nextPageToken?: string
 }
 
+export interface SharedDrive {
+  id: string
+  name: string
+}
+
+interface ListDrivesResponse {
+  drives?: SharedDrive[]
+  nextPageToken?: string
+}
+
 export async function listFiles(
   tm: TokenManager,
   opts: {
     folderId?: string
+    driveId?: string | null
     mimeType?: string | null
     trashed?: boolean
     pageSize?: number
@@ -65,6 +93,7 @@ export async function listFiles(
   } = {},
 ): Promise<DriveFile[]> {
   const folderId = opts.folderId ?? 'root'
+  const driveId = opts.driveId ?? null
   const mimeType = opts.mimeType ?? null
   const trashed = opts.trashed ?? false
   const pageSize = opts.pageSize ?? 1000
@@ -85,6 +114,12 @@ export async function listFiles(
       pageSize,
       orderBy: 'modifiedTime desc',
     }
+    if (driveId !== null) {
+      params.corpora = 'drive'
+      params.driveId = driveId
+      params.includeItemsFromAllDrives = 'true'
+      params.supportsAllDrives = 'true'
+    }
     if (pageToken !== null) params.pageToken = pageToken
     const url = `${DRIVE_API_BASE}/files`
     const data = (await googleGet(tm, url, params)) as ListResponse
@@ -93,6 +128,28 @@ export async function listFiles(
     if (pageToken === null) break
   }
   return files
+}
+
+export async function listSharedDrives(
+  tm: TokenManager,
+  opts: { pageSize?: number } = {},
+): Promise<SharedDrive[]> {
+  const pageSize = opts.pageSize ?? 100
+  const drives: SharedDrive[] = []
+  let pageToken: string | null = null
+  for (;;) {
+    const params: Record<string, string | number> = {
+      fields: DRIVE_FIELDS,
+      pageSize,
+    }
+    if (pageToken !== null) params.pageToken = pageToken
+    const url = `${DRIVE_API_BASE}/drives`
+    const data = (await googleGet(tm, url, params)) as ListDrivesResponse
+    if (data.drives !== undefined) drives.push(...data.drives)
+    pageToken = data.nextPageToken ?? null
+    if (pageToken === null) break
+  }
+  return drives
 }
 
 export async function listAllFiles(
@@ -139,18 +196,23 @@ export async function getFileMetadata(tm: TokenManager, fileId: string): Promise
   const url = `${DRIVE_API_BASE}/files/${fileId}`
   const fields =
     'id,name,mimeType,size,' + 'createdTime,modifiedTime,' + 'owners,capabilities/canEdit,parents'
-  return (await googleGet(tm, url, { fields })) as DriveFile
+  return (await googleGet(tm, url, { fields, supportsAllDrives: 'true' })) as DriveFile
 }
 
 export async function downloadFile(tm: TokenManager, fileId: string): Promise<Uint8Array> {
-  const url = `${DRIVE_API_BASE}/files/${fileId}?alt=media`
+  const url = `${DRIVE_API_BASE}/files/${fileId}?alt=media&supportsAllDrives=true`
   return googleGetBytes(tm, url)
+}
+
+export async function deleteFile(tm: TokenManager, fileId: string): Promise<void> {
+  const url = `${DRIVE_API_BASE}/files/${fileId}?supportsAllDrives=true`
+  await googleDelete(tm, url)
 }
 
 export async function* downloadFileStream(
   tm: TokenManager,
   fileId: string,
 ): AsyncIterable<Uint8Array> {
-  const url = `${DRIVE_API_BASE}/files/${fileId}?alt=media`
+  const url = `${DRIVE_API_BASE}/files/${fileId}?alt=media&supportsAllDrives=true`
   for await (const chunk of googleGetStream(tm, url)) yield chunk
 }

@@ -21,6 +21,7 @@ from mirage.cache.index import IndexCacheStore, IndexEntry
 from mirage.core.ssh._client import _abs
 from mirage.core.ssh.constants import SCOPE_ERROR
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +30,14 @@ async def readdir(accessor: SSHAccessor, path: PathSpec,
                   index: IndexCacheStore) -> list[str]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.directory if path.pattern else path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     config = accessor.config
     virtual_key = prefix + path if prefix else path
     listing = await index.list_dir(virtual_key)
@@ -66,4 +70,4 @@ async def readdir(accessor: SSHAccessor, path: PathSpec,
         await index.set_dir(virtual_key, index_entries)
         return virtual_entries
     except asyncssh.SFTPNoSuchFile:
-        raise FileNotFoundError(path)
+        raise enoent(virtual)

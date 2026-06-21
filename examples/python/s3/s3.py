@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from mirage import MountMode, Workspace
 from mirage.resource.ram import RAMResource
 from mirage.resource.s3 import S3Config, S3Resource
+from mirage.workspace.snapshot import ContentDriftError
 
 load_dotenv(".env.development")
 
@@ -34,8 +35,23 @@ config = S3Config(
     aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
 )
 
+deep_config = S3Config(
+    bucket=os.environ["AWS_S3_BUCKET"],
+    region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    key_prefix="subdata/subsubdata/",
+)
+
 backend = S3Resource(config)
-ws = Workspace({"/s3/": backend}, mode=MountMode.READ)
+deep_backend = S3Resource(deep_config)
+ws = Workspace(
+    {
+        "/s3/": backend,
+        "/deep/": deep_backend,
+    },
+    mode=MountMode.READ,
+)
 
 
 def ops_summary() -> str:
@@ -47,8 +63,108 @@ def ops_summary() -> str:
 
 
 async def main():
+    # ── key_prefix mount: multi-segment subpath scoping ──
+    # Mounts the same bucket twice: /s3/ unscoped, /deep/ scoped to
+    # subdata/subsubdata/. Every operation against /deep/X resolves
+    # to s3://bucket/subdata/subsubdata/X with the prefix transparent
+    # to the agent.
+    print("=== KEY_PREFIX MOUNT (subdata/subsubdata/) ===\n")
+
+    print(f"  key_prefix = {deep_config.key_prefix!r}")
+    print("  /deep/X  ←→  s3://bucket/subdata/subsubdata/X\n")
+
+    async def run(cmd: str, label: str | None = None) -> str:
+        r = await ws.execute(cmd)
+        out = (await r.stdout_str()).strip()
+        tag = label or cmd
+        head = out.splitlines()[0] if out else ""
+        more = f" (+{len(out.splitlines()) - 1} more)" if "\n" in out else ""
+        print(f"  $ {tag}\n    {head[:110]}{more}  [exit={r.exit_code}]")
+        return out
+
+    # ── listings ──
+    print("[listings]")
+    await run("ls /deep")
+    await run("ls -1 /deep")
+    await run("ls -la /deep")
+
+    # ── stat ──
+    print("\n[stat]")
+    await run("stat /deep/example.jsonl")
+    await run("stat /deep/example.json")
+    await run("stat /deep")
+
+    # ── existence ──
+    print("\n[exists]")
+    await run("test -f /deep/example.jsonl && echo present || echo absent")
+    await run("test -f /deep/no-such.txt && echo present || echo absent")
+    await run("test -d /deep && echo dir-present")
+
+    # ── reads ──
+    print("\n[read]")
+    await run("head -n 1 /deep/example.jsonl")
+    await run("tail -n 1 /deep/example.jsonl")
+    await run("wc -l /deep/example.jsonl")
+    await run("wc -c /deep/example.json")
+
+    # ── grep variants ──
+    print("\n[grep]")
+    await run("grep -c mirage /deep/example.jsonl")
+    await run("grep -m 1 mirage /deep/example.jsonl")
+    await run("grep -i MIRAGE /deep/example.jsonl | wc -l")
+    await run("grep -n queue-operation /deep/example.jsonl | head -n 1")
+    await run("grep -v queue-operation /deep/example.jsonl | wc -l")
+
+    # ── rg (the formerly-broken double-prefix case) ──
+    print("\n[rg]")
+    await run("rg -l mirage /deep")
+    await run("rg -c mirage /deep/example.json")
+    await run("rg -n queue-operation /deep/example.jsonl | head -n 1")
+
+    # ── find / du ──
+    print("\n[find / du]")
+    await run("find /deep -name '*.json'")
+    await run("find /deep -name 'example.*' | wc -l")
+    await run("find /deep -type f | wc -l")
+    await run("du /deep/example.jsonl")
+
+    # ── glob expansion ──
+    print("\n[glob]")
+    await run("echo /deep/*.json")
+    await run("echo /deep/example.*")
+    await run("for f in /deep/*.json; do wc -c $f; done")
+
+    # ── jq (validates content equivalence) ──
+    print("\n[jq]")
+    await run("jq .metadata.version /deep/example.json")
+    await run("jq '.departments[].teams[].name' /deep/example.json")
+
+    # ── pipelines / control flow ──
+    print("\n[pipelines]")
+    await run("cat /deep/example.jsonl | grep mirage | wc -l")
+    await run("grep queue-operation /deep/example.jsonl"
+              " | head -n 2 | cut -d , -f 1")
+    await run("grep -m 1 mirage /deep/example.jsonl && echo found")
+    await run("grep ZZZ_NOPE /deep/example.jsonl || echo fallback")
+
+    # ── parity vs /s3/ (same bucket, same object, different mount) ──
+    print("\n[parity vs /s3/]")
+    a = await (await
+               ws.execute("grep -c mirage /deep/example.jsonl")).stdout_str()
+    b = await (await ws.execute(
+        "grep -c mirage /s3/subdata/subsubdata/example.jsonl")).stdout_str()
+    print(f"  /deep/example.jsonl                       grep -c: {a.strip()}")
+    print(f"  /s3/subdata/subsubdata/example.jsonl      grep -c: {b.strip()}")
+    print(f"  parity: {a.strip() == b.strip()}")
+
+    # ── get_state ──
+    print("\n[get_state]")
+    state = deep_backend.get_state()
+    print(f"  config.key_prefix = {state['config'].get('key_prefix')!r}")
+    print(f"  access key        = {state['config']['aws_access_key_id']}")
+
     # ── root listing (tests stat on directory prefixes) ──
-    print("=== ROOT LISTING ===\n")
+    print("\n=== ROOT LISTING ===\n")
 
     print("--- ls /s3/ ---")
     r = await ws.execute("ls /s3/")
@@ -303,75 +419,29 @@ async def main():
     dr = await ws.execute("grep mirage example.jsonl", provision=True)
     print(f"  network_read: {dr.network_read}, cache_read: {dr.cache_read}")
 
-    # ── execution history: structured observability ──
+    # ── execution history: hidden recorder + GNU views ──
     print("\n=== EXECUTION HISTORY ===\n")
-    print(f"  Total commands recorded: {len(ws.history.entries())}")
+    events = await ws.history()
+    print(f"  Total commands recorded: {len(events)}")
 
-    entry = ws.history.entries()[-1]
-    print(f"\n  Last command: {entry.command}")
-    print(f"  Agent: {entry.agent}")
-    print(f"  Exit code: {entry.exit_code}")
+    entry = events[-1]
+    print(f"\n  Last command: {entry['command']}")
+    print(f"  Agent: {entry['agent']}")
+    print(f"  Exit code: {entry['exit_code']}")
 
-    def print_tree(node, indent=4):
-        prefix = " " * indent
-        if node.command:
-            stderr_str = node.stderr.decode(errors="replace").strip()
-            print(f"{prefix}{node.command}  "
-                  f"exit={node.exit_code}"
-                  f"{f'  stderr={stderr_str!r}' if stderr_str else ''}")
-        else:
-            print(f"{prefix}({node.op})  exit={node.exit_code}")
-        for child in node.children:
-            print_tree(child, indent + 2)
+    print("\n  --- history (shell builtin, this session) ---")
+    r = await ws.execute("history 5")
+    for line in (await r.stdout_str()).splitlines():
+        print(f"  {line[:100]}")
 
-    print("\n  --- pipe tree: grep | grep -v | head | cut ---")
-    await ws.execute(
-        "grep queue-operation /s3/data/example.jsonl"
-        " | grep -v error | head -n 2 | cut -d , -f 1",
-        agent_id="demo-agent",
-    )
-    pipe_entry = ws.history.entries()[-1]
-    print_tree(pipe_entry.tree)
-
-    print("\n  --- error attribution: grep NONEXISTENT | sort | head ---")
-    await ws.execute(
-        "grep NONEXISTENT /s3/data/example.jsonl | sort | head -n 5",
-        agent_id="demo-agent",
-    )
-    err_entry = ws.history.entries()[-1]
-    print_tree(err_entry.tree)
-    print(f"    Top-level exit: {err_entry.exit_code}")
-    for child in err_entry.tree.children:
-        if child.exit_code != 0:
-            print(
-                f"    ^ failed stage: {child.command} (exit={child.exit_code})"
-            )
-
-    print("\n  --- control flow tree: grep && echo ; wc -l ---")
-    await ws.execute(
-        "grep -m 1 mirage /s3/data/example.jsonl && echo found"
-        " ; wc -l /s3/data/example.jsonl",
-        agent_id="demo-agent",
-    )
-    cf_entry = ws.history.entries()[-1]
-    print_tree(cf_entry.tree)
-
-    print("\n  --- full history (all commands) ---")
-    for i, e in enumerate(ws.history.entries()):
-        print(f"  [{i}] {e.command[:70]}")
-        print(f"      agent={e.agent}  exit={e.exit_code}  "
-              f"stdout={len(e.stdout)}B")
-        if e.tree.children:
-            for child in e.tree.children:
-                stderr_str = child.stderr.decode(errors="replace").strip()
-                label = child.command or f"({child.op})"
-                print(
-                    f"        {label}  exit={child.exit_code}"
-                    f"{'  stderr=' + repr(stderr_str) if stderr_str else ''}")
+    print("\n  --- tail -n 6 /.bash_history (all sessions, GNU file) ---")
+    r = await ws.execute("tail -n 6 /.bash_history")
+    for line in (await r.stdout_str()).splitlines():
+        print(f"  {line[:100]}")
 
     print("\n  --- history as JSONL ---")
-    for e in ws.history.entries():
-        print(json.dumps(e.to_dict(), separators=(",", ":")))
+    for e in events[-3:]:
+        print(json.dumps(e, separators=(",", ":")))
 
     # ── background jobs: & operator ──
     print("\n=== BACKGROUND JOBS ===\n")
@@ -432,14 +502,14 @@ async def main():
 
     print("\n--- background job history ---")
     bg_entries = [
-        e for e in ws.history.entries()
-        if "grep" in e.command and "&" not in e.command
+        e for e in await ws.history()
+        if "grep" in e["command"] and "&" not in e["command"]
     ]
     print(f"  Background job records: {len(bg_entries)}")
     for e in bg_entries[-4:]:
-        print(f"    {e.command[:60]}  exit={e.exit_code}")
+        print(f"    {e['command'][:60]}  exit={e['exit_code']}")
 
-    # ── session observer: /.sessions mount ──
+    # ── glob expansion ──
     print("\n=== GLOB EXPANSION ===\n")
 
     print("--- echo /s3/data/*.jsonl ---")
@@ -459,16 +529,14 @@ async def main():
     for line in (await r.stdout_str()).strip().splitlines():
         print(f"  {line[:100]}")
 
-    print("\n=== SESSION OBSERVER ===\n")
+    print("\n=== BASH HISTORY ===\n")
 
-    print("--- ls /.sessions ---")
-    result = await ws.execute("ls /.sessions")
+    print("--- ls -a / (dotfile view) ---")
+    result = await ws.execute("ls -a /")
     print(f"  {(await result.stdout_str()).strip()}")
 
-    from mirage.utils.dates import utc_date_folder
-    day = utc_date_folder()
-    print(f"\n--- cat /.sessions/{day}/*.jsonl | head -n 5 ---")
-    result = await ws.execute(f"head -n 5 /.sessions/{day}/*.jsonl")
+    print("\n--- grep glob /.bash_history | head -n 3 ---")
+    result = await ws.execute("grep glob /.bash_history | head -n 3")
     for line in (await result.stdout_str()).strip().splitlines():
         print(f"  {line[:120]}")
 
@@ -512,20 +580,20 @@ async def main():
         print(f"  S3 read after rm: exit={r.exit_code} (expect non-zero)")
 
     # ── persistence: save / load / copy / deepcopy ──────────────────
-    # S3 has needs_override=True — creds are redacted at save time;
-    # caller must re-supply a fresh S3Resource via resources={...}.
+    # S3 with inline creds has redacted config at save time; caller must
+    # re-supply a fresh S3Resource via resources={...}.
     print("\n=== PERSISTENCE ===\n")
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as f:
         snap = f.name
     try:
-        ws.snapshot(snap)
+        await ws.snapshot(snap)
         size = os.path.getsize(snap)
         print(f"  saved → {snap} ({size} bytes)")
 
         # Verify creds are NOT in the raw tar bytes
         raw = open(snap, "rb").read()
         leaked = config.aws_access_key_id and (
-            config.aws_access_key_id.encode() in raw)
+            config.aws_access_key_id.get_secret_value().encode() in raw)
         print(f"  creds leaked in tar bytes: {bool(leaked)} "
               f"(expect False)")
         print(f"  '<REDACTED>' present in tar: "
@@ -533,32 +601,86 @@ async def main():
 
         # Loading without resources= must fail fast
         try:
-            Workspace.load(snap)
+            await Workspace.load(snap)
             print("  ✗ load() should have raised without resources=")
         except ValueError as e:
             print(f"  ✓ load() w/o resources raises: "
                   f"{str(e).splitlines()[0][:70]}…")
 
-        # Load with fresh creds
-        loaded = Workspace.load(snap, resources={"/s3/": S3Resource(config)})
+        # Load with fresh creds (both mounts were redacted)
+        loaded = await Workspace.load(
+            snap,
+            resources={
+                "/s3/": S3Resource(config),
+                "/deep/": S3Resource(deep_config),
+            },
+        )
         r = await loaded.execute("ls /s3/")
         print(f"  loaded ws ls /s3/: "
               f"{(await r.stdout_str()).strip()[:60]}…")
 
-        # copy(): in-process — reuses the same S3Resource; both copies
+        # copy(): in-process, reuses the same S3Resource; both copies
         # see the same bucket
-        cp = ws.copy()
+        cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        deep = _copy.deepcopy(ws)
-        print(f"  deepcopy() mounts: {[m.prefix for m in deep.mounts()]}")
-
-        try:
-            _copy.copy(ws)
-        except NotImplementedError as e:
-            print(f"  ✓ shallow copy raises: {str(e)[:60]}…")
+        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
+                                                           _copy.copy)):
+            try:
+                op(ws)
+                print(f"  ✗ {op_name} should have raised")
+            except NotImplementedError as e:
+                print(f"  ✓ {op_name} raises: {str(e)[:60]}…")
     finally:
         os.unlink(snap)
+
+    print("\n=== DRIFT + VERSION PIN ===\n")
+    print("  requires bucket versioning enabled:")
+    print("  aws s3api put-bucket-versioning --bucket <bucket> "
+          "--versioning-configuration Status=Enabled\n")
+    probe = f"/s3/drift-probe-{uuid.uuid4().hex[:8]}.txt"
+    drift_ws = Workspace({"/s3/": (S3Resource(config), MountMode.WRITE)},
+                         mode=MountMode.WRITE)
+    with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as f:
+        drift_snap = f.name
+    try:
+        await drift_ws.execute(f'echo "original" | tee {probe}')
+        await drift_ws.execute(f"cat {probe}")
+        s = await drift_ws.stat(probe)
+        print(f"  wrote {probe}")
+        print(f"  fingerprint={s.fingerprint}")
+        print(f"  revision   ={s.revision} "
+              f"({'versioning on' if s.revision else 'no versioning'})")
+
+        await drift_ws.snapshot(drift_snap)
+        snap_size = os.path.getsize(drift_snap)
+        print(f"  snapshot: {drift_snap} ({snap_size} bytes)")
+
+        await drift_ws.execute(f'echo "mutated" | tee {probe}')
+        s2 = await drift_ws.stat(probe)
+        print(f"  mutated on bucket: new revision={s2.revision}")
+
+        loaded = await Workspace.load(drift_snap,
+                                      resources={"/s3/": S3Resource(config)})
+        loaded._cache.evict_paths([probe])
+        try:
+            r = await loaded.execute(f"cat {probe}")
+            served = (await r.stdout_str()).strip()
+            pinned_ok = s.revision is not None and served == "original"
+            label = ("OK pin served original" if pinned_ok else
+                     "no pin (bucket not versioned?), live fingerprint matched"
+                     if served == "original" else "UNEXPECTED")
+            print(f"  STRICT load → served: {served!r} ({label})")
+        except ContentDriftError as e:
+            print(f"  STRICT load raised ContentDriftError as expected: "
+                  f"{e.path}")
+    finally:
+        try:
+            await drift_ws.execute(f"rm {probe}")
+        except Exception:
+            pass
+        if os.path.exists(drift_snap):
+            os.unlink(drift_snap)
 
 
 asyncio.run(main())

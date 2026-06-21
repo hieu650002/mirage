@@ -13,49 +13,13 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { GDriveAccessor } from '../../../accessor/gdrive.ts'
+import { du as gdriveDu, duAll as gdriveDuAll } from '../../../core/gdrive/du.ts'
 import { resolveGlob } from '../../../core/gdrive/glob.ts'
-import { readdir as gdriveReaddir } from '../../../core/gdrive/readdir.ts'
-import { stat as gdriveStat } from '../../../core/gdrive/stat.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
-import { FileType, PathSpec, ResourceName } from '../../../types.ts'
+import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { humanSize } from '../utils/formatting.ts'
+import { duGeneric } from '../generic/du.ts'
 import { metadataProvision } from './provision.ts'
-
-const ENC = new TextEncoder()
-
-async function walkSize(
-  accessor: GDriveAccessor,
-  path: PathSpec,
-  index: CommandOpts['index'],
-): Promise<number> {
-  let s: { type: FileType | null; size: number | null }
-  try {
-    s = await gdriveStat(accessor, path, index ?? undefined)
-  } catch {
-    return 0
-  }
-  if (s.type !== FileType.DIRECTORY) return s.size ?? 0
-  let children: string[]
-  try {
-    children = await gdriveReaddir(accessor, path, index ?? undefined)
-  } catch {
-    return 0
-  }
-  let total = 0
-  for (const child of children) {
-    const trimmed = child.replace(/\/+$/, '')
-    const childSpec = new PathSpec({
-      original: trimmed,
-      directory: trimmed,
-      resolved: false,
-      prefix: path.prefix,
-    })
-    total += await walkSize(accessor, childSpec, index)
-  }
-  return total
-}
 
 async function duCommand(
   accessor: GDriveAccessor,
@@ -63,29 +27,14 @@ async function duCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-  const p0 =
-    resolved[0] ??
-    new PathSpec({
-      original: opts.cwd,
-      directory: opts.cwd,
-      resolved: false,
-      prefix: opts.mountPrefix ?? '',
-    })
-  const human = opts.flags.h === true
-  const summary = opts.flags.s === true
-  const grandTotal = opts.flags.c === true
-  const total = await walkSize(accessor, p0, opts.index)
-  const fmt = (n: number): string => (human ? humanSize(n) : String(n))
-  const lines: string[] = [`${fmt(total)}\t${p0.original}`]
-  if (summary) {
-    if (grandTotal) lines.push(`${fmt(total)}\ttotal`)
-    const out: ByteSource = ENC.encode(lines.join('\n'))
-    return [out, new IOResult()]
-  }
-  if (grandTotal) lines.push(`${fmt(total)}\ttotal`)
-  const out: ByteSource = ENC.encode(lines.join('\n'))
-  return [out, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return duGeneric(
+    resolved,
+    opts,
+    (p) => gdriveDu(accessor, p, opts.index ?? undefined),
+    (p) => gdriveDuAll(accessor, p, opts.index ?? undefined),
+  )
 }
 
 export const GDRIVE_DU = command({

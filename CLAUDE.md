@@ -7,10 +7,34 @@ MIRAGE is a package that allows you to mount anything as a filesystem and make i
 This monorepo hosts two sibling implementations:
 
 - `python/` — the Python package (`mirage/`, `tests/`, `pyproject.toml`, `uv.lock`).
-- `typescript/` — the TypeScript monorepo (`packages/core`, `packages/node`, etc.).
+- `typescript/` — the TypeScript monorepo (`packages/core`, `packages/browser`, `packages/node`, etc.).
 - `docs/`, `examples/`, `.github/` — shared across both.
 
 Run Python commands from `python/`, TypeScript commands from `typescript/`.
+
+### TypeScript packages
+
+- `typescript/packages/core` contains runtime-agnostic primitives and shared logic. Code in `core` must work in both browser and Node.js runtimes; do not put browser-only or Node-only APIs there.
+- `typescript/packages/browser` contains browser-only resources, commands, and workspace wiring. It depends on `@struktoai/mirage-core`.
+- `typescript/packages/node` contains Node.js-only resources, commands, and workspace wiring. It depends on `@struktoai/mirage-core`.
+- Put shared TypeScript behavior in `core` only when it works in both runtime packages. Put runtime-specific behavior in `browser` or `node`.
+
+## Python/TypeScript Parity
+
+- Keep Python and TypeScript layout, architecture, and semantics mirrored as much as practical.
+- When changing one implementation, check the other for the matching pattern or feature. If one side is more correct, use it to improve the weaker side instead of copying a bad design.
+- For major Python or TypeScript changes, consider adding or updating integration coverage under `integ/`.
+- Known gap: TypeScript does not support ORC files. Python registers `.orc` in its filetype factory (`mirage/core/filetype/orc.py` plus per-backend `read_orc` ops); the TypeScript filetype factory only covers parquet, feather/arrow/ipc, and hdf5/h5. Do not assume `.orc` commands work in TypeScript.
+
+## History
+
+Command history is a recording, not a command log. A hidden `Observer` records every top-level command as timestamp-ordered events (`COMMAND`, `CLEAR`, `DELETE`, op events); the user-facing surfaces are just views of those events.
+
+- **Observer + ObserverStore.** The `Observer` owns a storage-agnostic `ObserverStore` (`append`/`write`/`readAll`/`readMatching`/`clear`/`close`), not a mount. Stores: `RAMObserverStore` (core, default), `DiskObserverStore` and `RedisObserverStore` (node). RAM is just the default, history can persist to disk or Redis.
+- **Two views over the same events.** `/.bash_history` is a read-only view mount (`HistoryViewResource`) rendered in GNU bash histfile format (`#<epoch>` line then the command), so `cat`/`grep`/`tail`/`find` work on it for free. The `history` shell builtin (GNU `-c -d -a -n -r -w -s -p` + count) routes through the same mount, so file and builtin never disagree.
+- **Recording scope.** Top-level lines record; nested evals (`$()`, `eval`, `source`, `xargs`) run with `record: false`, so their inner ops bubble to the parent and no spurious command is logged (mirrors GNU's line reader).
+- **Snapshots.** History is captured as events into snapshot state and restored on load.
+- **Format is GNU bash, not zsh** (`#<epoch>`, not `: <ts>:<dur>;<cmd>`).
 
 ## Development Setup
 
@@ -66,6 +90,11 @@ Invoke the venv's `pre-commit` binary directly (not via `uv --directory python r
 
 ## Rules
 
+- **Shell-style commands** (cat, grep, du, find, head, tail, wc, ls, etc.) follow POSIX / Unix coreutils semantics as much as possible; match BSD/GNU behavior and document any deliberate divergence.
+- **Async-native by default.** I/O uses `aiofiles` / `redis.asyncio` / `aioboto3`, and command pipelines are async generators.
+- **Python unit tests mirror src 1:1 where reasonable.** Try to have a matching `tests/<path>/test_a.py` for each source file `mirage/<path>/a.py`. `__init__.py`, pure type-stub modules, and trivial re-exports are fine to skip; modules with real logic should have one.
+- **Do not add `__init__.py` files under `tests/`.** Tests are namespace packages and pytest discovers them without `__init__.py`. Don't create one when adding a new test directory.
+- **Monkeypatching a backend command module in tests:** the command imports its helpers by value (`from mirage.core.<backend>.read import read_bytes`), so to intercept them you must rebind the name inside the command module, not the core source module. But the command module is hard to reach: the backend package re-exports the command function in `__init__.py` (`from .cat import cat`), which shadows the submodule of the same name, so `import mirage.commands.builtin.<backend>.cat as mod`, `from ...<backend> import cat as mod`, and even pytest's string target `monkeypatch.setattr("mirage.commands.builtin.<backend>.cat.read_bytes", fake)` all resolve to the function, not the module (`AttributeError`). The command is also wrapped by `@command`, so `cat.__globals__` is the decorator's module. Reach the real command-module namespace through the unwrapped function and patch the dict: `monkeypatch.setitem(cat.__wrapped__.__globals__, "read_bytes", fake)`.
 - Avoid add any comments or docstrings on the top of the file.
 - Do not create nested functions.
 - Add type to Args for docstring.
@@ -78,3 +107,6 @@ Invoke the venv's `pre-commit` binary directly (not via `uv --directory python r
 - Don't add too many printings or comments in the code.
 - Don't add README.md unless I ask you to do so.
 - Use uv add to install new dependencies.
+- **Command wrappers and flags.** The dispatcher passes parsed command-line flags as keyword arguments. Wrappers must declare dispatcher-injected parameters (`stdin`, `index`, `prefix`) explicitly in their signature — never fish them out of `**flags` with `.get()`. Treat `**flags: object` as an opaque bag of true command-line flags and forward it wholesale to the generic command. When a wrapper genuinely needs a flag value itself (e.g. a search push-down), read it through `FlagView` (`fl = FlagView(flags)` then `fl.bool("F")`, `fl.int("m")`, `fl.str("type")`, `fl.list("e")`) or a shared domain accessor like `pattern_arg` — never raw `flags.get(...)` / isinstance chains.
+- **Generic commands own flag interpretation.** Backend wrappers are wiring only (glob resolution, backend I/O injection, pass-through of `texts` and `flags`); all flag semantics live in the generic command for that family, mirroring the TS generics. Adding or changing a flag should touch the spec and the generic, not N wrappers.
+- **Generics parse flags once into a frozen struct.** Each generic defines a `@dataclass(frozen=True, slots=True)` flag struct plus a module-level `parse_flags(fl, ...)` (mirroring the TS `parseFlags` struct); the function body reads only struct attributes, never string keys. Construct the FlagView with the command's spec (`FlagView(flags, spec=SPECS["grep"])`) so a typo in a flag name raises KeyError instead of silently reading as False/None.

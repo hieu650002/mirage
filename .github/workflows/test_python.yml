@@ -1,0 +1,198 @@
+name: Test (Python)
+
+permissions:
+  contents: read
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - python/**
+      - examples/python/**
+      - integ/**
+      - .github/workflows/test_python.yml
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: read
+    outputs:
+      hit: ${{ steps.filter.outputs.hit }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            hit:
+              - 'python/**'
+              - 'examples/python/**'
+              - 'integ/**'
+              - '.github/workflows/test_python.yml'
+
+  test:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.hit == 'true') }}
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python dependencies
+        working-directory: python
+        run: uv sync --all-extras --no-extra camel
+
+      - name: Install package
+        working-directory: python
+        run: uv pip install .
+
+      - name: Run pytest (main suite, camel excluded)
+        working-directory: python
+        env:
+          REDIS_URL: redis://localhost:6379/0
+        run: uv run pytest --ignore=tests/agents/camel
+
+      - name: Examples (output checked against integ/ truth files)
+        env:
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          run() { echo "## $1"; ./python/.venv/bin/python "$1" 2>&1 | bash integ/check_lines.sh "$2"; }
+          run examples/python/ram/ram.py integ/truth/python/ram.txt
+          run examples/python/ram/ram_vfs.py integ/truth/python/ram_vfs.txt
+          run examples/python/ram/ram_python.py integ/truth/python/ram_python.txt
+          run examples/python/disk/disk.py integ/truth/python/disk.txt
+          run examples/python/disk/disk_vfs.py integ/truth/python/disk_vfs.txt
+          run examples/python/other/custom_command.py integ/truth/python/custom_command.txt
+          run examples/python/redis_resource/example_redis.py integ/truth/python/redis.txt
+          run examples/python/redis_resource/example_redis_index.py integ/truth/python/redis_index.txt
+          run examples/python/redis_resource/example_redis_cache.py integ/truth/python/redis_cache.txt
+          run examples/python/redis_resource/example_redis_vfs.py integ/truth/python/redis_vfs.txt
+          run examples/python/version/branching.py integ/truth/version_branching.txt
+
+      - name: Sync Python dependencies for camel
+        working-directory: python
+        run: uv sync --extra camel
+
+      - name: Run pytest (camel toolkit tests)
+        working-directory: python
+        run: uv run pytest tests/agents/camel
+
+  import-isolation:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.hit == 'true') }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - extra: pydantic-ai
+            module: mirage.agents.pydantic_ai
+            blocked: deepagents
+          - extra: openai
+            module: mirage.agents.openai_agents
+            blocked: deepagents
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Create venv and install only the target extra
+        working-directory: python
+        run: |
+          uv venv .venv-iso
+          uv pip install --python .venv-iso/bin/python ".[${{ matrix.extra }}]"
+
+      - name: Verify blocked package is not installed
+        working-directory: python
+        run: |
+          if .venv-iso/bin/python -c "import ${{ matrix.blocked }}" 2>/dev/null; then
+            echo "FAIL: ${{ matrix.blocked }} should not be installed for extra=${{ matrix.extra }}"
+            exit 1
+          fi
+          echo "OK: ${{ matrix.blocked }} is absent"
+
+      - name: Import agent package and prompt without blocked dep
+        working-directory: python
+        run: |
+          .venv-iso/bin/python - <<'PY'
+          import importlib, sys
+          mod = importlib.import_module("${{ matrix.module }}")
+          prompt = importlib.import_module("${{ matrix.module }}.prompt")
+          assert isinstance(prompt.MIRAGE_SYSTEM_PROMPT, str)
+          assert callable(prompt.build_system_prompt)
+          assert "${{ matrix.blocked }}" not in sys.modules, \
+              f"${{ matrix.blocked }} got imported transitively"
+          print(f"OK: imported ${{ matrix.module }} cleanly without ${{ matrix.blocked }}")
+          PY
+
+  audit:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.hit == 'true') }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Audit dependencies for known vulnerabilities (informational)
+        working-directory: python
+        run: uv audit --preview-features audit --no-extra camel
+
+  gate:
+    name: test-python-gate
+    runs-on: ubuntu-latest
+    needs: [changes, test, import-isolation]
+    if: always()
+    steps:
+      - name: Check required jobs
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "$results"
+          case "$results" in
+            *failure*|*cancelled*) exit 1 ;;
+          esac

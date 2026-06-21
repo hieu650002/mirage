@@ -113,7 +113,7 @@ async def main():
 
     # ── snapshot the workspace + expected outputs ──────────────────
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-    ws.snapshot(SNAPSHOT_TAR)
+    await ws.snapshot(SNAPSHOT_TAR)
     with open(EXPECTED_JSON, "w") as f:
         json.dump(
             {
@@ -128,7 +128,8 @@ async def main():
     print(f"  tar:      {SNAPSHOT_TAR} "
           f"({os.path.getsize(SNAPSHOT_TAR)} bytes)")
     print(f"  expected: {EXPECTED_JSON}")
-    print("\nNow run: uv run python examples/cross/load_check.py")
+    print("\nNow run: ./python/.venv/bin/python "
+          "examples/python/cross/load_check.py")
 
 
 if __name__ == "__main__":

@@ -17,19 +17,40 @@ import time
 from datetime import datetime, timezone
 
 from mirage.commands.builtin.utils.types import _Readdir, _Stat
+from mirage.commands.errors import FindParseError
 from mirage.types import FileType
+
+
+def _parse_depth(value: str, flag: str) -> int:
+    try:
+        return int(value)
+    except ValueError:
+        raise FindParseError(
+            f"find: invalid argument '{value}' to '{flag}'") from None
+
+
+def _validate_size_mtime(size: str | None, mtime: str | None) -> None:
+    if size is not None:
+        _parse_size(size)
+    if mtime is not None:
+        _parse_mtime(mtime)
 
 
 def _parse_size(spec: str) -> tuple[int | None, int | None]:
     suffixes = {"c": 1, "k": 1024, "M": 1024**2, "G": 1024**3}
-    if spec.startswith("+"):
-        raw = spec[1:]
-    elif spec.startswith("-"):
+    if spec.startswith(("+", "-")):
         raw = spec[1:]
     else:
         raw = spec
+    digits = raw.rstrip("ckMG")
+    if not digits:
+        raise FindParseError(f"find: invalid argument '{spec}' to '-size'")
     mult = suffixes.get(raw[-1], 1)
-    num = int(raw.rstrip("ckMG")) * mult
+    try:
+        num = int(digits) * mult
+    except ValueError:
+        raise FindParseError(
+            f"find: invalid argument '{spec}' to '-size'") from None
     if spec.startswith("+"):
         return num, None
     if spec.startswith("-"):
@@ -40,37 +61,16 @@ def _parse_size(spec: str) -> tuple[int | None, int | None]:
 def _parse_mtime(spec: str) -> tuple[float | None, float | None]:
     now = time.time()
     day = 86400
-    n = int(spec.lstrip("+-"))
+    try:
+        n = int(spec.lstrip("+-"))
+    except ValueError:
+        raise FindParseError(
+            f"find: invalid argument '{spec}' to '-mtime'") from None
     if spec.startswith("+"):
         return None, now - n * day
     if spec.startswith("-"):
         return now - n * day, None
     return now - (n + 1) * day, now - n * day
-
-
-def _extract_not_name(texts: tuple[str, ...]) -> str | None:
-    for i, t in enumerate(texts):
-        if t == "-not" and i + 2 < len(texts) and texts[i + 1] == "-name":
-            return texts[i + 2]
-    return None
-
-
-def _extract_or_names(
-    name: str | None,
-    texts: tuple[str, ...],
-) -> list[str]:
-    names: list[str] = []
-    if name:
-        names.append(name)
-    i = 0
-    while i < len(texts):
-        if texts[i] == "-or" and i + 2 < len(texts) and texts[i +
-                                                              1] == "-name":
-            names.append(texts[i + 2])
-            i += 3
-        else:
-            i += 1
-    return names
 
 
 def _parse_modified(modified: str | None) -> float | None:

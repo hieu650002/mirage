@@ -23,7 +23,7 @@ const DEC = new TextDecoder()
 
 async function runWc(
   paths: PathSpec[],
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   options: { index?: RAMIndexCacheStore; transport?: FakeDiscordTransport } = {},
 ): Promise<string> {
   const cmd = DISCORD_WC[0]
@@ -48,8 +48,8 @@ async function runWc(
 describe('discord wc', () => {
   it('counts lines, words, bytes by default', async () => {
     const idx = new RAMIndexCacheStore()
-    await seedGuild(idx, '/mnt/discord', 'My_Server__G1', 'G1')
-    await seedChannel(idx, '/mnt/discord', 'My_Server__G1', 'general__C1', 'C1', {
+    await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
+    await seedChannel(idx, '/mnt/discord', 'My Server__G1', 'general__C1', 'C1', {
       dates: ['2016-04-30'],
     })
     const transport = new FakeDiscordTransport((_m, endpoint) => {
@@ -65,8 +65,8 @@ describe('discord wc', () => {
     const out = await runWc(
       [
         new PathSpec({
-          original: '/mnt/discord/My_Server__G1/channels/general__C1/2016-04-30.jsonl',
-          directory: '/mnt/discord/My_Server__G1/channels/general__C1/',
+          original: '/mnt/discord/My Server__G1/channels/general__C1/2016-04-30/chat.jsonl',
+          directory: '/mnt/discord/My Server__G1/channels/general__C1/',
           resolved: false,
           prefix: '/mnt/discord',
         }),
@@ -74,15 +74,17 @@ describe('discord wc', () => {
       {},
       { index: idx, transport },
     )
-    const parts = out.split('\t')
-    expect(parts).toHaveLength(3)
+    const parts = out.trim().split(/\s+/)
     expect(parts[0]).toBe('3')
+    expect(parts.slice(3).join(' ')).toBe(
+      '/mnt/discord/My Server__G1/channels/general__C1/2016-04-30/chat.jsonl',
+    )
   })
 
   it('supports -l flag (line count)', async () => {
     const idx = new RAMIndexCacheStore()
-    await seedGuild(idx, '/mnt/discord', 'My_Server__G1', 'G1')
-    await seedChannel(idx, '/mnt/discord', 'My_Server__G1', 'general__C1', 'C1', {
+    await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
+    await seedChannel(idx, '/mnt/discord', 'My Server__G1', 'general__C1', 'C1', {
       dates: ['2016-04-30'],
     })
     const transport = new FakeDiscordTransport((_m, endpoint) => {
@@ -97,8 +99,8 @@ describe('discord wc', () => {
     const out = await runWc(
       [
         new PathSpec({
-          original: '/mnt/discord/My_Server__G1/channels/general__C1/2016-04-30.jsonl',
-          directory: '/mnt/discord/My_Server__G1/channels/general__C1/',
+          original: '/mnt/discord/My Server__G1/channels/general__C1/2016-04-30/chat.jsonl',
+          directory: '/mnt/discord/My Server__G1/channels/general__C1/',
           resolved: false,
           prefix: '/mnt/discord',
         }),
@@ -106,6 +108,6 @@ describe('discord wc', () => {
       { args_l: true },
       { index: idx, transport },
     )
-    expect(out).toBe('2')
+    expect(out).toBe('2 /mnt/discord/My Server__G1/channels/general__C1/2016-04-30/chat.jsonl\n')
   })
 })

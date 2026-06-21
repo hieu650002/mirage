@@ -20,12 +20,13 @@ from mirage.cache.index import IndexCacheStore
 from mirage.core.gdocs._client import DOCS_API_BASE, TokenManager, google_get
 from mirage.core.gdocs.readdir import readdir
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 
 async def read_doc(token_manager: TokenManager, doc_id: str) -> bytes:
     url = f"{DOCS_API_BASE}/documents/{doc_id}"
     data = await google_get(token_manager, url)
-    return json.dumps(data, ensure_ascii=False).encode()
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
 
 
 async def read(
@@ -35,15 +36,18 @@ async def read(
 ) -> bytes:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
 
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     key = path.strip("/")
     if index is None:
-        raise FileNotFoundError(path)
+        raise enoent(virtual)
     virtual_key = prefix + "/" + key if prefix else "/" + key
     result = await index.get(virtual_key)
     if result.entry is None:
@@ -56,7 +60,7 @@ async def read(
             except Exception:
                 pass
         if result.entry is None:
-            raise FileNotFoundError(path)
+            raise enoent(virtual)
     if result.entry.resource_type in ("gdocs/directory", ):
-        raise IsADirectoryError(path)
+        raise IsADirectoryError(virtual)
     return await read_doc(accessor.token_manager, result.entry.id)

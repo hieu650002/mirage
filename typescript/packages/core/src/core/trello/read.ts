@@ -37,15 +37,11 @@ import {
   toJsonlBytes,
 } from './normalize.ts'
 import { splitSuffixId } from './pathing.ts'
-
-function enoent(path: string): Error {
-  const err = new Error(`ENOENT: ${path}`) as Error & { code: string }
-  err.code = 'ENOENT'
-  return err
-}
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 export async function readBytes(transport: TrelloTransport, path: string): Promise<Uint8Array> {
-  const key = path.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(path)
   const parts = key.split('/')
 
   if (parts.length === 3 && parts[0] === 'workspaces' && parts[2] === 'workspace.json') {

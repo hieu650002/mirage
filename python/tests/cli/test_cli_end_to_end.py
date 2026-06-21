@@ -145,11 +145,11 @@ def test_save_then_load_round_trip(daemon, tmp_path):
     tar_path = tmp_path / "snap.tar"
     saved = _run_cli(daemon["env"], "workspace", "snapshot", "save-test",
                      str(tar_path))
-    assert saved["bytes"] > 0
+    assert saved["size"] > 0
     assert tar_path.exists()
 
     loaded = _run_cli(daemon["env"], "workspace", "load", str(tar_path),
-                      "--id", "loaded-ws")
+                      str(cfg), "--id", "loaded-ws")
     assert loaded["id"] == "loaded-ws"
 
     result = _run_cli(daemon["env"], "execute", "--workspace_id", "loaded-ws",
@@ -157,6 +157,31 @@ def test_save_then_load_round_trip(daemon, tmp_path):
     assert "persisted" in result["stdout"]
     _run_cli(daemon["env"], "workspace", "delete", "save-test")
     _run_cli(daemon["env"], "workspace", "delete", "loaded-ws")
+
+
+def test_workspace_clone_round_trip(daemon, tmp_path):
+    cfg = _write_config(tmp_path)
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
+             "clone-src")
+    _run_cli(daemon["env"], "execute", "--workspace_id", "clone-src",
+             "--command", "echo source > /report.txt")
+
+    cloned = _run_cli(daemon["env"], "workspace", "clone", "clone-src", "--id",
+                      "clone-dst")
+    assert cloned["id"] == "clone-dst"
+
+    result = _run_cli(daemon["env"], "execute", "--workspace_id", "clone-dst",
+                      "--command", "cat /report.txt")
+    assert "source" in result["stdout"]
+
+    _run_cli(daemon["env"], "execute", "--workspace_id", "clone-dst",
+             "--command", "echo clone > /report.txt")
+    original = _run_cli(daemon["env"], "execute", "--workspace_id",
+                        "clone-src", "--command", "cat /report.txt")
+    assert "source" in original["stdout"]
+
+    _run_cli(daemon["env"], "workspace", "delete", "clone-src")
+    _run_cli(daemon["env"], "workspace", "delete", "clone-dst")
 
 
 def test_workspace_get_verbose_includes_internals(daemon, tmp_path):
@@ -235,6 +260,30 @@ def test_provision_returns_dry_run_result(daemon, tmp_path):
     _run_cli(daemon["env"], "workspace", "delete", "provision-test")
 
 
+def test_execute_propagates_inner_exit_code(daemon, tmp_path):
+    cfg = _write_config(tmp_path)
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
+             "exit-test")
+
+    ok = _run_cli(daemon["env"], "execute", "-w", "exit-test", "-c", "echo ok")
+    assert ok["exit_code"] == 0
+
+    _run_cli(daemon["env"],
+             "execute",
+             "-w",
+             "exit-test",
+             "-c",
+             "false",
+             expect_exit=1)
+
+    bg = _run_cli(daemon["env"], "execute", "-w", "exit-test", "-c", "false",
+                  "--background")
+    job_id = bg["job_id"]
+    _run_cli(daemon["env"], "job", "wait", job_id, expect_exit=1)
+
+    _run_cli(daemon["env"], "workspace", "delete", "exit-test")
+
+
 def test_execute_subshell_cwd_does_not_leak(daemon, tmp_path):
     cfg = _write_config(tmp_path)
     _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
@@ -268,8 +317,8 @@ def test_execute_background_then_cancel(daemon, tmp_path):
                          "sleep 30", "--background")
     job_id = submitted["job_id"]
     _run_cli(daemon["env"], "job", "cancel", job_id)
-    waited = _run_cli(daemon["env"], "job", "wait", job_id)
-    assert waited["status"] in ("canceled", "cancelled", "done")
+    waited = _run_cli(daemon["env"], "job", "wait", job_id, expect_exit=2)
+    assert waited == {}
     _run_cli(daemon["env"], "workspace", "delete", "cancel-test")
 
 
@@ -288,3 +337,62 @@ def test_missing_env_var_fails_fast_before_daemon_call(daemon, tmp_path):
         if k != "THIS_VAR_IS_NOT_SET_ANYWHERE"
     }
     _run_cli(env, "workspace", "create", str(cfg), expect_exit=2)
+
+
+SAFEGUARD_TRUNCATE_YAML = """\
+mounts:
+  /:
+    resource: ram
+    mode: WRITE
+    command_safeguards:
+      cat:
+        max_lines: 2
+        on_exceed: truncate
+"""
+
+SAFEGUARD_ERROR_YAML = """\
+mounts:
+  /:
+    resource: ram
+    mode: WRITE
+    command_safeguards:
+      cat:
+        max_lines: 2
+        on_exceed: error
+"""
+
+_SEED_5_LINES = "printf '1\\n2\\n3\\n4\\n5\\n' > /f.txt"
+
+
+def _write_named(tmp_path: Path, name: str, text: str) -> Path:
+    p = tmp_path / name
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def test_execute_safeguard_truncates_output(daemon, tmp_path):
+    cfg = _write_named(tmp_path, "sg_trunc.yaml", SAFEGUARD_TRUNCATE_YAML)
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id",
+             "sg-trunc")
+    _run_cli(daemon["env"], "execute", "--workspace_id", "sg-trunc",
+             "--command", _SEED_5_LINES)
+    result = _run_cli(daemon["env"], "execute", "--workspace_id", "sg-trunc",
+                      "--command", "cat /f.txt")
+    assert result["exit_code"] == 0
+    assert result["stdout"] == "1\n2\n"
+    _run_cli(daemon["env"], "workspace", "delete", "sg-trunc")
+
+
+def test_execute_safeguard_error_exits_1(daemon, tmp_path):
+    cfg = _write_named(tmp_path, "sg_err.yaml", SAFEGUARD_ERROR_YAML)
+    _run_cli(daemon["env"], "workspace", "create", str(cfg), "--id", "sg-err")
+    _run_cli(daemon["env"], "execute", "--workspace_id", "sg-err", "--command",
+             _SEED_5_LINES)
+    _run_cli(daemon["env"],
+             "execute",
+             "--workspace_id",
+             "sg-err",
+             "--command",
+             "cat /f.txt",
+             expect_exit=1)
+    _run_cli(daemon["env"], "workspace", "delete", "sg-err")

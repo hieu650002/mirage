@@ -15,10 +15,8 @@
 from mirage.accessor.redis import RedisAccessor
 from mirage.cache.index import IndexCacheStore, IndexEntry
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.errors import enoent
+from mirage.utils.path import norm
 
 
 async def readdir(
@@ -28,19 +26,22 @@ async def readdir(
 ) -> list[str]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.directory if path.pattern else path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     store = accessor.store
     virtual_key = prefix + path if prefix else path
     listing = await index.list_dir(virtual_key)
     if listing.entries is not None:
         return listing.entries
-    p = _norm(path)
+    p = norm(path)
     if not await store.has_dir(p):
-        raise FileNotFoundError(p)
+        raise enoent(virtual)
     dir_prefix = p.rstrip("/") + "/"
     seen: set[str] = set()
     all_files = await store.list_files()

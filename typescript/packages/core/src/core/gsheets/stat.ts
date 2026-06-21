@@ -16,14 +16,10 @@ import type { GSheetsAccessor } from '../../accessor/gsheets.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { readdir as coreReaddir } from './readdir.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 const VIRTUAL_DIRS = new Set(['', 'owned', 'shared'])
-
-function enoent(p: string): Error & { code: string } {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
 
 export async function stat(
   accessor: GSheetsAccessor,
@@ -33,7 +29,7 @@ export async function stat(
   const prefix = path.prefix
   let p = path.original
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
 
   if (VIRTUAL_DIRS.has(key)) {
     const name = key !== '' ? key : '/'

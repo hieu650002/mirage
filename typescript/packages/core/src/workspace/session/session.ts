@@ -25,6 +25,16 @@ export interface SessionInit {
   shellOptions?: Record<string, boolean>
   readonlyVars?: Set<string>
   arrays?: Record<string, string[]>
+  /**
+   * Mount prefixes this session is allowed to touch. `null` (the default)
+   * means no restriction — every mount in the workspace is reachable.
+   * When provided, dispatch / handle_command / Ops all reject paths that
+   * resolve to mounts outside this set with a capability error. The
+   * workspace always implicitly grants access to its own infrastructure
+   * mounts (cache root, observer, /dev) regardless of this allowlist.
+   */
+  allowedMounts?: ReadonlySet<string> | null
+  pipelineTimeoutSeconds?: number | null
 }
 
 export class Session {
@@ -40,6 +50,8 @@ export class Session {
   arrays: Record<string, string[]>
   stdinBuffer: AsyncLineIterator | null = null
   localVars: Map<string, string | null> | null = null
+  readonly allowedMounts: ReadonlySet<string> | null
+  pipelineTimeoutSeconds: number | null
 
   constructor(init: SessionInit) {
     this.sessionId = init.sessionId
@@ -52,6 +64,35 @@ export class Session {
     this.shellOptions = init.shellOptions ?? {}
     this.readonlyVars = init.readonlyVars ?? new Set()
     this.arrays = init.arrays ?? {}
+    this.allowedMounts = init.allowedMounts ?? null
+    this.pipelineTimeoutSeconds = init.pipelineTimeoutSeconds ?? null
+  }
+
+  /**
+   * Return a copy of this session with `overrides` applied. Mutable
+   * containers (env, functions, readonlyVars, arrays, positionalArgs)
+   * are shallow-copied so mutations on the fork do not leak back into
+   * the source. Every field — including capability fields like
+   * `allowedMounts` — is propagated, so callers cannot accidentally
+   * forget one when adding new fields.
+   */
+  fork(overrides: Partial<SessionInit> = {}): Session {
+    return new Session({
+      sessionId: overrides.sessionId ?? this.sessionId,
+      cwd: overrides.cwd ?? this.cwd,
+      env: overrides.env ?? { ...this.env },
+      createdAt: overrides.createdAt ?? this.createdAt,
+      functions: overrides.functions ?? { ...this.functions },
+      lastExitCode: overrides.lastExitCode ?? this.lastExitCode,
+      positionalArgs: overrides.positionalArgs ?? [...this.positionalArgs],
+      shellOptions: overrides.shellOptions ?? { ...this.shellOptions },
+      readonlyVars: overrides.readonlyVars ?? new Set(this.readonlyVars),
+      arrays:
+        overrides.arrays ??
+        Object.fromEntries(Object.entries(this.arrays).map(([k, v]) => [k, [...v]])),
+      allowedMounts: overrides.allowedMounts ?? this.allowedMounts,
+      pipelineTimeoutSeconds: overrides.pipelineTimeoutSeconds ?? this.pipelineTimeoutSeconds,
+    })
   }
 
   toJSON(): Record<string, unknown> {

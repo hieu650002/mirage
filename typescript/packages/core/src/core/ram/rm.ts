@@ -15,16 +15,19 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
 import { norm } from './utils.ts'
+import { rstripSlash } from '../../utils/slash.ts'
+import { invalidateAfterUnlink } from '../../cache/context.ts'
 
-export function rmR(accessor: RAMAccessor, path: PathSpec): Promise<void> {
+export async function rmR(accessor: RAMAccessor, path: PathSpec): Promise<void> {
   const p = norm(path.stripPrefix)
-  const prefix = p.replace(/\/+$/, '') + '/'
+  const prefix = rstripSlash(p) + '/'
   for (const key of [...accessor.store.files.keys()]) {
     if (key === p || key.startsWith(prefix)) {
       accessor.store.files.delete(key)
       accessor.store.modified.delete(key)
     }
   }
+  await invalidateAfterUnlink(path)
   for (const key of [...accessor.store.dirs]) {
     if (key === p || key.startsWith(prefix)) {
       accessor.store.dirs.delete(key)

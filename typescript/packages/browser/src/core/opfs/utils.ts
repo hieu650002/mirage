@@ -12,20 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export function norm(p: string): string {
-  return `/${p.replace(/^\/+|\/+$/g, '')}`
-}
-
-export function parent(p: string): string {
-  const i = p.lastIndexOf('/')
-  if (i <= 0) return '/'
-  return p.slice(0, i)
-}
-
-export function basename(p: string): string {
-  const tail = p.split('/').pop()
-  return tail !== undefined && tail.length > 0 ? tail : '/'
-}
+export { norm, parent, gnuBasename as basename } from '@struktoai/mirage-core'
 
 export function dirname(p: string): string {
   const i = p.lastIndexOf('/')

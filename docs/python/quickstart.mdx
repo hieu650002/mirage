@@ -84,6 +84,51 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## Output Safeguards
+
+To keep huge reads from flooding an agent, `cat`, `grep`, `rg`, `head`,
+and `tail` cap their **final** output at 2000 lines by default. When a
+cap fires, the agent sees the truncated bytes plus a stderr notice
+(`output truncated at safeguard limit (2000 lines); ...`); exit code
+stays 0.
+
+Caps fire only on the **terminal** command of a pipeline, so
+`cat big.txt | head -n 30` still shows 30 lines.
+
+### Configure per mount
+
+Limits are per-command and per-mount. Attach them when you mount a
+resource by passing a `(resource, mode, {command: CommandSafeguard})`
+tuple. Each guard sets `max_lines` / `max_bytes` (output cap) and/or
+`timeout_seconds` (deadline); `on_exceed` is `TRUNCATE` (default, exit 0
+plus notice) or `ERROR` (exit 1 plus notice):
+
+```python
+from mirage import MountMode, Workspace
+from mirage.resource.ram import RAMResource
+from mirage.types import CommandSafeguard, OnExceed
+
+ws = Workspace(
+    {
+        "/data": (
+            RAMResource(),
+            MountMode.WRITE,
+            {
+                "head": CommandSafeguard(max_lines=100),  # cap, keep going
+                "grep": CommandSafeguard(max_lines=50, on_exceed=OnExceed.ERROR),
+                "rg": CommandSafeguard(timeout_seconds=30),  # deadline
+            },
+        ),
+    },
+    mode=MountMode.WRITE,
+)
+```
+
+The same limits are available to the CLI as a `command_safeguards`
+block in the workspace YAML.
+
 ## Next Steps
 
-- See [Resource Docs](/python/resource/index) for the full list of supported data sources
+- See [Python Installation](/python/install) for resource extras and the `uv` workflow.
+- Browse [Python Agents](/python/agents/index) to wire Mirage into the OpenAI Agents SDK, LangChain, Pydantic AI, CAMEL, and OpenHands.
+- Pick a real backend from [Resource Docs](/python/resource/index), such as [S3](/python/resource/s3), [Slack](/python/resource/slack), or [GitHub](/python/resource/github).

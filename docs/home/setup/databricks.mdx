@@ -1,0 +1,38 @@
+---
+title: Databricks Volume
+icon: folder-open
+description: Set up Databricks credentials for the Unity Catalog volume resource.
+---
+
+## Credentials
+
+The resource reads a Unity Catalog volume over the Databricks SDK. It needs a
+workspace host plus one auth method: a personal access token, a config
+profile, or the SDK defaults (handy inside Databricks Apps).
+
+### 1. Get Your Workspace Host
+
+Your workspace URL, e.g. `https://dbc-xxxxxxxx-xxxx.cloud.databricks.com`
+(AWS) or `https://adb-xxxxxxxxxxxx.xx.azuredatabricks.net` (Azure).
+
+### 2. Create a Personal Access Token
+
+1. In the workspace, open **Settings** -> **Developer** -> **Access tokens**.
+1. Click **Generate new token**, set a comment and lifetime, and copy it.
+
+### 3. Set Environment Variables
+
+```bash
+# .env.development
+DATABRICKS_HOST=https://dbc-xxxxxxxx-xxxx.cloud.databricks.com
+DATABRICKS_TOKEN=dapi...
+```
+
+### Alternatives
+
+- **Config profile:** add a profile to `~/.databrickscfg` and pass
+  `profile="DEV"` instead of host/token.
+- **SDK defaults:** omit host, token, and profile to fall through to the
+  Databricks SDK default auth chain (for example inside Databricks Apps).
+
+For Python configuration, see the [Python Databricks Volume Setup](/python/setup/databricks) guide.

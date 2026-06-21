@@ -37,14 +37,12 @@ import { redactTrelloConfig, type TrelloConfig, type TrelloConfigRedacted } from
 
 export interface TrelloResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: TrelloConfigRedacted
 }
 
 export class TrelloResource implements Resource {
   readonly kind: string = ResourceName.TRELLO
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 600
   readonly prompt: string = TRELLO_PROMPT
   readonly writePrompt: string = TRELLO_WRITE_PROMPT
@@ -124,8 +122,6 @@ export class TrelloResource implements Resource {
   getState(): Promise<TrelloResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['apiKey', 'apiToken'],
       config: redactTrelloConfig(this.config),
     })
   }

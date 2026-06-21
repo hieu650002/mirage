@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { Buffer } from 'node:buffer'
 import type { FastifyInstance } from 'fastify'
 import type { WorkspaceRegistry } from '../registry.ts'
 import { JobStatus, type JobTable } from '../jobs.ts'
@@ -31,7 +32,7 @@ interface ExecuteBody {
   sessionId?: string
   provision?: boolean
   agentId?: string
-  native?: boolean
+  stdinBase64?: string
 }
 
 interface ExecuteQuery {
@@ -53,8 +54,10 @@ export function registerExecuteRoutes(app: FastifyInstance, deps: ExecuteRoutesD
         entry.runner.ws.execute(body.command, {
           ...(body.sessionId !== undefined ? { sessionId: body.sessionId } : {}),
           ...(body.agentId !== undefined ? { agentId: body.agentId } : {}),
-          ...(body.native !== undefined ? { native: body.native } : {}),
           ...(body.provision === true ? { provision: true as const } : {}),
+          ...(body.stdinBase64 !== undefined
+            ? { stdin: new Uint8Array(Buffer.from(body.stdinBase64, 'base64')) }
+            : {}),
           signal,
         }),
       )

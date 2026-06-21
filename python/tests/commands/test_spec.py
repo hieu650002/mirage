@@ -91,6 +91,23 @@ def test_parse_positional_text_then_path():
     ]
 
 
+def test_search_spec_parses_query_paths_and_options():
+    parsed = parse_command(
+        SPECS["search"],
+        [
+            "--method", "hybrid", "--top-k", "5", "--threshold", "0.4",
+            "login docs", "guides/*.md"
+        ],
+        cwd="/knowledge",
+    )
+
+    assert parsed.flag("--method") == "hybrid"
+    assert parsed.flag("--top-k") == "5"
+    assert parsed.flag("--threshold") == "0.4"
+    assert parsed.args == [("login docs", OperandKind.TEXT),
+                           ("/knowledge/guides/*.md", OperandKind.PATH)]
+
+
 def test_parse_double_dash_stops_flags():
     spec = CommandSpec(options=(Option(short="-r"), ),
                        rest=Operand(kind=OperandKind.PATH))
@@ -137,13 +154,11 @@ def test_parse_combined_bool_and_value():
     assert parsed.args == [("/file.txt", OperandKind.PATH)]
 
 
-def test_clustered_flags_with_unknown_short_falls_through_misclassifying_args(
-):
+def test_clustered_flags_with_unknown_short_dropped_with_warning():
     # Regression: a real user ran `grep -RIl "Base3\|base3" /r2/Review` and
     # the pattern + path got swapped because `-I` was missing from the spec.
-    # The parser walks each char in `-RIl`, finds `-I` not registered, and
-    # bails on the whole cluster — pushing `-RIl` itself as the first
-    # positional and shifting everything after.
+    # Unknown dash tokens are now dropped with a warning instead of becoming
+    # the pattern and shifting the real pattern into the paths.
     spec_missing_I = CommandSpec(
         options=(Option(short="-R"),
                  Option(short="-l")),  # -I deliberately missing
@@ -153,8 +168,9 @@ def test_clustered_flags_with_unknown_short_falls_through_misclassifying_args(
     parsed = parse_command(spec_missing_I,
                            ["-RIl", "Base3\\|base3", "/r2/Review"],
                            cwd="/")
-    assert parsed.texts() == ["-RIl"]
-    assert parsed.paths() == ["/Base3\\|base3", "/r2/Review"]
+    assert parsed.texts() == ["Base3\\|base3"]
+    assert parsed.paths() == ["/r2/Review"]
+    assert any("-RIl" in w for w in parsed.warnings)
 
 
 def test_clustered_flags_with_all_known_short_classifies_correctly():
@@ -198,6 +214,7 @@ def test_all_commands_have_specs():
         "file",
         "nl",
         "grep",
+        "search",
         "rg",
         "sort",
         "uniq",
@@ -326,8 +343,8 @@ def test_find_spec():
     parsed = parse_command(spec, ["/data", "-name", "*.py", "-type", "f"],
                            cwd="/")
     assert parsed.paths() == ["/data"]
-    assert parsed.flag("-name") == "*.py"
-    assert parsed.flag("-type") == "f"
+    assert parsed.flag("-name") == ["*.py"]
+    assert parsed.flag("-type") == ["f"]
 
 
 def test_curl_spec():
@@ -398,6 +415,19 @@ def test_parse_to_kwargs_ambiguous_names():
     parsed = ParsedArgs(flags={"-l": True, "-O": True, "-I": True}, args=[])
     kw = parse_to_kwargs(parsed)
     assert kw == {"args_l": True, "args_O": True, "args_I": True}
+
+
+def test_parse_to_kwargs_dash_one_maps_to_args_1():
+    parsed = ParsedArgs(flags={"-1": True}, args=[])
+    kw = parse_to_kwargs(parsed)
+    assert kw == {"args_1": True}
+
+
+def test_ls_spec_parses_dash_one_and_dash_l_together():
+    parsed = parse_command(SPECS["ls"], ["-1", "-l", "/data"], cwd="/")
+    kw = parse_to_kwargs(parsed)
+    assert kw["args_1"] is True
+    assert kw["args_l"] is True
 
 
 def test_parse_to_kwargs_empty():

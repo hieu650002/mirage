@@ -102,7 +102,7 @@ class MirageSandboxSession(BaseSandboxSession):
 
     async def persist_workspace(self) -> io.IOBase:
         buf = io.BytesIO()
-        self._ws.snapshot(buf)
+        await self._ws.snapshot(buf)
         buf.seek(0)
         return buf
 
@@ -116,7 +116,7 @@ class MirageSandboxSession(BaseSandboxSession):
         if hasattr(data, "seek"):
             data.seek(0)
         state = read_tar(data)
-        apply_state_dict(self._ws, state)
+        await apply_state_dict(self._ws, state)
 
 
 class MirageSandboxClient(BaseSandboxClient[None]):

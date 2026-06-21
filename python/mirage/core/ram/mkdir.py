@@ -12,19 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from datetime import datetime, timezone
-
 from mirage.accessor.ram import RAMAccessor
+from mirage.cache.context import invalidate_after_write
+from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
-
-
-def _parent(path: str) -> str:
-    parts = path.rsplit("/", 1)
-    return parts[0] or "/"
+from mirage.utils.path import norm, parent
 
 
 async def mkdir(accessor: RAMAccessor,
@@ -35,19 +27,22 @@ async def mkdir(accessor: RAMAccessor,
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     if parents:
         parts = p.strip("/").split("/")
         current = ""
-        now = datetime.now(timezone.utc).isoformat()
+        now = now_iso()
         for part in parts:
             current += "/" + part
             store.dirs.add(current)
             if current not in store.modified:
                 store.modified[current] = now
+        await invalidate_after_write(path)
         return
-    parent = _parent(p)
-    if parent != "/" and parent not in store.dirs:
-        raise FileNotFoundError(f"parent directory does not exist: {parent}")
+    parent_dir = parent(p)
+    if parent_dir != "/" and parent_dir not in store.dirs:
+        raise FileNotFoundError(
+            f"parent directory does not exist: {parent_dir}")
     store.dirs.add(p)
-    store.modified[p] = datetime.now(timezone.utc).isoformat()
+    store.modified[p] = now_iso()
+    await invalidate_after_write(path)

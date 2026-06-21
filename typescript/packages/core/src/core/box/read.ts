@@ -21,6 +21,8 @@ import { processBoxnote } from '../filetype/boxnote.ts'
 import { downloadFile, downloadFileStream, getExtractedText } from './api.ts'
 import type { BoxTokenManager } from './_client.ts'
 import { readdir } from './readdir.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 const ENC = new TextEncoder()
 
@@ -56,12 +58,6 @@ async function processBoxOffice(
   return ENC.encode(JSON.stringify(envelope, null, 2) + '\n')
 }
 
-function enoent(p: string): Error {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
-
 function eisdir(p: string): Error {
   const e = new Error(`EISDIR: ${p}`) as Error & { code: string }
   e.code = 'EISDIR'
@@ -76,14 +72,14 @@ export async function read(
   const prefix = path.prefix
   let p = path.original
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   if (key === '') throw eisdir(path.original)
   if (index === undefined) throw enoent(path.original)
   const virtualKey = prefix !== '' ? `${prefix}/${key}` : `/${key}`
 
   let result = await index.get(virtualKey)
   if (result.entry === undefined || result.entry === null) {
-    const parentKey = virtualKey.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/'
+    const parentKey = rstripSlash(virtualKey).replace(/\/[^/]+$/, '') || '/'
     if (parentKey !== virtualKey) {
       const parentPath = PathSpec.fromStrPath(parentKey, prefix)
       try {
@@ -115,14 +111,14 @@ export async function* stream(
   const prefix = path.prefix
   let p = path.original
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   if (key === '') throw eisdir(path.original)
   if (index === undefined) throw enoent(path.original)
   const virtualKey = prefix !== '' ? `${prefix}/${key}` : `/${key}`
 
   let result = await index.get(virtualKey)
   if (result.entry === undefined || result.entry === null) {
-    const parentKey = virtualKey.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/'
+    const parentKey = rstripSlash(virtualKey).replace(/\/[^/]+$/, '') || '/'
     if (parentKey !== virtualKey) {
       const parentPath = PathSpec.fromStrPath(parentKey, prefix)
       try {

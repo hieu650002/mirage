@@ -35,9 +35,8 @@ class FakeTransport implements NotionTransport {
   callTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     this.invocations.push({ name, args })
     const list = this.responses.get(name) ?? []
-    if (list.length === 0) return Promise.reject(new Error(`no canned response for ${name}`))
     const response = list.shift()
-    if (response === undefined) return Promise.reject(new Error(`no canned response for ${name}`))
+    if (response === undefined) return Promise.reject(new Error(`unexpected tool call: ${name}`))
     return Promise.resolve(response)
   }
 }
@@ -50,25 +49,8 @@ function spec(original: string, prefix = ''): PathSpec {
   return new PathSpec({ original, directory: original, prefix })
 }
 
-const PAGE_ID_DASHED = 'aaaa1111-2222-3333-4444-555566667777'
-const PAGE_ID = 'aaaa1111222233334444555566667777'
-const DB_ID_DASHED = 'bbbb1111-2222-3333-4444-555566667777'
-const DB_ID = 'bbbb1111222233334444555566667777'
-
-function pageBody(id: string, title: string, lastEdited: string): Record<string, unknown> {
-  return {
-    id,
-    object: 'page',
-    url: 'https://notion.so/Some-Page',
-    created_time: '2024-01-01T00:00:00Z',
-    last_edited_time: lastEdited,
-    archived: false,
-    parent: { type: 'workspace', workspace: true },
-    properties: {
-      title: { title: [{ plain_text: title }] },
-    },
-  }
-}
+const PAGE_ID = 'aaaa1111-2222-3333-4444-555566667777'
+const DB_ID = 'bbbb1111-2222-3333-4444-555566667777'
 
 function databaseBody(id: string, title: string, lastEdited: string): Record<string, unknown> {
   return {
@@ -85,8 +67,6 @@ describe('notion stat', () => {
     const result = await stat(makeAccessor(transport), spec('/'), undefined)
     expect(result.name).toBe('/')
     expect(result.type).toBe(FileType.DIRECTORY)
-    expect(result.modified).toBeNull()
-    expect(result.size).toBeNull()
     expect(transport.invocations).toHaveLength(0)
   })
 
@@ -116,7 +96,6 @@ describe('notion stat', () => {
     const result = await stat(makeAccessor(transport), spec(`/databases/${segment}/`), idx)
     expect(result.name).toBe(segment)
     expect(result.type).toBe(FileType.DIRECTORY)
-    expect(result.modified).toBe('2024-02-03T00:00:00Z')
     expect(result.extra.database_id).toBe(DB_ID)
     expect(transport.invocations).toHaveLength(0)
   })
@@ -125,7 +104,7 @@ describe('notion stat', () => {
     const transport = new FakeTransport()
     transport.enqueue(
       'API-retrieve-a-database',
-      databaseBody(DB_ID_DASHED, 'Tasks', '2024-04-05T00:00:00Z'),
+      databaseBody(DB_ID, 'Tasks', '2024-04-05T00:00:00Z'),
     )
     const segment = `Tasks__${DB_ID}`
     const result = await stat(makeAccessor(transport), spec(`/databases/${segment}/`), undefined)
@@ -136,38 +115,44 @@ describe('notion stat', () => {
     expect(transport.invocations[0]?.args).toEqual({ database_id: DB_ID })
   })
 
-  it('returns json stat for database.json using cached database remoteTime', async () => {
+  it('returns a json stat for database.json without any API call', async () => {
     const transport = new FakeTransport()
-    const idx = new RAMIndexCacheStore()
     const segment = `Tasks__${DB_ID}`
-    await idx.put(
-      `/databases/${segment}`,
-      new IndexEntry({
-        id: DB_ID,
-        name: segment,
-        resourceType: 'notion/database',
-        remoteTime: '2024-06-07T00:00:00Z',
-        vfsName: segment,
-      }),
-    )
     const result = await stat(
       makeAccessor(transport),
       spec(`/databases/${segment}/database.json`),
-      idx,
+      undefined,
     )
     expect(result.name).toBe('database.json')
     expect(result.type).toBe(FileType.JSON)
-    expect(result.modified).toBe('2024-06-07T00:00:00Z')
     expect(result.extra.database_id).toBe(DB_ID)
     expect(transport.invocations).toHaveLength(0)
   })
 
-  it('returns directory stat for a page dir using cached remoteTime', async () => {
+  it('returns a directory stat for the pages root', async () => {
+    const transport = new FakeTransport()
+    const result = await stat(makeAccessor(transport), spec('/pages/'), undefined)
+    expect(result.name).toBe('pages')
+    expect(result.type).toBe(FileType.DIRECTORY)
+    expect(transport.invocations).toHaveLength(0)
+  })
+
+  it('returns a directory stat for a page dir without any API call', async () => {
+    const transport = new FakeTransport()
+    const segment = `Page__${PAGE_ID}`
+    const result = await stat(makeAccessor(transport), spec(`/pages/${segment}/`), undefined)
+    expect(result.name).toBe(segment)
+    expect(result.type).toBe(FileType.DIRECTORY)
+    expect(result.extra.page_id).toBe(PAGE_ID)
+    expect(transport.invocations).toHaveLength(0)
+  })
+
+  it('uses the cached index entry name for a page dir', async () => {
     const transport = new FakeTransport()
     const idx = new RAMIndexCacheStore()
     const segment = `Page__${PAGE_ID}`
     await idx.put(
-      `/${segment}`,
+      `/pages/${segment}`,
       new IndexEntry({
         id: PAGE_ID,
         name: segment,
@@ -176,71 +161,27 @@ describe('notion stat', () => {
         vfsName: segment,
       }),
     )
-    const result = await stat(makeAccessor(transport), spec(`/${segment}/`), idx)
+    const result = await stat(makeAccessor(transport), spec(`/pages/${segment}/`), idx)
     expect(result.name).toBe(segment)
     expect(result.type).toBe(FileType.DIRECTORY)
-    expect(result.modified).toBe('2024-01-02T00:00:00Z')
-    expect(result.size).toBeNull()
     expect(result.extra.page_id).toBe(PAGE_ID)
     expect(transport.invocations).toHaveLength(0)
   })
 
-  it('falls back to getPage when index has no entry for the page dir', async () => {
+  it('returns a json stat for page.json without any API call', async () => {
     const transport = new FakeTransport()
-    transport.enqueue(
-      'API-retrieve-a-page',
-      pageBody(PAGE_ID_DASHED, 'Page', '2024-03-04T00:00:00Z'),
-    )
-    const idx = new RAMIndexCacheStore()
     const segment = `Page__${PAGE_ID}`
-    const result = await stat(makeAccessor(transport), spec(`/${segment}/`), idx)
-    expect(result.type).toBe(FileType.DIRECTORY)
-    expect(result.modified).toBe('2024-03-04T00:00:00Z')
-    expect(result.extra.page_id).toBe(PAGE_ID)
-    expect(transport.invocations).toHaveLength(1)
-    expect(transport.invocations[0]?.name).toBe('API-retrieve-a-page')
-    expect(transport.invocations[0]?.args).toEqual({ page_id: PAGE_ID })
-  })
-
-  it('returns json stat for page.json using cached parent remoteTime', async () => {
-    const transport = new FakeTransport()
-    const idx = new RAMIndexCacheStore()
-    const segment = `Page__${PAGE_ID}`
-    await idx.put(
-      `/${segment}`,
-      new IndexEntry({
-        id: PAGE_ID,
-        name: segment,
-        resourceType: 'notion/page',
-        remoteTime: '2024-05-06T00:00:00Z',
-        vfsName: segment,
-      }),
+    const result = await stat(
+      makeAccessor(transport),
+      spec(`/pages/${segment}/page.json`),
+      undefined,
     )
-    const result = await stat(makeAccessor(transport), spec(`/${segment}/page.json`), idx)
     expect(result.name).toBe('page.json')
     expect(result.type).toBe(FileType.JSON)
-    expect(result.modified).toBe('2024-05-06T00:00:00Z')
-    expect(result.size).toBeNull()
-    expect(result.extra.page_id).toBe(PAGE_ID)
     expect(transport.invocations).toHaveLength(0)
   })
 
-  it('falls back to getPage for page.json when no cache', async () => {
-    const transport = new FakeTransport()
-    transport.enqueue(
-      'API-retrieve-a-page',
-      pageBody(PAGE_ID_DASHED, 'Page', '2024-07-08T00:00:00Z'),
-    )
-    const segment = `Page__${PAGE_ID}`
-    const result = await stat(makeAccessor(transport), spec(`/${segment}/page.json`), undefined)
-    expect(result.type).toBe(FileType.JSON)
-    expect(result.modified).toBe('2024-07-08T00:00:00Z')
-    expect(result.extra.page_id).toBe(PAGE_ID)
-    expect(transport.invocations).toHaveLength(1)
-    expect(transport.invocations[0]?.args).toEqual({ page_id: PAGE_ID })
-  })
-
-  it('throws ENOENT for an invalid segment', async () => {
+  it('throws ENOENT for a top-level dir that is not pages', async () => {
     const transport = new FakeTransport()
     let captured: unknown = null
     try {
@@ -258,7 +199,7 @@ describe('notion stat', () => {
     const segment = `Page__${PAGE_ID}`
     let captured: unknown = null
     try {
-      await stat(makeAccessor(transport), spec(`/${segment}/foo.txt`), undefined)
+      await stat(makeAccessor(transport), spec(`/pages/${segment}/foo.txt`), undefined)
     } catch (err) {
       captured = err
     }
@@ -269,28 +210,15 @@ describe('notion stat', () => {
 
   it('honors a path prefix', async () => {
     const transport = new FakeTransport()
-    const idx = new RAMIndexCacheStore()
     const segment = `Page__${PAGE_ID}`
-    await idx.put(
-      `/notion/${segment}`,
-      new IndexEntry({
-        id: PAGE_ID,
-        name: segment,
-        resourceType: 'notion/page',
-        remoteTime: '2024-09-10T00:00:00Z',
-        vfsName: segment,
-      }),
-    )
-    const original = `/notion/${segment}/`
+    const original = `/notion/pages/${segment}/`
     const result = await stat(
       makeAccessor(transport),
       new PathSpec({ original, directory: original, prefix: '/notion' }),
-      idx,
+      undefined,
     )
-    expect(result.type).toBe(FileType.DIRECTORY)
     expect(result.name).toBe(segment)
-    expect(result.modified).toBe('2024-09-10T00:00:00Z')
+    expect(result.type).toBe(FileType.DIRECTORY)
     expect(result.extra.page_id).toBe(PAGE_ID)
-    expect(transport.invocations).toHaveLength(0)
   })
 })

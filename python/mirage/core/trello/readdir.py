@@ -21,6 +21,7 @@ from mirage.core.trello.pathing import (board_dirname, card_dirname,
                                         label_filename, list_dirname,
                                         member_filename, workspace_dirname)
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 VIRTUAL_ROOTS = ("workspaces", )
 
@@ -32,11 +33,14 @@ async def readdir(
 ) -> list[str]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.directory if path.pattern else path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     key = path.strip("/")
     idx_key = "/" + key if key else "/"
 
@@ -47,7 +51,7 @@ async def readdir(
         if index is not None:
             listing = await index.list_dir(idx_key)
             if listing.entries is not None:
-                return listing.entries
+                return [f"{prefix}{entry}" for entry in listing.entries]
         workspaces = await list_workspaces(accessor.config)
         if accessor.config.workspace_id:
             workspaces = [
@@ -83,7 +87,7 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(idx_key)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
         return [
             f"{prefix}/{key}/workspace.json",
             f"{prefix}/{key}/boards",
@@ -102,13 +106,13 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(ws_vkey)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
             ws_id = result.entry.id
             listing = await index.list_dir(idx_key)
             if listing.entries is not None:
-                return listing.entries
+                return [f"{prefix}{entry}" for entry in listing.entries]
         else:
-            raise FileNotFoundError(path)
+            raise enoent(virtual)
         boards = await list_workspace_boards(accessor.config, ws_id)
         if accessor.config.board_ids:
             boards = [
@@ -142,7 +146,7 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(idx_key)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
         return [
             f"{prefix}/{key}/board.json",
             f"{prefix}/{key}/members",
@@ -164,13 +168,13 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(board_vkey)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
             board_id = result.entry.id
             listing = await index.list_dir(idx_key)
             if listing.entries is not None:
-                return listing.entries
+                return [f"{prefix}{entry}" for entry in listing.entries]
         else:
-            raise FileNotFoundError(path)
+            raise enoent(virtual)
         members = await list_board_members(accessor.config, board_id)
         entries = []
         for member in members:
@@ -203,13 +207,13 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(board_vkey)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
             board_id = result.entry.id
             listing = await index.list_dir(idx_key)
             if listing.entries is not None:
-                return listing.entries
+                return [f"{prefix}{entry}" for entry in listing.entries]
         else:
-            raise FileNotFoundError(path)
+            raise enoent(virtual)
         labels = await list_board_labels(accessor.config, board_id)
         entries = []
         for label in labels:
@@ -242,13 +246,13 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(board_vkey)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
             board_id = result.entry.id
             listing = await index.list_dir(idx_key)
             if listing.entries is not None:
-                return listing.entries
+                return [f"{prefix}{entry}" for entry in listing.entries]
         else:
-            raise FileNotFoundError(path)
+            raise enoent(virtual)
         lists = await list_board_lists(accessor.config, board_id)
         entries = []
         for lst in lists:
@@ -279,7 +283,7 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(idx_key)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
         return [
             f"{prefix}/{key}/list.json",
             f"{prefix}/{key}/cards",
@@ -299,13 +303,13 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(list_vkey)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
             list_id = result.entry.id
             listing = await index.list_dir(idx_key)
             if listing.entries is not None:
-                return listing.entries
+                return [f"{prefix}{entry}" for entry in listing.entries]
         else:
-            raise FileNotFoundError(path)
+            raise enoent(virtual)
         cards = await list_list_cards(accessor.config, list_id)
         entries = []
         for card in cards:
@@ -336,7 +340,7 @@ async def readdir(
                 await readdir(accessor, parent, index)
                 result = await index.get(idx_key)
             if result.entry is None:
-                raise FileNotFoundError(path)
+                raise enoent(virtual)
         return [f"{prefix}/{key}/card.json", f"{prefix}/{key}/comments.jsonl"]
 
     return []

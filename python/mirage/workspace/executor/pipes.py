@@ -14,6 +14,7 @@
 
 import tree_sitter
 
+from mirage.commands.builtin.utils.safeguard import run_with_timeout
 from mirage.io import IOResult
 from mirage.io.stream import async_chain, close_quietly, merge_stdout_stderr
 from mirage.io.types import ByteSource, materialize
@@ -60,7 +61,9 @@ async def handle_pipe(
             last_stdout = stdout
 
         if last_stdout is not None and not isinstance(last_stdout, bytes):
-            materialized = await materialize(last_stdout)
+            materialized = await run_with_timeout(
+                materialize(last_stdout), session.pipeline_timeout_seconds,
+                "pipeline")
             last_stdout = materialized
     finally:
         # Explicitly close any intermediate generators that may still
@@ -182,6 +185,8 @@ async def handle_subshell(
     saved_options = dict(session.shell_options)
     saved_readonly = set(session.readonly_vars)
     saved_arrays = {k: list(v) for k, v in session.arrays.items()}
+    saved_functions = dict(session.functions)
+    saved_positional = list(getattr(session, "positional_args", None) or [])
     try:
         all_stdout: list = []
         merged_io = IOResult()
@@ -206,3 +211,5 @@ async def handle_subshell(
         session.shell_options = saved_options
         session.readonly_vars = saved_readonly
         session.arrays = saved_arrays
+        session.functions = saved_functions
+        session.positional_args = saved_positional

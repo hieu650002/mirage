@@ -68,6 +68,14 @@ async def main() -> None:
     result = await ws.execute('jq ".name" /data/user.json')
     print(await result.stdout_str())
 
+    print("=== not-found errors show the full virtual path ===")
+    for cmd in ("cat /data/missing.txt", "head /data/missing.txt",
+                "stat /data/missing.txt"):
+        result = await ws.execute(cmd)
+        print(f"$ {cmd}")
+        print(f"  exit={result.exit_code}  "
+              f"{(await result.stderr_str()).strip()}")
+
     print("=== nl /data/reports/q1.csv ===")
     result = await ws.execute("nl /data/reports/q1.csv")
     print(await result.stdout_str())
@@ -193,48 +201,48 @@ async def main() -> None:
     print(f"    read_ops       = {meta_cost.read_ops}")
 
     # ── persistence: save / load / copy / deepcopy ──────────────────
-    # Redis has needs_override=True — saved state contains the full
-    # key+value dump but the connection URL is redacted; caller must
-    # supply a fresh RedisResource (often pointed at a different
+    # Redis has redacted connection config: saved state contains the full
+    # key+value dump, but caller must supply a fresh RedisResource (often
+    # pointed at a different
     # Redis instance / different key prefix) at load time.
     print("\n=== PERSISTENCE ===\n")
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as f:
         snap = f.name
     dst_prefix = f"mirage:loaded:{uuid.uuid4().hex[:8]}:"
     try:
-        ws.snapshot(snap)
+        await ws.snapshot(snap)
         print(f"  saved → {snap} ({os.path.getsize(snap)} bytes)")
 
         try:
-            Workspace.load(snap)
+            await Workspace.load(snap)
             print("  ✗ load() should have raised without resources=")
         except ValueError as e:
             print(f"  ✓ load() w/o resources raises: "
                   f"{str(e).splitlines()[0][:70]}…")
 
         # Load into a fresh Redis prefix (same instance, isolated namespace)
-        loaded = Workspace.load(snap,
-                                resources={
-                                    "/data":
-                                    RedisResource(url=REDIS_URL,
-                                                  key_prefix=dst_prefix)
-                                })
+        loaded = await Workspace.load(snap,
+                                      resources={
+                                          "/data":
+                                          RedisResource(url=REDIS_URL,
+                                                        key_prefix=dst_prefix)
+                                      })
         r = await loaded.execute("ls /data/")
         print(f"  loaded ws ls /data: "
               f"{(await r.stdout_str()).strip()[:60]}…")
 
-        # copy(): in-process — reuses same RedisResource, both copies
+        # copy(): in-process, reuses same RedisResource, both copies
         # see the same Redis state
-        cp = ws.copy()
+        cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        deep = _copy.deepcopy(ws)
-        print(f"  deepcopy() mounts: {[m.prefix for m in deep.mounts()]}")
-
-        try:
-            _copy.copy(ws)
-        except NotImplementedError as e:
-            print(f"  ✓ shallow copy raises: {str(e)[:60]}…")
+        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
+                                                           _copy.copy)):
+            try:
+                op(ws)
+                print(f"  ✗ {op_name} should have raised")
+            except NotImplementedError as e:
+                print(f"  ✓ {op_name} raises: {str(e)[:60]}…")
     finally:
         os.unlink(snap)
         # Cleanup loaded keys

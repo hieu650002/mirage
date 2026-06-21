@@ -26,7 +26,7 @@ def config():
 
 def test_resource_init(config):
     resource = DiscordResource(config)
-    assert resource.is_remote is True
+    assert resource.caches_reads is True
 
 
 def test_resource_name(config):
@@ -43,4 +43,5 @@ def test_resource_accessor(config):
 
 def test_resource_commands(config):
     resource = DiscordResource(config)
-    assert len(resource._commands) == 15
+    # 18 native + 9 filetype cmds x 7 columnar exts
+    assert len(resource._commands) == 18 + 9 * 7

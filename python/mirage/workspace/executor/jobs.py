@@ -16,6 +16,7 @@ import asyncio
 
 import tree_sitter
 
+from mirage.commands.builtin.utils.safeguard import CommandTimeoutError
 from mirage.io import IOResult
 from mirage.io.types import ByteSource, materialize
 from mirage.shell.helpers import get_text
@@ -35,19 +36,27 @@ async def handle_background(
     call_stack=None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run left side in background."""
-    bg_session = Session(
-        session_id=session.session_id,
-        cwd=session.cwd,
-        env=dict(session.env),
-    )
+    bg_session = session.fork()
 
     async def _run_bg():
         # Background jobs don't receive stdin, matching real shell
         # behavior where bg processes get /dev/null. This prevents
         # race conditions when stdin is an async iterator.
-        stdout, io, exec_node = await execute_node(left, bg_session, None,
-                                                   call_stack)
+        cmd_str_inner = get_text(left) if hasattr(left, "text") else str(left)
+        try:
+            stdout, io, exec_node = await execute_node(left, bg_session, None,
+                                                       call_stack)
+        except CommandTimeoutError as exc:
+            msg = (str(exc) + "\n").encode()
+            io = IOResult(exit_code=124, stderr=msg)
+            exec_node = ExecutionNode(command=cmd_str_inner,
+                                      stderr=msg,
+                                      exit_code=124)
+            return b"", io, exec_node
         stdout = await materialize(stdout)
+        # Eagerly materialize stderr too so JobTable._refresh can read
+        # the task result synchronously without an async hop.
+        await io.materialize_stderr()
         io.sync_exit_code()
         return stdout, io, exec_node
 

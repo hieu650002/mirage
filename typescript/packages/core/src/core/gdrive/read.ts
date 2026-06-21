@@ -20,13 +20,9 @@ import { downloadFile } from '../google/drive.ts'
 import { readSpreadsheet } from '../gsheets/read.ts'
 import { readPresentation } from '../gslides/read.ts'
 import type { TokenManager } from '../google/_client.ts'
-import { readdir } from './readdir.ts'
-
-function enoent(p: string): Error {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
+import { DIRECTORY_RESOURCE_TYPES, readdir } from './readdir.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 function eisdir(p: string): Error {
   const e = new Error(`EISDIR: ${p}`) as Error & { code: string }
@@ -46,12 +42,13 @@ export async function read(
   const prefix = path.prefix
   let p = path.original
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   if (index === undefined) throw enoent(path.original)
   const virtualKey = prefix !== '' ? `${prefix}/${key}` : `/${key}`
   let result = await index.get(virtualKey)
   if (result.entry === undefined || result.entry === null) {
-    const parentKey = virtualKey.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/'
+    // cold index: list the parent directory to populate the entry, then retry
+    const parentKey = rstripSlash(virtualKey).replace(/\/[^/]+$/, '') || '/'
     if (parentKey !== virtualKey) {
       const parentPath = PathSpec.fromStrPath(parentKey, prefix)
       try {
@@ -64,7 +61,7 @@ export async function read(
     if (result.entry === undefined || result.entry === null) throw enoent(path.original)
   }
   const rt = result.entry.resourceType
-  if (rt === 'gdrive/folder') throw eisdir(path.original)
+  if (DIRECTORY_RESOURCE_TYPES.has(rt)) throw eisdir(path.original)
   if (rt === 'gdrive/gdoc') return readDoc(accessor.tokenManager, result.entry.id)
   if (rt === 'gdrive/gsheet') return readSpreadsheet(accessor.tokenManager, result.entry.id)
   if (rt === 'gdrive/gslide') return readPresentation(accessor.tokenManager, result.entry.id)

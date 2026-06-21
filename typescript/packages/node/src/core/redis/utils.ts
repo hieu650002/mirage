@@ -12,20 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export function norm(path: string): string {
-  return `/${path.replace(/^\/+|\/+$/g, '')}`
-}
-
-export function parent(path: string): string {
-  const i = path.lastIndexOf('/')
-  if (i <= 0) return '/'
-  return path.slice(0, i)
-}
-
-export function basename(path: string): string {
-  const tail = path.split('/').pop()
-  return tail !== undefined && tail.length > 0 ? tail : '/'
-}
+export { norm, parent, gnuBasename as basename } from '@struktoai/mirage-core'
 
 export function nowIso(): string {
   return new Date().toISOString()

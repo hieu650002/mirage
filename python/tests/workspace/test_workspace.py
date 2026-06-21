@@ -26,9 +26,9 @@ def _run(coro):
 def _ws():
     """Workspace with 3 RAM mounts: /s3/, /disk/, /ram/."""
     s3 = RAMResource()
-    s3.is_remote = True
+    s3.caches_reads = True
     disk = RAMResource()
-    disk.is_remote = True
+    disk.caches_reads = True
     ram = RAMResource()
 
     s3._store.files["/report.csv"] = b"name,age\nalice,30\nbob,25\n"
@@ -53,14 +53,11 @@ def _ws():
     ram._store.files["/nums.txt"] = b"5\n3\n1\n4\n2\n"
     ram._store.files["/words.txt"] = b"banana\napple\ncherry\napple\n"
 
-    ws = Workspace(
-        resources={
-            "/s3/": (s3, MountMode.EXEC),
-            "/disk/": (disk, MountMode.EXEC),
-            "/ram/": (ram, MountMode.EXEC),
-        },
-        history=None,
-    )
+    ws = Workspace(resources={
+        "/s3/": (s3, MountMode.EXEC),
+        "/disk/": (disk, MountMode.EXEC),
+        "/ram/": (ram, MountMode.EXEC),
+    }, )
     ws.get_session(DEFAULT_SESSION_ID).cwd = "/s3"
     return ws
 
@@ -1437,6 +1434,50 @@ def test_python3_no_args():
     assert b"no input" in io.stderr
 
 
+def test_python3_c_with_argv():
+    """python3 -c "code" arg1 arg2 → arg1/arg2 reach sys.argv as bare text."""
+    ws = _ws()
+    io = _exec(ws, 'python3 -c "import sys; print(sys.argv[1:])" alpha beta')
+    assert io.exit_code == 0
+    assert _stdout(io) == b"['alpha', 'beta']\n"
+
+
+def test_python3_c_with_abs_path_argv():
+    """python3 -c "code" /abs/path → abs path stays text argv (not script)."""
+    ws = _ws()
+    io = _exec(ws,
+               'python3 -c "import sys; print(sys.argv[1:])" /disk/some_file')
+    assert io.exit_code == 0
+    assert _stdout(io) == b"['/disk/some_file']\n"
+
+
+def test_python3_script_with_argv():
+    """python3 /abs/script.py arg1 arg2 → script reads, argv passed through."""
+    ws = _ws()
+    _exec(ws, "echo 'import sys; print(sys.argv[1:])' > /disk/argv.py")
+    io = _exec(ws, "python3 /disk/argv.py alpha beta")
+    assert io.exit_code == 0
+    assert _stdout(io) == b"['alpha', 'beta']\n"
+
+
+def test_python3_bare_name_script_via_cwd():
+    """python3 script.py (bare name) → resolves against cwd, dispatched."""
+    ws = _ws()
+    _exec(ws, "echo 'print(123)' > /disk/bare.py")
+    io = _exec(ws, "cd /disk && python3 bare.py")
+    assert io.exit_code == 0
+    assert _stdout(io) == b"123\n"
+
+
+def test_python3_bare_name_script_with_argv():
+    """python3 script.py one two (bare + argv) → cwd-resolved + argv passes."""
+    ws = _ws()
+    _exec(ws, "echo 'import sys; print(sys.argv[1:])' > /disk/with_argv.py")
+    io = _exec(ws, "cd /disk && python3 with_argv.py one two")
+    assert io.exit_code == 0
+    assert _stdout(io) == b"['one', 'two']\n"
+
+
 # ── cross-mount commands ──────────────────────
 
 
@@ -1466,6 +1507,159 @@ def test_cross_mount_mv():
     assert b"moveme" in _stdout(io)
     io = _exec(ws, "cat /disk/moveme.txt")
     assert io.exit_code == 1
+
+
+def test_cross_mount_cp_into_directory():
+    ws = _ws()
+    _exec(ws, "echo source > /ram/source.txt")
+    _exec(ws, "mkdir /disk/target")
+
+    io = _exec(ws, "cp /ram/source.txt /disk/target")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target/source.txt")) == b"source\n"
+    assert _stdout(_exec(ws, "cat /ram/source.txt")) == b"source\n"
+
+
+def test_cross_mount_mv_into_directory():
+    ws = _ws()
+    _exec(ws, "echo source > /ram/source.txt")
+    _exec(ws, "mkdir /disk/target")
+
+    io = _exec(ws, "mv /ram/source.txt /disk/target")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target/source.txt")) == b"source\n"
+    assert _exec(ws, "cat /ram/source.txt").exit_code != 0
+
+
+def test_cross_mount_cp_no_clobber_into_directory():
+    ws = _ws()
+    _exec(ws, "echo source > /ram/source.txt")
+    _exec(ws, "mkdir /disk/target")
+    _exec(ws, "echo existing > /disk/target/source.txt")
+
+    io = _exec(ws, "cp -vn /ram/source.txt /disk/target")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target/source.txt")) == b"existing\n"
+    assert _stdout(_exec(ws, "cat /ram/source.txt")) == b"source\n"
+
+
+def test_cross_mount_mv_no_clobber_into_directory():
+    ws = _ws()
+    _exec(ws, "echo source > /ram/source.txt")
+    _exec(ws, "mkdir /disk/target")
+    _exec(ws, "echo existing > /disk/target/source.txt")
+
+    io = _exec(ws, "mv -vn /ram/source.txt /disk/target")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target/source.txt")) == b"existing\n"
+    assert _stdout(_exec(ws, "cat /ram/source.txt")) == b"source\n"
+
+
+def test_cross_mount_cp_no_clobber_duplicate_basenames():
+    ws = _ws()
+    _exec(ws, "echo first > /ram/shared.txt")
+    _exec(ws, "echo second > /s3/shared.txt")
+    _exec(ws, "mkdir /disk/target")
+
+    io = _exec(ws, "cp -n /ram/shared.txt /s3/shared.txt /disk/target")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target/shared.txt")) == b"first\n"
+    assert _stdout(_exec(ws, "cat /ram/shared.txt")) == b"first\n"
+    assert _stdout(_exec(ws, "cat /s3/shared.txt")) == b"second\n"
+
+
+def test_cross_mount_no_clobber_uses_shared_command_spec():
+    ws = _ws()
+    source_mount = ws._registry.mount_for("/ram/source.txt")
+    source_mount._cmds.pop(("cp", None))
+    source_mount._cmd_specs.pop("cp")
+    _exec(ws, "echo source > /ram/source.txt")
+    _exec(ws, "echo existing > /disk/target.txt")
+
+    io = _exec(ws, "cp -n /ram/source.txt /disk/target.txt")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target.txt")) == b"existing\n"
+    assert _stdout(_exec(ws, "cat /ram/source.txt")) == b"source\n"
+
+
+def test_cross_mount_mv_no_clobber_duplicate_basenames():
+    ws = _ws()
+    _exec(ws, "echo first > /ram/shared.txt")
+    _exec(ws, "echo second > /s3/shared.txt")
+    _exec(ws, "mkdir /disk/target")
+
+    io = _exec(ws, "mv -n /ram/shared.txt /s3/shared.txt /disk/target")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target/shared.txt")) == b"first\n"
+    assert _exec(ws, "cat /ram/shared.txt").exit_code != 0
+    assert _stdout(_exec(ws, "cat /s3/shared.txt")) == b"second\n"
+
+
+def test_cross_mount_cp_multiple_sources_require_directory():
+    ws = _ws()
+    _exec(ws, "echo first > /ram/a.txt")
+    _exec(ws, "echo second > /ram/b.txt")
+    _exec(ws, "echo target > /disk/target.txt")
+
+    io = _exec(ws, "cp /ram/a.txt /ram/b.txt /disk/target.txt")
+
+    assert io.exit_code != 0
+    assert b"not a directory" in io.stderr
+    assert _stdout(_exec(ws, "cat /ram/a.txt")) == b"first\n"
+    assert _stdout(_exec(ws, "cat /ram/b.txt")) == b"second\n"
+    assert _stdout(_exec(ws, "cat /disk/target.txt")) == b"target\n"
+
+
+def test_cross_mount_mv_multiple_sources_require_directory():
+    ws = _ws()
+    _exec(ws, "echo first > /ram/a.txt")
+    _exec(ws, "echo second > /ram/b.txt")
+    _exec(ws, "echo target > /disk/target.txt")
+
+    io = _exec(ws, "mv /ram/a.txt /ram/b.txt /disk/target.txt")
+
+    assert io.exit_code != 0
+    assert b"not a directory" in io.stderr
+    assert _stdout(_exec(ws, "cat /ram/a.txt")) == b"first\n"
+    assert _stdout(_exec(ws, "cat /ram/b.txt")) == b"second\n"
+    assert _stdout(_exec(ws, "cat /disk/target.txt")) == b"target\n"
+
+
+def test_cross_mount_cp_multiple_sources_into_directory():
+    ws = _ws()
+    _exec(ws, "echo first > /ram/a.txt")
+    _exec(ws, "echo second > /ram/b.txt")
+    _exec(ws, "mkdir /disk/target")
+
+    io = _exec(ws, "cp /ram/a.txt /ram/b.txt /disk/target")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target/a.txt")) == b"first\n"
+    assert _stdout(_exec(ws, "cat /disk/target/b.txt")) == b"second\n"
+    assert _stdout(_exec(ws, "cat /ram/a.txt")) == b"first\n"
+    assert _stdout(_exec(ws, "cat /ram/b.txt")) == b"second\n"
+
+
+def test_cross_mount_mv_multiple_sources_into_directory():
+    ws = _ws()
+    _exec(ws, "echo first > /ram/a.txt")
+    _exec(ws, "echo second > /ram/b.txt")
+    _exec(ws, "mkdir /disk/target")
+
+    io = _exec(ws, "mv /ram/a.txt /ram/b.txt /disk/target")
+
+    assert io.exit_code == 0
+    assert _stdout(_exec(ws, "cat /disk/target/a.txt")) == b"first\n"
+    assert _stdout(_exec(ws, "cat /disk/target/b.txt")) == b"second\n"
+    assert _exec(ws, "cat /ram/a.txt").exit_code != 0
+    assert _exec(ws, "cat /ram/b.txt").exit_code != 0
 
 
 def test_cross_mount_diff_same():
@@ -1692,7 +1886,7 @@ def test_sh_alias():
 def test_bash_dash_c_for_loop_over_dirs():
     """`bash -lc` with a for-loop iterating mount paths."""
     s3 = RAMResource()
-    s3.is_remote = True
+    s3.caches_reads = True
     s3._store.dirs.update({
         "/INBOX",
         "/INBOX/2026-04-28",
@@ -1700,10 +1894,7 @@ def test_bash_dash_c_for_loop_over_dirs():
     })
     s3._store.files["/INBOX/2026-04-28/m1.txt"] = b""
     s3._store.files["/INBOX/2026-04-29/m2.txt"] = b""
-    ws = Workspace(
-        resources={"/gmail/": (s3, MountMode.EXEC)},
-        history=None,
-    )
+    ws = Workspace(resources={"/gmail/": (s3, MountMode.EXEC)}, )
     cmd = ('bash -lc \'for d in /gmail/INBOX/2026-04-28 '
            '/gmail/INBOX/2026-04-29; do echo "== $d =="; ls "$d"; done\'')
     io = _exec(ws, cmd)
@@ -2188,14 +2379,14 @@ def test_unmount_closes_resource_when_owned():
 
 
 def test_unmount_rejects_reserved_prefixes():
-    """unmount of cache root / observer / dev / unknown prefix raises."""
+    """unmount of cache root / history view / dev / unknown prefix raises."""
     ws = _ws()
     import pytest
 
     with pytest.raises(ValueError, match="cache root"):
         asyncio.run(ws.unmount("/"))
-    with pytest.raises(ValueError, match="observer prefix"):
-        asyncio.run(ws.unmount("/.sessions"))
+    with pytest.raises(ValueError, match="history view"):
+        asyncio.run(ws.unmount("/.bash_history"))
     with pytest.raises(ValueError, match="reserved"):
         asyncio.run(ws.unmount("/dev"))
     with pytest.raises(ValueError, match="no mount at prefix"):
@@ -2216,10 +2407,7 @@ def test_unmount_after_close_raises():
 
 
 def test_cd_nonexistent_under_mount_keeps_cwd():
-    ws = Workspace(
-        resources={"/": (RAMResource(), MountMode.WRITE)},
-        history=None,
-    )
+    ws = Workspace(resources={"/": (RAMResource(), MountMode.WRITE)}, )
     before = ws.get_session(DEFAULT_SESSION_ID).cwd
     io = _exec(ws, "cd /missing")
     assert io.exit_code != 0
@@ -2228,13 +2416,10 @@ def test_cd_nonexistent_under_mount_keeps_cwd():
 
 
 def test_cd_into_mount_root_succeeds():
-    ws = Workspace(
-        resources={
-            "/": (RAMResource(), MountMode.WRITE),
-            "/data/": (RAMResource(), MountMode.WRITE),
-        },
-        history=None,
-    )
+    ws = Workspace(resources={
+        "/": (RAMResource(), MountMode.WRITE),
+        "/data/": (RAMResource(), MountMode.WRITE),
+    }, )
     io = _exec(ws, "cd /data")
     assert io.exit_code == 0
     assert ws.get_session(DEFAULT_SESSION_ID).cwd == "/data"
@@ -2244,13 +2429,10 @@ def test_cd_into_mount_root_succeeds():
 
 
 def _ws_for_ls(mounts: dict[str, RAMResource]) -> Workspace:
-    return Workspace(
-        resources={
-            p: (r, MountMode.WRITE)
-            for p, r in mounts.items()
-        },
-        history=None,
-    )
+    return Workspace(resources={
+        p: (r, MountMode.WRITE)
+        for p, r in mounts.items()
+    }, )
 
 
 def test_ls_root_shows_child_mount_data():
@@ -2269,12 +2451,12 @@ def test_ls_classify_child_mount_with_trailing_slash():
     assert "data/" in out.split("\n")
 
 
-def test_ls_hides_dot_sessions_by_default_shows_with_a():
+def test_ls_hides_dot_bash_history_by_default_shows_with_a():
     ws = _ws_for_ls({"/": RAMResource()})
     plain = _exec(ws, "ls /")
-    assert ".sessions" not in _stdout(plain).decode().split("\n")
+    assert ".bash_history" not in _stdout(plain).decode().split("\n")
     all_io = _exec(ws, "ls -a /")
-    assert ".sessions" in _stdout(all_io).decode().split("\n")
+    assert ".bash_history" in _stdout(all_io).decode().split("\n")
 
 
 def test_ls_does_not_duplicate_existing_entry():

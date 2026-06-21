@@ -23,7 +23,7 @@ const DEC = new TextDecoder()
 
 async function runTree(
   paths: PathSpec[],
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   options: { index?: RAMIndexCacheStore; transport?: FakeDiscordTransport } = {},
 ): Promise<string> {
   const cmd = DISCORD_TREE[0]
@@ -48,12 +48,12 @@ async function runTree(
 describe('discord tree', () => {
   it('renders depth-1 listing of a guild dir', async () => {
     const idx = new RAMIndexCacheStore()
-    await seedGuild(idx, '/mnt/discord', 'My_Server__G1', 'G1')
+    await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
     const out = await runTree(
       [
         new PathSpec({
-          original: '/mnt/discord/My_Server__G1',
-          directory: '/mnt/discord/My_Server__G1',
+          original: '/mnt/discord/My Server__G1',
+          directory: '/mnt/discord/My Server__G1',
           resolved: false,
           prefix: '/mnt/discord',
         }),
@@ -61,7 +61,7 @@ describe('discord tree', () => {
       { L: '1' },
       { index: idx },
     )
-    const lines = out.split('\n')
+    const lines = out.trimEnd().split('\n')
     expect(lines).toHaveLength(2)
     expect(lines[0]).toContain('channels')
     expect(lines[1]).toContain('members')
@@ -72,15 +72,15 @@ describe('discord tree', () => {
     const transport = new FakeDiscordTransport(() => {
       throw new Error('should not be called')
     })
-    await seedGuild(idx, '/mnt/discord', 'My_Server__G1', 'G1')
-    await seedChannel(idx, '/mnt/discord', 'My_Server__G1', 'general__C1', 'C1', {
+    await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
+    await seedChannel(idx, '/mnt/discord', 'My Server__G1', 'general__C1', 'C1', {
       dates: ['2024-01-01'],
     })
     const out = await runTree(
       [
         new PathSpec({
-          original: '/mnt/discord/My_Server__G1/channels',
-          directory: '/mnt/discord/My_Server__G1/channels',
+          original: '/mnt/discord/My Server__G1/channels',
+          directory: '/mnt/discord/My Server__G1/channels',
           resolved: false,
           prefix: '/mnt/discord',
         }),
@@ -89,6 +89,6 @@ describe('discord tree', () => {
       { index: idx, transport },
     )
     expect(out).toContain('general__C1')
-    expect(out).toContain('2024-01-01.jsonl')
+    expect(out).toContain('2024-01-01')
   })
 })

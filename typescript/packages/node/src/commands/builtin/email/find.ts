@@ -21,21 +21,16 @@ import {
   type ByteSource,
   type CommandFnResult,
   type CommandOpts,
+  rstripSlash,
+  stripSlash,
+  formatRecords,
 } from '@struktoai/mirage-core'
 import type { EmailAccessor } from '../../../accessor/email.ts'
 import { resolveGlob } from '../../../core/email/glob.ts'
 import { readdir as emailReaddir } from '../../../core/email/readdir.ts'
 import { metadataProvision } from './provision.ts'
-
-const ENC = new TextEncoder()
-
-function fnmatch(name: string, pattern: string): boolean {
-  const re = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\?/g, '.')
-    .replace(/\*/g, '.*')
-  return new RegExp(`^${re}$`).test(name)
-}
+import { fnmatch } from '@struktoai/mirage-core'
+import { findSizeMtimeError, invalidFindArg } from '@struktoai/mirage-core'
 
 async function walk(
   accessor: EmailAccessor,
@@ -54,7 +49,7 @@ async function walk(
   const results: string[] = []
   for (const child of children) {
     const isFolder = child.endsWith('/')
-    const trimmed = isFolder ? child.replace(/\/+$/, '') : child
+    const trimmed = isFolder ? rstripSlash(child) : child
     results.push(trimmed)
     if (isFolder) {
       const childSpec = new PathSpec({
@@ -91,14 +86,22 @@ async function findCommand(
   const minDepthRaw = typeof opts.flags.mindepth === 'string' ? opts.flags.mindepth : null
   const maxDepth = maxDepthRaw !== null ? Number.parseInt(maxDepthRaw, 10) : null
   const minDepth = minDepthRaw !== null ? Number.parseInt(minDepthRaw, 10) : null
+  if (maxDepthRaw !== null && Number.isNaN(maxDepth))
+    return invalidFindArg(maxDepthRaw, '-maxdepth')
+  if (minDepthRaw !== null && Number.isNaN(minDepth))
+    return invalidFindArg(minDepthRaw, '-mindepth')
+  const sizeFlag = typeof opts.flags.size === 'string' ? opts.flags.size : null
+  const mtimeFlag = typeof opts.flags.mtime === 'string' ? opts.flags.mtime : null
+  const sizeMtimeErr = findSizeMtimeError(sizeFlag, mtimeFlag)
+  if (sizeMtimeErr !== null) return sizeMtimeErr
 
   const allPaths = await walk(accessor, p0, opts.index, maxDepth, 0)
-  const searchKey = p0.stripPrefix.replace(/^\/+|\/+$/g, '')
+  const searchKey = stripSlash(p0.stripPrefix)
   const baseDepth = searchKey === '' ? -1 : searchKey.split('/').length - 1
   const results: string[] = []
   for (const p of [...allPaths].sort()) {
     const stripped = p.startsWith(p0.prefix) ? p.slice(p0.prefix.length) : p
-    const trimmed = stripped.replace(/^\/+|\/+$/g, '')
+    const trimmed = stripSlash(stripped)
     const depth = trimmed === '' ? -1 : trimmed.split('/').length - (baseDepth + 2)
     if (minDepth !== null && depth < minDepth) continue
     const entryName = p.split('/').pop() ?? p
@@ -106,7 +109,7 @@ async function findCommand(
     if (inameFlag !== null && !fnmatch(entryName.toLowerCase(), inameFlag.toLowerCase())) continue
     results.push(p)
   }
-  const out: ByteSource = ENC.encode(results.join('\n'))
+  const out: ByteSource = formatRecords(results)
   return [out, new IOResult()]
 }
 

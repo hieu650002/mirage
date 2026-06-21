@@ -14,10 +14,11 @@
 
 import type { DropboxAccessor } from '../../accessor/dropbox.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { fnmatch } from '../s3/_client.ts'
+import { fnmatch } from '../../utils/fnmatch.ts'
 import { PathSpec } from '../../types.ts'
 import { SCOPE_ERROR } from '../github/constants.ts'
 import { readdir } from './readdir.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 export async function resolveGlob(
   accessor: DropboxAccessor,
@@ -34,7 +35,7 @@ export async function resolveGlob(
       const entries = await readdir(accessor, p, index)
       const matched: PathSpec[] = []
       for (const entry of entries) {
-        const trimmed = entry.replace(/\/+$/, '')
+        const trimmed = rstripSlash(entry)
         const base = trimmed.split('/').pop() ?? trimmed
         if (!fnmatch(base, p.pattern)) continue
         matched.push(PathSpec.fromStrPath(trimmed, p.prefix))

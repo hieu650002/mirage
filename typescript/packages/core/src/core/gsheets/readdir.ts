@@ -17,10 +17,16 @@ import { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { PathSpec } from '../../types.ts'
 import { globToModifiedRange } from '../google/date_glob.ts'
-import { listAllFiles } from '../google/drive.ts'
+import { GoogleFileSuffix, listAllFiles } from '../google/drive.ts'
 import { makeFilename } from '../../resource/gsheets/sheet_entry.ts'
+import { stripSlash } from '../../utils/slash.ts'
 
 const MIME = 'application/vnd.google-apps.spreadsheet'
+
+export function isDirName(child: string): boolean {
+  // readdir emits only folders and rendered *.gsheet.json files.
+  return !child.endsWith(GoogleFileSuffix.GSHEET)
+}
 
 export async function readdir(
   accessor: GSheetsAccessor,
@@ -32,7 +38,7 @@ export async function readdir(
   const raw = path.pattern ? path.directory : path.original
   let p = raw
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   const virtualKey = key !== '' ? `${prefix}/${key}` : prefix !== '' ? prefix : '/'
 
   if (key === '') return [`${prefix}/owned`, `${prefix}/shared`]

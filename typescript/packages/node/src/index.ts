@@ -21,6 +21,8 @@ export {
 } from './resource/disk/disk.ts'
 export { DISK_PROMPT } from './resource/disk/prompt.ts'
 export { DISK_OPS } from './ops/disk/index.ts'
+export { DiskObserverStore } from './observe/disk_store.ts'
+export { RedisObserverStore, type RedisObserverStoreOptions } from './observe/redis_store.ts'
 export { patchNodeFs } from './fs_monkey.ts'
 export {
   RedisResource,
@@ -38,16 +40,8 @@ export {
   type RedisResourceLike,
 } from './commands/builtin/redis/provision.ts'
 export { RedisFileCacheStore, type RedisFileCacheOptions } from './cache/redis/file.ts'
-export { RedisIndexCacheStore, type RedisIndexCacheOptions } from './cache/redis/index_cache.ts'
 export { FuseManager } from './workspace/fuse.ts'
 export { MirageFS, type MirageFSOptions, type FuseAttr } from './fuse/fs.ts'
-export {
-  nativeExec,
-  nativeExecStream,
-  type NativeExecOptions,
-  type NativeExecResult,
-  type NativeProcess,
-} from './native.ts'
 export {
   mount as fuseMount,
   mountBackground as fuseMountBackground,
@@ -56,6 +50,15 @@ export {
 } from './fuse/mount.ts'
 export { isMacosMetadata } from './fuse/platform/macos.ts'
 export { S3Resource, type S3ResourceState } from './resource/s3/s3.ts'
+export {
+  DatabricksVolumeResource,
+  type DatabricksVolumeResourceState,
+} from './resource/databricks_volume/databricks_volume.ts'
+export {
+  loadDatabricksProfile,
+  parseDatabricksCfg,
+  type DatabricksProfile,
+} from './resource/databricks_volume/profile.ts'
 export {
   redactConfig as redactS3Config,
   type S3Config,
@@ -83,20 +86,131 @@ export {
   type SupabaseConfigRedacted,
 } from './resource/supabase/config.ts'
 export { SUPABASE_PROMPT } from './resource/supabase/prompt.ts'
+export {
+  HF_RESOURCES,
+  HfAccessor,
+  HfBucketsAccessor,
+  HfDatasetsAccessor,
+  HfModelsAccessor,
+  HfSpacesAccessor,
+} from './accessor/hf.ts'
+export { HfBucketsResource, type HfBucketsResourceState } from './resource/hf_buckets/hf_buckets.ts'
+export {
+  assertHfRepoId,
+  HF_ENDPOINT,
+  normalizeHfBucketsConfig,
+  normalizeHfRepoConfig,
+  redactHfBucketsConfig,
+  redactHfRepoConfig,
+  type HfBucketsConfig,
+  type HfBucketsConfigRedacted,
+  type HfRepoConfig,
+  type HfRepoConfigRedacted,
+} from './resource/hf_buckets/config.ts'
+export { HF_BUCKETS_PROMPT } from './resource/hf_buckets/prompt.ts'
+export {
+  HfDatasetsResource,
+  type HfDatasetsResourceState,
+} from './resource/hf_datasets/hf_datasets.ts'
+export { HF_DATASETS_PROMPT } from './resource/hf_datasets/prompt.ts'
+export { HfModelsResource, type HfModelsResourceState } from './resource/hf_models/hf_models.ts'
+export {
+  normalizeHfModelsConfig,
+  redactHfModelsConfig,
+  type HfModelsConfig,
+  type HfModelsConfigRedacted,
+} from './resource/hf_models/config.ts'
+export { HF_MODELS_PROMPT } from './resource/hf_models/prompt.ts'
+export { HfSpacesResource, type HfSpacesResourceState } from './resource/hf_spaces/hf_spaces.ts'
+export { HF_SPACES_PROMPT } from './resource/hf_spaces/prompt.ts'
+export { HF_COMMANDS } from './commands/builtin/hf/index.ts'
+export { HF_OPS } from './ops/hf/index.ts'
+export { MinIOResource, type MinIOResourceState } from './resource/minio/minio.ts'
+export {
+  redactMinIOConfig,
+  type MinIOConfig,
+  type MinIOConfigRedacted,
+} from './resource/minio/config.ts'
+export { MINIO_PROMPT } from './resource/minio/prompt.ts'
+export { SeaweedFSResource, type SeaweedFSResourceState } from './resource/seaweedfs/seaweedfs.ts'
+export {
+  redactSeaweedFSConfig,
+  type SeaweedFSConfig,
+  type SeaweedFSConfigRedacted,
+} from './resource/seaweedfs/config.ts'
+export { SEAWEEDFS_PROMPT } from './resource/seaweedfs/prompt.ts'
+export { CephResource, type CephResourceState } from './resource/ceph/ceph.ts'
+export {
+  redactCephConfig,
+  type CephConfig,
+  type CephConfigRedacted,
+} from './resource/ceph/config.ts'
+export { CEPH_PROMPT } from './resource/ceph/prompt.ts'
+export { WasabiResource, type WasabiResourceState } from './resource/wasabi/wasabi.ts'
+export {
+  redactWasabiConfig,
+  resolvedWasabiEndpoint,
+  type WasabiConfig,
+  type WasabiConfigRedacted,
+} from './resource/wasabi/config.ts'
+export { WASABI_PROMPT } from './resource/wasabi/prompt.ts'
+export { BackblazeResource, type BackblazeResourceState } from './resource/backblaze/backblaze.ts'
+export {
+  redactBackblazeConfig,
+  resolvedBackblazeEndpoint,
+  type BackblazeConfig,
+  type BackblazeConfigRedacted,
+} from './resource/backblaze/config.ts'
+export { BACKBLAZE_PROMPT } from './resource/backblaze/prompt.ts'
+export {
+  DigitalOceanResource,
+  type DigitalOceanResourceState,
+} from './resource/digitalocean/digitalocean.ts'
+export {
+  redactDigitalOceanConfig,
+  resolvedDigitalOceanEndpoint,
+  type DigitalOceanConfig,
+  type DigitalOceanConfigRedacted,
+} from './resource/digitalocean/config.ts'
+export { DIGITALOCEAN_PROMPT } from './resource/digitalocean/prompt.ts'
+export { TencentResource, type TencentResourceState } from './resource/tencent/tencent.ts'
+export {
+  redactTencentConfig,
+  resolvedTencentEndpoint,
+  type TencentConfig,
+  type TencentConfigRedacted,
+} from './resource/tencent/config.ts'
+export { TENCENT_PROMPT } from './resource/tencent/prompt.ts'
+export { AliyunResource, type AliyunResourceState } from './resource/aliyun/aliyun.ts'
+export {
+  redactAliyunConfig,
+  resolvedAliyunEndpoint,
+  type AliyunConfig,
+  type AliyunConfigRedacted,
+} from './resource/aliyun/config.ts'
+export { ALIYUN_PROMPT } from './resource/aliyun/prompt.ts'
+export { ScalewayResource, type ScalewayResourceState } from './resource/scaleway/scaleway.ts'
+export {
+  redactScalewayConfig,
+  resolvedScalewayEndpoint,
+  type ScalewayConfig,
+  type ScalewayConfigRedacted,
+} from './resource/scaleway/config.ts'
+export { SCALEWAY_PROMPT } from './resource/scaleway/prompt.ts'
+export { QingStorResource, type QingStorResourceState } from './resource/qingstor/qingstor.ts'
+export {
+  redactQingStorConfig,
+  resolvedQingStorEndpoint,
+  type QingStorConfig,
+  type QingStorConfigRedacted,
+} from './resource/qingstor/config.ts'
+export { QINGSTOR_PROMPT } from './resource/qingstor/prompt.ts'
 export { PostgresResource, type PostgresResourceOptions } from './resource/postgres/postgres.ts'
 export { PostgresStore } from './resource/postgres/store.ts'
 export { MongoDBResource, type MongoDBResourceOptions } from './resource/mongodb/mongodb.ts'
 export { MongoDBStore } from './resource/mongodb/store.ts'
-export {
-  SSCholarPaperResource,
-  type SSCholarPaperResourceOptions,
-} from './resource/sscholar/sscholar.ts'
-export {
-  SSCholarAuthorResource,
-  type SSCholarAuthorResourceOptions,
-} from './resource/sscholar/author.ts'
-export { VercelResource, type VercelResourceOptions } from './resource/vercel/vercel.ts'
-export { PostHogResource, type PostHogResourceOptions } from './resource/posthog/posthog.ts'
+export { LanceDBResource, type LanceDBResourceOptions } from './resource/lancedb/lancedb.ts'
+export { LanceDBStore } from './resource/lancedb/store.ts'
 export { SlackResource, type SlackResourceState } from './resource/slack/slack.ts'
 export {
   normalizeSlackConfig,
@@ -136,6 +250,13 @@ export {
   type LinearConfig,
   type LinearConfigRedacted,
 } from './resource/linear/config.ts'
+export { NotionResource, type NotionResourceState } from './resource/notion/notion.ts'
+export {
+  normalizeNotionConfig,
+  redactNotionConfig,
+  type NotionConfig,
+  type NotionConfigRedacted,
+} from './resource/notion/config.ts'
 export { LangfuseResource, type LangfuseResourceState } from './resource/langfuse/langfuse.ts'
 export {
   normalizeLangfuseConfig,
@@ -228,18 +349,3 @@ export {
 } from './resource/registry.ts'
 export { DISK_COMMANDS } from './commands/builtin/disk/index.ts'
 export { REDIS_COMMANDS } from './commands/builtin/redis/index.ts'
-export {
-  LOCAL_AUDIO_COMMANDS,
-  DISK_LOCAL_AUDIO_COMMANDS,
-  RAM_LOCAL_AUDIO_COMMANDS,
-  configure as configureLocalAudio,
-  getConfig as getLocalAudioConfig,
-  transcribe as localAudioTranscribe,
-  metadata as localAudioMetadata,
-  estimateByteRange as localAudioEstimateByteRange,
-  formatDuration as localAudioFormatDuration,
-  formatMetadata as localAudioFormatMetadata,
-  type LocalAudioMetadata,
-  type LocalAudioConfig,
-  type LocalAudioTranscriber,
-} from './commands/local_audio/index.ts'

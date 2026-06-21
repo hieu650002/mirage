@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "filetypes": [],
+    "has_aggregate": false,
+    "has_provision": true,
+    "has_write": false,
+    "resources": [
+      "gdrive",
+      "github",
+      "opfs",
+      "ram",
+      "s3"
+    ]
+  },
+  "description": null,
+  "ignore_tokens": [],
+  "options": [],
+  "positional": [],
+  "rest": {
+    "kind": "path"
+  }
+}

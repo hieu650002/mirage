@@ -16,10 +16,7 @@ import type { FileEntryWithStats } from 'ssh2'
 import type { PathSpec } from '@struktoai/mirage-core'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
 import { isDirectoryAttrs, isFileAttrs, joinRoot, stripPrefix } from './utils.ts'
-
-function norm(p: string): string {
-  return `/${p.replace(/^\/+|\/+$/g, '')}`
-}
+import { norm } from '@struktoai/mirage-core'
 
 async function readRemoteDir(
   accessor: SSHAccessor,

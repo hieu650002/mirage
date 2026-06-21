@@ -13,11 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import {
+  BaseResource,
   type FileStat,
-  type IndexCacheStore,
   NodeSlackTransport,
   PathSpec,
-  RAMIndexCacheStore,
   type RegisteredCommand,
   type RegisteredOp,
   type Resource,
@@ -36,25 +35,22 @@ import { redactSlackConfig, type SlackConfig, type SlackConfigRedacted } from '.
 
 export interface SlackResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: SlackConfigRedacted
 }
 
-export class SlackResource implements Resource {
+export class SlackResource extends BaseResource implements Resource {
   readonly kind: string = ResourceName.SLACK
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 600
   readonly prompt: string = SLACK_PROMPT
   readonly writePrompt: string = SLACK_WRITE_PROMPT
   readonly config: SlackConfig
   readonly accessor: SlackAccessor
-  readonly index: IndexCacheStore
 
   constructor(config: SlackConfig) {
+    super()
     this.config = config
     this.accessor = new SlackAccessor(new NodeSlackTransport(config.token, config.searchToken))
-    this.index = new RAMIndexCacheStore({ ttl: this.indexTtl })
   }
 
   open(): Promise<void> {
@@ -111,8 +107,6 @@ export class SlackResource implements Resource {
   getState(): Promise<SlackResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['token', 'searchToken'],
       config: redactSlackConfig(this.config),
     })
   }

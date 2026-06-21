@@ -15,6 +15,8 @@
 import type { CallStack } from '../../shell/call_stack.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { Session } from '../session/session.ts'
+import { homeDir } from '../session/shell_dirs.ts'
+import { fnmatch } from '../../utils/fnmatch.ts'
 
 export interface TSNodeLike {
   type: string
@@ -82,34 +84,9 @@ export function lookupVar(name: string, session: Session, callStack: CallStack |
     const localVal = callStack.getLocal(name)
     if (localVal !== null) return localVal
   }
+  if (name === 'PWD') return session.cwd
+  if (name === 'HOME') return homeDir(session)
   return env[name] ?? ''
-}
-
-function fnmatchCase(value: string, pattern: string): boolean {
-  let re = '^'
-  let i = 0
-  while (i < pattern.length) {
-    const c = pattern[i]
-    if (c === undefined) break
-    if (c === '*') re += '.*'
-    else if (c === '?') re += '.'
-    else if (c === '[') {
-      const end = pattern.indexOf(']', i)
-      if (end === -1) {
-        re += '\\['
-      } else {
-        re += pattern.slice(i, end + 1)
-        i = end
-      }
-    } else if (/[.+^$(){}|\\]/.test(c)) {
-      re += `\\${c}`
-    } else {
-      re += c
-    }
-    i += 1
-  }
-  re += '$'
-  return new RegExp(re).test(value)
 }
 
 function globStrip(value: string, pattern: string, greedy: boolean, prefix: boolean): string {
@@ -117,14 +94,14 @@ function globStrip(value: string, pattern: string, greedy: boolean, prefix: bool
   const matches: number[] = []
   if (prefix) {
     for (let i = 0; i <= value.length; i++) {
-      if (fnmatchCase(value.slice(0, i), pattern)) matches.push(i)
+      if (fnmatch(value.slice(0, i), pattern)) matches.push(i)
     }
     if (matches.length === 0) return value
     const i = greedy ? Math.max(...matches) : Math.min(...matches)
     return value.slice(i)
   }
   for (let i = 0; i <= value.length; i++) {
-    if (fnmatchCase(value.slice(i), pattern)) matches.push(i)
+    if (fnmatch(value.slice(i), pattern)) matches.push(i)
   }
   if (matches.length === 0) return value
   const i = greedy ? Math.min(...matches) : Math.max(...matches)

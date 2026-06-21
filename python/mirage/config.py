@@ -21,8 +21,9 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mirage.cache.file.config import CacheConfig, RedisCacheConfig
+from mirage.cache.index.config import IndexConfig, RedisIndexConfig
 from mirage.resource.registry import build_resource
-from mirage.types import ConsistencyPolicy, MountMode
+from mirage.types import CommandSafeguard, ConsistencyPolicy, MountMode
 
 
 def _coerce_mount_mode(value):
@@ -124,12 +125,37 @@ CacheBlock = Annotated[
 ]
 
 
+class RamIndexBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["ram"] = "ram"
+    ttl: float = 600
+
+
+class RedisIndexBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["redis"]
+    ttl: float = 600
+    url: str = "redis://localhost:6379/0"
+    key_prefix: str = "mirage:index:"
+
+
+IndexBlock = Annotated[
+    RamIndexBlock | RedisIndexBlock,
+    Field(discriminator="type"),
+]
+
+
 class MountBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     resource: str
     mode: MountMode | None = None
     config: dict[str, Any] = Field(default_factory=dict)
+    command_safeguards: dict[str,
+                             CommandSafeguard] = Field(default_factory=dict)
+    fuse: bool | str = False
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -147,11 +173,8 @@ class WorkspaceConfig(BaseModel):
     consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY
     default_session_id: str = "default"
     default_agent_id: str = "default"
-    fuse: bool = False
-    native: bool = False
-    history: int | None = 100
-    history_path: str | None = None
     cache: CacheBlock | None = None
+    index: IndexBlock | None = None
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -172,23 +195,28 @@ class WorkspaceConfig(BaseModel):
                 ``Workspace`` constructor expects.
         """
         resources: dict[str, Any] = {}
+        fuse_mounts: dict[str, bool | str] = {}
         for prefix, block in self.mounts.items():
             prov = build_resource(block.resource, block.config)
             mode = block.mode if block.mode is not None else self.mode
-            resources[prefix] = (prov, mode)
+            if block.command_safeguards:
+                resources[prefix] = (prov, mode, block.command_safeguards)
+            else:
+                resources[prefix] = (prov, mode)
+            if block.fuse:
+                fuse_mounts[prefix] = block.fuse
         kwargs: dict[str, Any] = {
             "resources": resources,
             "mode": self.mode,
             "consistency": self.consistency,
             "session_id": self.default_session_id,
             "agent_id": self.default_agent_id,
-            "fuse": self.fuse,
-            "native": self.native,
-            "history": self.history,
-            "history_path": self.history_path,
+            "fuse_mounts": fuse_mounts,
         }
         if self.cache is not None:
             kwargs["cache"] = _build_cache_config(self.cache)
+        if self.index is not None:
+            kwargs["index"] = _build_index_config(self.index)
         return kwargs
 
 
@@ -204,6 +232,16 @@ def _build_cache_config(block: RamCacheBlock | RedisCacheBlock) -> CacheConfig:
         limit=block.limit,
         max_drain_bytes=block.max_drain_bytes,
     )
+
+
+def _build_index_config(block: RamIndexBlock | RedisIndexBlock) -> IndexConfig:
+    if isinstance(block, RedisIndexBlock):
+        return RedisIndexConfig(
+            ttl=block.ttl,
+            url=block.url,
+            key_prefix=block.key_prefix,
+        )
+    return IndexConfig(ttl=block.ttl)
 
 
 def load_config(source: str | Path | dict,
@@ -241,9 +279,9 @@ def merge_override(base: WorkspaceConfig,
                    env: dict[str, str] | None = None) -> WorkspaceConfig:
     """Apply a partial config on top of an existing one.
 
-    Used by ``--clone --override`` and ``--load --override`` to swap
-    selected fields (typically resource creds, occasionally a bucket
-    or URL) without rewriting the whole config.
+    Used by clone/load override config files to swap selected fields
+    (typically resource creds, occasionally a bucket or URL) without
+    rewriting the whole config.
 
     Merge semantics: nested dicts merge by key recursively; leaf
     values replace. Mounts not mentioned in the override survive

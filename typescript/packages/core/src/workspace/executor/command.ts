@@ -12,25 +12,38 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { CommandHistory } from '../../commands/config.ts'
 import { parseCommand, parseToKwargs } from '../../commands/spec/parser.ts'
+import { concatBytes } from '../../core/jq/format.ts'
 import { OperandKind } from '../../commands/spec/types.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { Resource } from '../../resource/base.ts'
+import { assertMountAllowed, MountNotAllowedError } from '../../runtime/session_context.ts'
 import { CallStack } from '../../shell/call_stack.ts'
 import type { JobTable } from '../../shell/job_table.ts'
 import { ERREXIT_EXEMPT_TYPES } from '../../shell/types.ts'
 import { PathSpec } from '../../types.ts'
 import type { Mount } from '../mount/mount.ts'
 import type { MountRegistry } from '../mount/registry.ts'
+import type { PyodideRuntime } from './python/runtime.ts'
 import type { Session } from '../session/session.ts'
 import { ExecutionNode } from '../types.ts'
 import { asyncChain } from '../../io/stream.ts'
 import type { DispatchFn } from './cross_mount.ts'
 import { handleCrossMount, isCrossMount } from './cross_mount.ts'
+import { applyFindActions } from './find_action_dispatch.ts'
+import { fanOutTraversal, shouldFanOut } from './fanout.ts'
+import {
+  FindParseError,
+  findExprTail,
+  parseFindExpression,
+} from '../../commands/builtin/findParse.ts'
+import { maybeWithTimeout } from '../../commands/builtin/utils/safeguard.ts'
+import { resolveAcrossMounts, resolveSafeguard } from '../../commands/safeguard.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
 import { handleJobs, handleKill, handlePs, handleWait } from './jobs.ts'
+import { errorVirtualPath, gnuStrerror } from '../../utils/errors.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 
 const JOB_BUILTINS: ReadonlySet<string> = new Set(['wait', 'fg', 'kill', 'jobs', 'ps'])
 
@@ -56,7 +69,7 @@ export async function handleCommand(
   jobTable: JobTable | null = null,
   ensureOpen?: (resource: Resource) => Promise<void>,
   unmount?: (prefix: string) => Promise<void>,
-  history?: CommandHistory,
+  pythonRuntime?: PyodideRuntime,
 ): Promise<Result> {
   if (parts.length === 0) {
     return [null, new IOResult(), new ExecutionNode({ command: '', exitCode: 0 })]
@@ -112,6 +125,24 @@ export async function handleCommand(
     ]
   }
 
+  let findExprTokens: string[] | null = null
+  if (cmdName === 'find') {
+    findExprTokens = findExprTail(rawArgv)
+    try {
+      parseFindExpression(findExprTokens)
+    } catch (err) {
+      if (err instanceof FindParseError) {
+        const errBytes = new TextEncoder().encode(`${err.message}\n`)
+        return [
+          null,
+          new IOResult({ exitCode: 1, stderr: errBytes }),
+          new ExecutionNode({ command: cmdStr, stderr: errBytes, exitCode: 1 }),
+        ]
+      }
+      throw err
+    }
+  }
+
   if (unmount !== undefined && pathScopes.length === 1) {
     const intercept = await tryUnmountIntercept(cmdName, parts, pathScopes[0], registry, unmount)
     if (intercept !== null)
@@ -119,7 +150,23 @@ export async function handleCommand(
   }
 
   if (isCrossMount(cmdName, pathScopes, registry)) {
-    return handleCrossMount(cmdName, pathScopes, textOnly, dispatch, cmdStr)
+    const [csStdout, csIo, csExec] = await handleCrossMount(
+      cmdName,
+      pathScopes,
+      textOnly,
+      dispatch,
+      cmdStr,
+    )
+    if (csIo.safeguard === null) {
+      const mounts: Mount[] = []
+      for (const s of pathScopes) {
+        const m = registry.mountFor(s.original)
+        if (m !== null) mounts.push(m)
+      }
+      csIo.safeguard =
+        mounts.length > 0 ? resolveAcrossMounts(cmdName, mounts) : resolveSafeguard(cmdName)
+    }
+    return [maybeWithTimeout(csStdout, csIo.safeguard, cmdName), csIo, csExec]
   }
 
   if (pathScopes.length >= 2) {
@@ -150,15 +197,49 @@ export async function handleCommand(
       new ExecutionNode({ command: cmdStr, exitCode: 127 }),
     ]
   }
+  try {
+    assertMountAllowed(mount.prefix)
+  } catch (err) {
+    if (err instanceof MountNotAllowedError) {
+      const errBytes = new TextEncoder().encode(`${cmdName}: ${err.message}\n`)
+      return [
+        null,
+        new IOResult({ exitCode: 1, stderr: errBytes }),
+        new ExecutionNode({ command: cmdStr, stderr: errBytes, exitCode: 1 }),
+      ]
+    }
+    throw err
+  }
 
-  const [paths, texts, flagKwargs] = parseFlags(parts.slice(1), mount, cmdName, session.cwd)
+  const [paths, textsRaw, flagKwargs, parseWarnings] = parseFlags(
+    parts.slice(1),
+    mount,
+    cmdName,
+    session.cwd,
+  )
+  const texts = findExprTokens ?? textsRaw
+  if (findExprTokens !== null) {
+    // `repeatable: true` on find value-flags makes parseToKwargs emit arrays;
+    // bespoke backend wrappers read these as scalars. Migrated backends read
+    // the expression from `texts` and ignore flagKwargs.
+    for (const [key, value] of Object.entries(flagKwargs)) {
+      if (Array.isArray(value)) {
+        const last = value.at(-1)
+        if (last !== undefined) flagKwargs[key] = last
+      }
+    }
+  }
+  const warnBytes =
+    parseWarnings.length > 0
+      ? new TextEncoder().encode(parseWarnings.map((w) => `${cmdName}: ${w}\n`).join(''))
+      : null
 
   if (ensureOpen !== undefined) {
     await ensureOpen(mount.resource)
   }
 
   if (shouldFanOut(cmdName, paths, flagKwargs, registry)) {
-    return fanOutTraversal(
+    const [fanOut, fanIo, fanNode] = await fanOutTraversal(
       cmdName,
       paths,
       texts,
@@ -170,15 +251,32 @@ export async function handleCommand(
       stdin,
       ensureOpen,
     )
+    if (warnBytes !== null) {
+      const existing = await materialize(fanIo.stderr)
+      fanIo.stderr = concatBytes([warnBytes, existing])
+      fanNode.stderr = concatBytes([warnBytes, fanNode.stderr])
+    }
+    return [fanOut, fanIo, fanNode]
   }
+
+  // resolveMount may redirect a warm remote read to the cache mount, which
+  // does not carry the origin mount's per-command safeguards. Resolve the
+  // safeguard from the real (pre-redirect) mount so the cap survives the hit.
+  const realMount = registry.mountFor(
+    pathScopes.length > 0 ? (pathScopes[0]?.original ?? session.cwd) : session.cwd,
+  )
+  const safeguardOverride = realMount?.commandSafeguards.get(cmdName) ?? null
 
   try {
     const [initialStdout, io] = await mount.executeCmd(cmdName, paths, texts, flagKwargs, {
       stdin,
       cwd: session.cwd,
       dispatch,
-      ...(history !== undefined ? { history } : {}),
       sessionId: session.sessionId,
+      env: session.env,
+      execAllowed: registry.isExecAllowed(),
+      ...(pythonRuntime !== undefined ? { pythonRuntime } : {}),
+      safeguardOverride,
     })
     let stdout = initialStdout
     if (cmdName === 'ls' && io.exitCode === 0) {
@@ -201,12 +299,18 @@ export async function handleCommand(
         if (io.exitCode === 0) io.exitCode = 1
       }
     }
-    const prefix = mount.prefix.replace(/\/+$/, '')
+    const prefix = rstripSlash(mount.prefix)
     if (prefix !== '' && mount !== registry.defaultMount) {
       io.reads = prefixKeys(io.reads, prefix)
       io.writes = prefixKeys(io.writes, prefix)
       io.cache = io.cache.map((p) => prefix + p)
     }
+    if (warnBytes !== null) {
+      const existing = await materialize(io.stderr)
+      io.stderr = concatBytes([warnBytes, existing])
+    }
+    stdout = maybeWithTimeout(stdout, io.safeguard, cmdName)
+    io.stderr = maybeWithTimeout(io.stderr, io.safeguard, cmdName)
     const stderrBytes = await materialize(io.stderr)
     const exec = new ExecutionNode({
       command: cmdStr,
@@ -215,8 +319,14 @@ export async function handleCommand(
     })
     return [stdout, io, exec]
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    const errBytes = new TextEncoder().encode(`${cmdName}: ${msg}\n`)
+    const strerror = gnuStrerror((err as { code?: string }).code)
+    const vpath = errorVirtualPath(err)
+    const display = paths.find((p) => p.original === vpath)?.display ?? vpath
+    const line =
+      strerror !== null
+        ? `${cmdName}: ${display}: ${strerror}\n`
+        : `${cmdName}: ${err instanceof Error ? err.message : String(err)}\n`
+    const errBytes = new TextEncoder().encode(line)
     return [
       null,
       new IOResult({ exitCode: 1, stderr: errBytes }),
@@ -230,14 +340,14 @@ function parseFlags(
   mount: Mount,
   cmdName: string,
   cwd: string,
-): [PathSpec[], string[], Record<string, string | boolean>] {
+): [PathSpec[], string[], Record<string, string | boolean | string[]>, string[]] {
   const argv: string[] = parts.map((item) => (item instanceof PathSpec ? item.original : item))
   const scopeMap = new Map<string, PathSpec>()
   for (const item of parts) {
     if (item instanceof PathSpec) {
       scopeMap.set(item.original, item)
-      const stripped = item.original.replace(/\/+$/, '')
-      if (stripped !== item.original) scopeMap.set(stripped, item)
+      const stripped = rstripSlash(item.original)
+      if (stripped !== '' && stripped !== item.original) scopeMap.set(stripped, item)
     }
   }
 
@@ -276,7 +386,7 @@ function parseFlags(
         texts.push(value)
       }
     }
-    return [paths, texts, flagKwargs]
+    return [paths, texts, flagKwargs, parsed.warnings]
   }
 
   const paths: PathSpec[] = []
@@ -285,7 +395,7 @@ function parseFlags(
     if (item instanceof PathSpec) paths.push(item)
     else texts.push(item)
   }
-  return [paths, texts, {}]
+  return [paths, texts, {}, []]
 }
 
 function prefixKeys(obj: Record<string, ByteSource>, prefix: string): Record<string, ByteSource> {
@@ -299,130 +409,6 @@ function prefixKeys(obj: Record<string, ByteSource>, prefix: string): Record<str
 interface GuardResult {
   message: string
   exitCode: number
-}
-
-const TRAVERSAL_CMDS: ReadonlySet<string> = new Set(['find', 'tree', 'du'])
-
-function fnmatch(name: string, pattern: string): boolean {
-  let re = ''
-  for (const ch of pattern) {
-    if (ch === '*') re += '.*'
-    else if (ch === '?') re += '.'
-    else if ('.+^$(){}|\\'.includes(ch)) re += '\\' + ch
-    else re += ch
-  }
-  return new RegExp('^' + re + '$').test(name)
-}
-
-async function applyFindActions(
-  stdout: ByteSource | null,
-  flagKwargs: Record<string, string | boolean>,
-  registry: MountRegistry,
-  cwd: string,
-): Promise<[ByteSource | null, Uint8Array]> {
-  const hasDelete = flagKwargs.delete === true
-  const hasPrint0 = flagKwargs.print0 === true
-  const hasLs = flagKwargs.ls === true
-  const hasPrint = flagKwargs.print === true
-
-  if (!hasDelete && !hasPrint0 && !hasLs) return [stdout, new Uint8Array()]
-  if (stdout === null) return [stdout, new Uint8Array()]
-
-  const data = await materialize(stdout)
-  const text = new TextDecoder().decode(data)
-  const matches = text.split('\n').filter((p) => p !== '')
-  const errors: Uint8Array[] = []
-  const enc = new TextEncoder()
-
-  let outputMatches: string[]
-
-  if (hasDelete) {
-    const deletable = matches.filter((p) => !registry.isMountRoot(p))
-    const ordered = [...deletable].sort(
-      (a, b) => (b.match(/\//g) ?? []).length - (a.match(/\//g) ?? []).length,
-    )
-    for (const path of ordered) {
-      const mount = registry.mountFor(path)
-      if (mount === null) {
-        errors.push(enc.encode(`find: cannot delete '${path}': no mount\n`))
-        continue
-      }
-      const slash = path.lastIndexOf('/')
-      const ps = new PathSpec({
-        original: path,
-        directory: slash >= 0 ? path.slice(0, slash + 1) : '/',
-        resolved: true,
-      })
-      try {
-        const [, rmIo] = await mount.executeCmd('rm', [ps], [], {}, { stdin: null, cwd })
-        if (rmIo.exitCode !== 0) {
-          const errBytes = await materialize(rmIo.stderr)
-          if (errBytes.length > 0) errors.push(errBytes)
-          else errors.push(enc.encode(`find: cannot delete '${path}'\n`))
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        errors.push(enc.encode(`find: cannot delete '${path}': ${msg}\n`))
-      }
-    }
-    outputMatches = hasPrint ? matches : []
-  } else if (hasLs) {
-    outputMatches = []
-    for (const path of matches) {
-      const mount = registry.mountFor(path)
-      if (mount === null) {
-        errors.push(enc.encode(`find: cannot ls '${path}': no mount\n`))
-        continue
-      }
-      const slash = path.lastIndexOf('/')
-      const ps = new PathSpec({
-        original: path,
-        directory: slash >= 0 ? path.slice(0, slash + 1) : '/',
-        resolved: true,
-      })
-      try {
-        const [lsOut] = await mount.executeCmd(
-          'ls',
-          [ps],
-          [],
-          { args_l: true, d: true },
-          { stdin: null, cwd },
-        )
-        if (lsOut !== null) {
-          const line = new TextDecoder().decode(await materialize(lsOut)).replace(/\n+$/, '')
-          if (line !== '') outputMatches.push(line)
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        errors.push(enc.encode(`find: cannot ls '${path}': ${msg}\n`))
-      }
-    }
-  } else {
-    outputMatches = matches
-  }
-
-  const errBlob = errors.length > 0 ? concat(errors) : new Uint8Array()
-  if (outputMatches.length === 0) return [null, errBlob]
-
-  let body: Uint8Array
-  if (hasPrint0) {
-    body = enc.encode(outputMatches.join('\x00') + '\x00')
-  } else {
-    body = enc.encode(outputMatches.join('\n') + '\n')
-  }
-  return [body, errBlob]
-}
-
-function concat(parts: readonly Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const p of parts) total += p.length
-  const out = new Uint8Array(total)
-  let off = 0
-  for (const p of parts) {
-    out.set(p, off)
-    off += p.length
-  }
-  return out
 }
 
 function checkMountRootGuard(
@@ -502,234 +488,11 @@ function checkMountRootGuard(
   return null
 }
 
-function pathSegments(path: string): string[] {
-  return path.split('/').filter((s) => s !== '')
-}
-
-function shouldFanOut(
-  cmdName: string,
-  paths: readonly PathSpec[],
-  flagKwargs: Record<string, string | boolean>,
-  registry: MountRegistry,
-): boolean {
-  if (paths.length === 0 || paths[0] === undefined) return false
-  if (registry.descendantMounts(paths[0].original).length === 0) return false
-  if (TRAVERSAL_CMDS.has(cmdName)) return true
-  if (cmdName === 'grep') {
-    return flagKwargs.r === true || flagKwargs.R === true || flagKwargs.recursive === true
-  }
-  if (cmdName === 'ls') {
-    return flagKwargs.R === true
-  }
-  return false
-}
-
-function adjustDepthFlags(
-  flagKwargs: Record<string, string | boolean>,
-  parentPath: string,
-  mountPrefix: string,
-): Record<string, string | boolean> | null {
-  const parentDepth = pathSegments(parentPath).length
-  const mountDepth = pathSegments(mountPrefix).length
-  const delta = mountDepth - parentDepth
-  const out: Record<string, string | boolean> = { ...flagKwargs }
-  if ('maxdepth' in out) {
-    const orig = Number(out.maxdepth)
-    if (!Number.isNaN(orig)) {
-      const md = orig - delta
-      if (md < 0) return null
-      out.maxdepth = String(md)
-    }
-  }
-  if ('mindepth' in out) {
-    const orig = Number(out.mindepth)
-    if (!Number.isNaN(orig)) {
-      out.mindepth = String(Math.max(0, orig - delta))
-    }
-  }
-  return out
-}
-
-function synthesizeFindMountEntries(
-  targetPath: string,
-  descendants: readonly Mount[],
-  flagKwargs: Record<string, string | boolean>,
-): string {
-  const typeFilter = flagKwargs.type
-  if (typeFilter !== undefined && typeFilter !== 'd') return ''
-  const parentDepth = pathSegments(targetPath).length
-  const maxRaw = flagKwargs.maxdepth
-  const minRaw = flagKwargs.mindepth
-  const maxDepth = maxRaw !== undefined ? Number(maxRaw) : null
-  const minDepth = minRaw !== undefined ? Number(minRaw) : 0
-  const namePat = typeof flagKwargs.name === 'string' ? flagKwargs.name : null
-  const inamePat = typeof flagKwargs.iname === 'string' ? flagKwargs.iname : null
-  const out: string[] = []
-  for (const m of descendants) {
-    const prefixNoSlash = m.prefix.replace(/\/+$/, '')
-    const depth = pathSegments(prefixNoSlash).length - parentDepth
-    if (depth < minDepth) continue
-    if (maxDepth !== null && !Number.isNaN(maxDepth) && depth > maxDepth) continue
-    const segs = prefixNoSlash.split('/').filter((s) => s !== '')
-    const base = segs[segs.length - 1] ?? prefixNoSlash
-    if (namePat !== null && !fnmatch(base, namePat)) continue
-    if (inamePat !== null && !fnmatch(base.toLowerCase(), inamePat.toLowerCase())) continue
-    out.push(prefixNoSlash)
-  }
-  return out.join('\n')
-}
-
-async function filterUnderPrefixes(
-  stdout: ByteSource,
-  descendantPrefixes: readonly string[],
-): Promise<Uint8Array> {
-  const data = await materialize(stdout)
-  const text = new TextDecoder().decode(data)
-  const outLines: string[] = []
-  for (const line of text.split('\n')) {
-    if (line === '') continue
-    let path = line
-    for (const sep of ['\t', ':']) {
-      const idx = path.indexOf(sep)
-      if (idx >= 0) {
-        path = path.slice(0, idx)
-        break
-      }
-    }
-    if (path.startsWith('/')) {
-      let shadowed = false
-      for (const pre of descendantPrefixes) {
-        if (path === pre || path.startsWith(pre + '/')) {
-          shadowed = true
-          break
-        }
-      }
-      if (shadowed) continue
-    }
-    outLines.push(line)
-  }
-  if (outLines.length === 0) return new Uint8Array()
-  return new TextEncoder().encode(outLines.join('\n') + '\n')
-}
-
-async function fanOutTraversal(
-  cmdName: string,
-  paths: readonly PathSpec[],
-  texts: readonly string[],
-  flagKwargs: Record<string, string | boolean>,
-  registry: MountRegistry,
-  primaryMount: Mount,
-  cwd: string,
-  cmdStr: string,
-  stdin: ByteSource | null,
-  ensureOpen: ((resource: Resource) => Promise<void>) | undefined,
-): Promise<Result> {
-  const targetPath = paths[0]?.original ?? cwd
-  const descendants = registry.descendantMounts(targetPath)
-  const descendantPrefixes = descendants.map((m) => m.prefix.replace(/\/+$/, ''))
-
-  const allStdout: Uint8Array[] = []
-  let mergedIo = new IOResult()
-  let finalExit = 0
-  let successSeen = false
-
-  const mountsToRun: Mount[] = [primaryMount, ...descendants]
-  for (const mount of mountsToRun) {
-    let subPaths: PathSpec[]
-    let subFlags: Record<string, string | boolean>
-    if (mount === primaryMount) {
-      subPaths = [...paths]
-      subFlags = { ...flagKwargs }
-    } else {
-      const adjusted = adjustDepthFlags(flagKwargs, targetPath, mount.prefix)
-      if (adjusted === null) continue
-      subFlags = adjusted
-      const mountRoot = mount.prefix.replace(/\/+$/, '') || '/'
-      subPaths = [
-        new PathSpec({
-          original: mountRoot,
-          directory: mountRoot,
-          prefix: mount.prefix.replace(/\/+$/, ''),
-        }),
-      ]
-    }
-    if (ensureOpen !== undefined) {
-      try {
-        await ensureOpen(mount.resource)
-      } catch {
-        continue
-      }
-    }
-    let stdout: ByteSource | null
-    let io: IOResult
-    try {
-      const result = await mount.executeCmd(cmdName, subPaths, [...texts], subFlags, {
-        stdin,
-        cwd,
-      })
-      stdout = result[0]
-      io = result[1]
-    } catch {
-      continue
-    }
-    if (mount === primaryMount && descendantPrefixes.length > 0 && stdout !== null) {
-      stdout = await filterUnderPrefixes(stdout, descendantPrefixes)
-    }
-    if (stdout !== null) {
-      const data = await materialize(stdout)
-      if (data.length > 0) allStdout.push(data)
-    }
-    if (io.exitCode === 0) {
-      successSeen = true
-    } else if (finalExit === 0) {
-      finalExit = io.exitCode
-    }
-    mergedIo = await mergedIo.merge(io)
-  }
-
-  if (cmdName === 'find') {
-    const synthetic = synthesizeFindMountEntries(targetPath, descendants, flagKwargs)
-    if (synthetic !== '') allStdout.push(new TextEncoder().encode(synthetic))
-  }
-
-  let finalIoExit = successSeen ? 0 : finalExit
-  let combined: ByteSource | null = null
-  if (allStdout.length > 0) {
-    const parts = allStdout.map((d) => {
-      const s = new TextDecoder().decode(d).replace(/\n+$/, '')
-      return s
-    })
-    combined = new TextEncoder().encode(parts.filter((s) => s !== '').join('\n') + '\n')
-  }
-
-  if (cmdName === 'find') {
-    const [newCombined, actionErr] = await applyFindActions(combined, flagKwargs, registry, cwd)
-    combined = newCombined
-    if (actionErr.length > 0) {
-      const existing = await materialize(mergedIo.stderr)
-      const merged = new Uint8Array(existing.length + actionErr.length)
-      merged.set(existing, 0)
-      merged.set(actionErr, existing.length)
-      mergedIo.stderr = merged
-      if (finalIoExit === 0) finalIoExit = 1
-    }
-  }
-
-  mergedIo.exitCode = finalIoExit
-  const stderrBytes = await materialize(mergedIo.stderr)
-  const exec = new ExecutionNode({
-    command: cmdStr,
-    stderr: stderrBytes,
-    exitCode: finalIoExit,
-  })
-  return [combined, mergedIo, exec]
-}
-
 async function injectChildMounts(
   stdout: ByteSource | null,
   registry: MountRegistry,
   paths: readonly PathSpec[],
-  flagKwargs: Record<string, string | boolean>,
+  flagKwargs: Record<string, string | boolean | string[]>,
   cwd: string,
 ): Promise<ByteSource | null> {
   if (flagKwargs.d === true || flagKwargs.R === true) return stdout
@@ -861,7 +624,7 @@ async function tryUnmountIntercept(
   if (!recursive) return null
 
   const original = pathScope.original
-  const stripped = original.replace(/^\/+|\/+$/g, '')
+  const stripped = stripSlash(original)
   const norm = stripped ? `/${stripped}/` : '/'
   const matched = registry.mountForPrefix(norm)
   if (matched === null) return null

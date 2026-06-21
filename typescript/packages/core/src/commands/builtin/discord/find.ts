@@ -19,18 +19,12 @@ import { readdir as discordReaddir } from '../../../core/discord/readdir.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { PathSpec, ResourceName } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
+import { findSizeMtimeError, invalidFindArg } from '../generic/find.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { metadataProvision } from './_provision.ts'
-
-const ENC = new TextEncoder()
-
-function fnmatch(name: string, pattern: string): boolean {
-  const re = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\?/g, '.')
-    .replace(/\*/g, '.*')
-  return new RegExp(`^${re}$`).test(name)
-}
+import { stripSlash } from '../../../utils/slash.ts'
+import { fnmatch } from '../../../utils/fnmatch.ts'
+import { formatRecords } from '../utils/output.ts'
 
 async function walk(
   accessor: DiscordAccessor,
@@ -79,6 +73,12 @@ async function findCommand(
   const minDepthFlag = typeof opts.flags.mindepth === 'string' ? opts.flags.mindepth : null
   const md = maxDepthFlag !== null ? Number.parseInt(maxDepthFlag, 10) : null
   const mdMin = minDepthFlag !== null ? Number.parseInt(minDepthFlag, 10) : null
+  if (maxDepthFlag !== null && Number.isNaN(md)) return invalidFindArg(maxDepthFlag, '-maxdepth')
+  if (minDepthFlag !== null && Number.isNaN(mdMin)) return invalidFindArg(minDepthFlag, '-mindepth')
+  const sizeFlag = typeof opts.flags.size === 'string' ? opts.flags.size : null
+  const mtimeFlag = typeof opts.flags.mtime === 'string' ? opts.flags.mtime : null
+  const sizeMtimeErr = findSizeMtimeError(sizeFlag, mtimeFlag)
+  if (sizeMtimeErr !== null) return sizeMtimeErr
   const searchSpec = new PathSpec({
     original: searchPath,
     directory: searchPath,
@@ -86,13 +86,13 @@ async function findCommand(
     prefix: searchPrefix,
   })
   const allPaths = await walk(accessor, searchSpec, opts.index ?? undefined, md, 0)
-  const stripped = searchPath.replace(/^\/+|\/+$/g, '')
+  const stripped = stripSlash(searchPath)
   const baseDepth = stripped !== '' ? (stripped.match(/\//g)?.length ?? 0) : -1
   const sorted = [...allPaths].sort()
   const results: string[] = []
   for (const p of sorted) {
     const entryName = p.split('/').pop() ?? p
-    const stripPath = p.replace(/^\/+|\/+$/g, '')
+    const stripPath = stripSlash(p)
     const slashes = stripPath !== '' ? (stripPath.match(/\//g)?.length ?? 0) : 0
     const depth = slashes - (baseDepth + 1)
     if (mdMin !== null && depth < mdMin) continue
@@ -100,7 +100,7 @@ async function findCommand(
     if (inameFlag !== null && !fnmatch(entryName.toLowerCase(), inameFlag.toLowerCase())) continue
     results.push(p)
   }
-  const out: ByteSource = ENC.encode(results.join('\n'))
+  const out: ByteSource = formatRecords(results)
   return [out, new IOResult()]
 }
 

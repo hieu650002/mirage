@@ -44,10 +44,10 @@ beforeEach(() => {
 })
 
 describe('SSHResource — identity', () => {
-  it('exposes kind = ssh and isRemote = true', () => {
+  it('exposes kind = ssh and cachesReads = true', () => {
     const res = makeResource(state)
     expect(res.kind).toBe(ResourceName.SSH)
-    expect(res.isRemote).toBe(true)
+    expect(res.cachesReads).toBe(true)
   })
 
   it('prompt equals SSH_PROMPT', () => {
@@ -58,7 +58,7 @@ describe('SSHResource — identity', () => {
   it('commands() length matches SSH_COMMANDS', () => {
     const res = makeResource(state)
     expect(res.commands().length).toBe(SSH_COMMANDS.length)
-    expect(res.commands().length).toBe(21)
+    expect(res.commands().length).toBe(63)
   })
 
   it('ops() length matches SSH_OPS', () => {
@@ -73,8 +73,8 @@ describe('SSHResource — getState / loadState', () => {
     const res = makeResource(state)
     const result = await res.getState()
     expect(result.type).toBe(ResourceName.SSH)
-    expect(result.needsOverride).toBe(false)
-    expect(result.redactedFields).toEqual(['password', 'passphrase'])
+    expect(result).not.toHaveProperty('needsOverride')
+    expect(result).not.toHaveProperty('redactedFields')
     expect(result.config.password).toBe('<REDACTED>')
     expect(result.config.passphrase).toBe('<REDACTED>')
     expect(result.config.host).toBe('example.com')

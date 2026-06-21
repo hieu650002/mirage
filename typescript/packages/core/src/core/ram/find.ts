@@ -15,6 +15,13 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
 import { norm } from './utils.ts'
+import { rstripSlash } from '../../utils/slash.ts'
+import {
+  buildTree,
+  computeNonemptyDirs,
+  keep,
+  type PredNode,
+} from '../../commands/builtin/findEval.ts'
 
 export interface FindOptions {
   name?: string | null
@@ -27,18 +34,8 @@ export interface FindOptions {
   orNames?: string[] | null
   iname?: string | null
   pathPattern?: string | null
-}
-
-function fnmatch(name: string, pattern: string): boolean {
-  let re = '^'
-  for (const ch of pattern) {
-    if (ch === '*') re += '.*'
-    else if (ch === '?') re += '.'
-    else if (/[.+^${}()|[\]\\]/.test(ch)) re += '\\' + ch
-    else re += ch
-  }
-  re += '$'
-  return new RegExp(re).test(name)
+  empty?: boolean | null
+  tree?: PredNode | null
 }
 
 export function find(
@@ -47,9 +44,27 @@ export function find(
   options: FindOptions = {},
 ): Promise<string[]> {
   const p = norm(path.stripPrefix)
-  const prefix = p.replace(/\/+$/, '') + '/'
-  const baseDepth = (p.match(/\//g) ?? []).length
+  const prefix = rstripSlash(p) + '/'
+  const baseDepth = p === '/' ? 0 : (p.match(/\//g) ?? []).length
   const results: string[] = []
+  const tree =
+    options.tree ??
+    buildTree({
+      name: options.name,
+      iname: options.iname,
+      pathPattern: options.pathPattern,
+      type: options.type,
+      nameExclude: options.nameExclude,
+      orNames: options.orNames,
+      empty: options.empty,
+    })
+  const empty = options.empty === true
+  const nonempty = empty
+    ? computeNonemptyDirs([
+        ...accessor.store.files.keys(),
+        ...[...accessor.store.dirs].filter((k) => k !== '/'),
+      ])
+    : new Set<string>()
   const candidates: [string, 'f' | 'd'][] = []
   if (options.type !== 'd') {
     for (const key of accessor.store.files.keys()) candidates.push([key, 'f'])
@@ -59,39 +74,16 @@ export function find(
   }
   for (const [key, kind] of candidates) {
     if (key !== p && !key.startsWith(prefix)) continue
-    if (key === p && kind === 'd') continue
     const depth = (key.match(/\//g) ?? []).length - baseDepth
     if (options.maxDepth !== null && options.maxDepth !== undefined && depth > options.maxDepth)
       continue
-    if (options.minDepth !== null && options.minDepth !== undefined && depth < options.minDepth)
-      continue
     const basename = key.slice(key.lastIndexOf('/') + 1)
-    if (options.name !== null && options.name !== undefined && !fnmatch(basename, options.name))
-      continue
-    if (
-      options.iname !== null &&
-      options.iname !== undefined &&
-      !fnmatch(basename.toLowerCase(), options.iname.toLowerCase())
-    )
-      continue
-    if (
-      options.pathPattern !== null &&
-      options.pathPattern !== undefined &&
-      !fnmatch(key, options.pathPattern)
-    )
-      continue
-    if (
-      options.orNames !== null &&
-      options.orNames !== undefined &&
-      !options.orNames.some((pat) => fnmatch(basename, pat))
-    )
-      continue
-    if (
-      options.nameExclude !== null &&
-      options.nameExclude !== undefined &&
-      fnmatch(basename, options.nameExclude)
-    )
-      continue
+    let isEmpty: boolean | null = null
+    if (empty) {
+      isEmpty =
+        kind === 'f' ? (accessor.store.files.get(key)?.byteLength ?? 0) === 0 : !nonempty.has(key)
+    }
+    if (!keep({ key, name: basename, kind, depth, isEmpty }, tree, options.minDepth)) continue
     if (kind === 'f' && (options.minSize !== null || options.maxSize !== null)) {
       const data = accessor.store.files.get(key)
       if (data === undefined) continue

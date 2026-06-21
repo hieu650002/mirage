@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.s3 import S3Accessor
+from mirage.cache.context import invalidate_after_write
 from mirage.core.s3._client import _client_kwargs, _key, async_session
 from mirage.types import PathSpec
 
@@ -25,4 +26,7 @@ async def create(accessor: S3Accessor, path: PathSpec) -> None:
     config = accessor.config
     session = async_session(config)
     async with session.client(**_client_kwargs(config)) as client:
-        await client.put_object(Bucket=config.bucket, Key=_key(path), Body=b"")
+        await client.put_object(Bucket=config.bucket,
+                                Key=_key(path, config),
+                                Body=b"")
+    await invalidate_after_write(path)

@@ -17,6 +17,9 @@ import fnmatch
 from mirage.accessor.email import EmailAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.email._provision import metadata_provision
+from mirage.commands.builtin.find_helper import (_parse_depth,
+                                                 _validate_size_mtime)
+from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.core.email._client import fetch_headers
@@ -95,9 +98,10 @@ async def find(
     path: str | None = None,
     mindepth: str | None = None,
     prefix: str = "",
+    index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    index = _extra.get("index")
+    index = index
     paths = await resolve_glob(accessor, paths, index)
     p0 = paths[0] if paths else None
     search_path = p0.original if p0 else "/"
@@ -106,8 +110,10 @@ async def find(
     if name and _is_folder_level(paths):
         return await _find_server_side(accessor, paths, name, search_prefix)
 
-    md = int(maxdepth) if maxdepth is not None else None
-    md_min = int(mindepth) if mindepth is not None else None
+    md = _parse_depth(maxdepth, "-maxdepth") if maxdepth is not None else None
+    md_min = (_parse_depth(mindepth, "-mindepth")
+              if mindepth is not None else None)
+    _validate_size_mtime(size, mtime)
 
     search_spec = PathSpec(original=search_path,
                            directory=search_path,
@@ -127,7 +133,7 @@ async def find(
         if iname and not fnmatch.fnmatch(entry_name.lower(), iname.lower()):
             continue
         results.append(p)
-    output = "\n".join(results).encode()
+    output = format_records(results)
     return output, IOResult()
 
 
@@ -166,5 +172,5 @@ async def _find_server_side(
                                 if p)
             results.append(vfs_path)
 
-    output = "\n".join(sorted(results)).encode()
+    output = format_records(sorted(results))
     return output, IOResult()

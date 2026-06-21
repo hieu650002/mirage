@@ -18,25 +18,26 @@ from mirage.accessor.ram import RAMAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.errors import enoent
+from mirage.utils.path import norm
 
 
 async def stream(accessor: RAMAccessor,
                  path: PathSpec) -> AsyncIterator[bytes]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
         if prefix and path.startswith(prefix):
-            path = path[len(prefix):] or "/"
+            rest = path[len(prefix):]
+            if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+                path = rest or "/"
     store = accessor.store
-    key = _norm(path)
+    key = norm(path)
     if key not in store.files:
-        raise FileNotFoundError(path)
+        raise enoent(virtual)
     data = store.files[key]
     rec = record_stream("read", path, "ram")
     if rec is not None:
@@ -49,10 +50,17 @@ async def read_stream(accessor: RAMAccessor,
                       index: IndexCacheStore = None) -> AsyncIterator[bytes]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original if isinstance(path, PathSpec) else path
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
-    async for chunk in stream(accessor, path):
-        yield chunk
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
+    try:
+        gen = stream(accessor, path)
+        async for chunk in gen:
+            yield chunk
+    except FileNotFoundError as exc:
+        raise enoent(virtual) from exc

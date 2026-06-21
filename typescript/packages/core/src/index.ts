@@ -12,20 +12,52 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export const VERSION = '0.0.0'
+export { VERSION } from './version.ts'
 export {
+  CommandSafeguard,
+  type CommandSafeguardInit,
   ConsistencyPolicy,
   DEFAULT_AGENT_ID,
   DEFAULT_SESSION_ID,
+  DriftPolicy,
   FileStat,
   type FileStatInit,
   FileType,
   MountMode,
+  OnExceed,
   PathSpec,
   type PathSpecInit,
   ResourceName,
 } from './types.ts'
-export { type FindOptions, type Resource, throwUnsupported } from './resource/base.ts'
+export {
+  captureFingerprints,
+  checkDrift,
+  ContentDriftError,
+  type FingerprintEntry,
+  liveOnlyMountPrefixes,
+} from './workspace/snapshot/drift.ts'
+export { applyStateDict, buildMountArgs, toStateDict } from './workspace/snapshot/state.ts'
+export type {
+  CacheEntrySnapshot,
+  ExecutionRecordSnapshot,
+  FingerprintEntrySnapshot,
+  JobSnapshot,
+  MountSnapshot,
+  ResourceState,
+  SessionSnapshot,
+  WorkspaceStateDict,
+} from './workspace/snapshot/types.ts'
+export { BaseResource, type FindOptions, type Resource, throwUnsupported } from './resource/base.ts'
+export {
+  hasRedactedSecret,
+  REDACTED_SECRET,
+  redactConfigWithSchema,
+  resourceStateRequiresOverride,
+  secretSchema,
+  secretStr,
+  type SecretStr,
+} from './resource/secrets.ts'
+export { z } from 'zod'
 export { RAMResource } from './resource/ram/ram.ts'
 export { RAMStore } from './resource/ram/store.ts'
 export { DevResource } from './resource/dev/dev.ts'
@@ -55,15 +87,19 @@ export {
 export { RAM_OPS } from './ops/ram/index.ts'
 export { extractWriteData } from './ops/write_args.ts'
 export { RAM_COMMANDS } from './commands/builtin/ram/index.ts'
+export {
+  DEFAULT_COMMAND_SAFEGUARDS,
+  FALLBACK_SAFEGUARD,
+  resolveAcrossMounts,
+  resolveSafeguard,
+} from './commands/safeguard.ts'
+export { CommandTimeoutError, SafeguardExceededError } from './commands/builtin/utils/safeguard.ts'
 export { GENERAL_COMMANDS } from './commands/builtin/general/index.ts'
 export { RAM_AWK } from './commands/builtin/ram/awk.ts'
 export { RAM_BASE64 } from './commands/builtin/ram/base64_cmd.ts'
 export { RAM_BASENAME } from './commands/builtin/ram/basename.ts'
 export { GENERAL_BC } from './commands/builtin/general/bc.ts'
 export { RAM_CAT } from './commands/builtin/ram/cat/cat.ts'
-export { RAM_CAT_FEATHER } from './commands/builtin/ram/cat/cat_feather.ts'
-export { RAM_CAT_HDF5 } from './commands/builtin/ram/cat/cat_hdf5.ts'
-export { RAM_CAT_PARQUET } from './commands/builtin/ram/cat/cat_parquet.ts'
 export { RAM_CMP } from './commands/builtin/ram/cmp.ts'
 export { RAM_COLUMN } from './commands/builtin/ram/column.ts'
 export { RAM_COMM } from './commands/builtin/ram/comm.ts'
@@ -71,9 +107,6 @@ export { RAM_CP } from './commands/builtin/ram/cp.ts'
 export { RAM_CSPLIT } from './commands/builtin/ram/csplit.ts'
 export { GENERAL_CURL } from './commands/builtin/general/curl.ts'
 export { RAM_CUT } from './commands/builtin/ram/cut/cut.ts'
-export { RAM_CUT_FEATHER } from './commands/builtin/ram/cut/cut_feather.ts'
-export { RAM_CUT_HDF5 } from './commands/builtin/ram/cut/cut_hdf5.ts'
-export { RAM_CUT_PARQUET } from './commands/builtin/ram/cut/cut_parquet.ts'
 export { GENERAL_DATE } from './commands/builtin/general/date.ts'
 export { RAM_DIFF } from './commands/builtin/ram/diff.ts'
 export { RAM_DIRNAME } from './commands/builtin/ram/dirname.ts'
@@ -81,31 +114,19 @@ export { RAM_DU } from './commands/builtin/ram/du.ts'
 export { RAM_EXPAND } from './commands/builtin/ram/expand.ts'
 export { GENERAL_EXPR } from './commands/builtin/general/expr.ts'
 export { RAM_FILE } from './commands/builtin/ram/file/file.ts'
-export { RAM_FILE_FEATHER } from './commands/builtin/ram/file/file_feather.ts'
-export { RAM_FILE_HDF5 } from './commands/builtin/ram/file/file_hdf5.ts'
-export { RAM_FILE_PARQUET } from './commands/builtin/ram/file/file_parquet.ts'
 export { RAM_FIND } from './commands/builtin/ram/find.ts'
 export { RAM_FMT } from './commands/builtin/ram/fmt.ts'
 export { RAM_FOLD } from './commands/builtin/ram/fold.ts'
 export { RAM_GREP } from './commands/builtin/ram/grep/grep.ts'
-export { RAM_GREP_FEATHER } from './commands/builtin/ram/grep/grep_feather.ts'
-export { RAM_GREP_HDF5 } from './commands/builtin/ram/grep/grep_hdf5.ts'
-export { RAM_GREP_PARQUET } from './commands/builtin/ram/grep/grep_parquet.ts'
 export { RAM_GUNZIP } from './commands/builtin/ram/gunzip.ts'
 export { RAM_GZIP } from './commands/builtin/ram/gzip.ts'
 export { RAM_HEAD } from './commands/builtin/ram/head/head.ts'
-export { RAM_HEAD_FEATHER } from './commands/builtin/ram/head/head_feather.ts'
-export { RAM_HEAD_HDF5 } from './commands/builtin/ram/head/head_hdf5.ts'
-export { RAM_HEAD_PARQUET } from './commands/builtin/ram/head/head_parquet.ts'
 export { RAM_ICONV } from './commands/builtin/ram/iconv.ts'
 export { RAM_JOIN } from './commands/builtin/ram/join.ts'
 export { RAM_JQ } from './commands/builtin/ram/jq.ts'
 export { RAM_LN } from './commands/builtin/ram/ln.ts'
 export { RAM_LOOK } from './commands/builtin/ram/look.ts'
 export { RAM_LS } from './commands/builtin/ram/ls/ls.ts'
-export { RAM_LS_FEATHER } from './commands/builtin/ram/ls/ls_feather.ts'
-export { RAM_LS_HDF5 } from './commands/builtin/ram/ls/ls_hdf5.ts'
-export { RAM_LS_PARQUET } from './commands/builtin/ram/ls/ls_parquet.ts'
 export { RAM_MD5 } from './commands/builtin/ram/md5.ts'
 export { RAM_MKDIR } from './commands/builtin/ram/mkdir.ts'
 export { RAM_MKTEMP } from './commands/builtin/ram/mktemp.ts'
@@ -125,15 +146,9 @@ export { RAM_SHUF } from './commands/builtin/ram/shuf.ts'
 export { RAM_SORT } from './commands/builtin/ram/sort.ts'
 export { RAM_SPLIT } from './commands/builtin/ram/split.ts'
 export { RAM_STAT } from './commands/builtin/ram/stat/stat.ts'
-export { RAM_STAT_FEATHER } from './commands/builtin/ram/stat/stat_feather.ts'
-export { RAM_STAT_HDF5 } from './commands/builtin/ram/stat/stat_hdf5.ts'
-export { RAM_STAT_PARQUET } from './commands/builtin/ram/stat/stat_parquet.ts'
 export { RAM_STRINGS } from './commands/builtin/ram/strings.ts'
 export { RAM_TAC } from './commands/builtin/ram/tac.ts'
 export { RAM_TAIL } from './commands/builtin/ram/tail/tail.ts'
-export { RAM_TAIL_FEATHER } from './commands/builtin/ram/tail/tail_feather.ts'
-export { RAM_TAIL_HDF5 } from './commands/builtin/ram/tail/tail_hdf5.ts'
-export { RAM_TAIL_PARQUET } from './commands/builtin/ram/tail/tail_parquet.ts'
 export { RAM_TAR } from './commands/builtin/ram/tar.ts'
 export { RAM_TEE } from './commands/builtin/ram/tee.ts'
 export { RAM_TOUCH } from './commands/builtin/ram/touch.ts'
@@ -144,9 +159,6 @@ export { RAM_UNEXPAND } from './commands/builtin/ram/unexpand.ts'
 export { RAM_UNIQ } from './commands/builtin/ram/uniq.ts'
 export { RAM_UNZIP } from './commands/builtin/ram/unzip.ts'
 export { RAM_WC } from './commands/builtin/ram/wc/wc.ts'
-export { RAM_WC_FEATHER } from './commands/builtin/ram/wc/wc_feather.ts'
-export { RAM_WC_HDF5 } from './commands/builtin/ram/wc/wc_hdf5.ts'
-export { RAM_WC_PARQUET } from './commands/builtin/ram/wc/wc_parquet.ts'
 export { GENERAL_WGET } from './commands/builtin/general/wget.ts'
 export { RAM_XXD } from './commands/builtin/ram/xxd.ts'
 export { RAM_ZCAT } from './commands/builtin/ram/zcat.ts'
@@ -185,13 +197,97 @@ export {
 } from './io/stream.ts'
 export { OpRecord, type OpRecordInit } from './observe/record.ts'
 export { LogEntry, type LogEntryInit } from './observe/log_entry.ts'
-export { Observer } from './observe/observer.ts'
-export { record, recordStream, runWithRecording, setVirtualPrefix } from './observe/context.ts'
+export { type EventDict, Observer } from './observe/observer.ts'
+export { type ObserverStore, RAMObserverStore } from './observe/store.ts'
+export { HISTORY_PREFIX, HistoryViewResource } from './resource/history/history.ts'
+export {
+  record,
+  recordStream,
+  revisionFor,
+  runWithRecording,
+  runWithRevisions,
+  setVirtualPrefix,
+} from './observe/context.ts'
 export { guessType } from './utils/filetype.ts'
 export { Accessor, NOOPAccessor, RAMAccessor } from './accessor/index.ts'
 export { cat as featherCat, describe as featherDescribe } from './core/filetype/feather.ts'
 export { cat as hdf5Cat, describe as hdf5Describe } from './core/filetype/hdf5.ts'
 export { cat as parquetCat, describe as parquetDescribe } from './core/filetype/parquet.ts'
+export {
+  makeFiletypeCommands,
+  type FiletypeCommandsOptions,
+} from './commands/builtin/filetype_factory/factory.ts'
+export {
+  FILETYPE_ENTRIES,
+  type FiletypeEntry,
+  type FiletypeModule,
+  type ReadBytesFn,
+  type StatEntryFn,
+} from './commands/builtin/filetype_factory/extensions.ts'
+export { numberLines } from './commands/builtin/generic/cat.ts'
+export { CUT_OPEN_END, cutBytes, cutStream, parseCutRanges } from './commands/builtin/cut_helper.ts'
+export { cutGeneric } from './commands/builtin/generic/cut.ts'
+export { tacGeneric } from './commands/builtin/generic/tac.ts'
+export { nlGeneric } from './commands/builtin/generic/nl.ts'
+export { trGeneric } from './commands/builtin/generic/tr.ts'
+export { uniqGeneric } from './commands/builtin/generic/uniq.ts'
+export { xxdGeneric } from './commands/builtin/generic/xxd.ts'
+export { base64Generic } from './commands/builtin/generic/base64_cmd.ts'
+export { revGeneric } from './commands/builtin/generic/rev.ts'
+export { sortGeneric } from './commands/builtin/generic/sort.ts'
+export { shufGeneric } from './commands/builtin/generic/shuf.ts'
+export { stringsGeneric } from './commands/builtin/generic/strings.ts'
+export { tsortGeneric } from './commands/builtin/generic/tsort.ts'
+export { foldGeneric } from './commands/builtin/generic/fold.ts'
+export { lookGeneric } from './commands/builtin/generic/look.ts'
+export { expandGeneric } from './commands/builtin/generic/expand.ts'
+export { unexpandGeneric } from './commands/builtin/generic/unexpand.ts'
+export { md5Generic } from './commands/builtin/generic/md5.ts'
+export { columnGeneric } from './commands/builtin/generic/column.ts'
+export { pasteGeneric } from './commands/builtin/generic/paste.ts'
+export { zcatGeneric } from './commands/builtin/generic/zcat.ts'
+export { zgrepGeneric } from './commands/builtin/generic/zgrep.ts'
+export { cmpGeneric } from './commands/builtin/generic/cmp.ts'
+export { commGeneric } from './commands/builtin/generic/comm.ts'
+export { joinGeneric } from './commands/builtin/generic/join.ts'
+export { gzipGeneric } from './commands/builtin/generic/gzip.ts'
+export { gunzipGeneric } from './commands/builtin/generic/gunzip.ts'
+export { iconvGeneric } from './commands/builtin/generic/iconv.ts'
+export { sedGeneric } from './commands/builtin/generic/sed.ts'
+export { makeSed, type SedBackend } from './commands/builtin/generic/sed_command.ts'
+export { teeGeneric } from './commands/builtin/generic/tee.ts'
+export { splitGeneric } from './commands/builtin/generic/split.ts'
+export { csplitGeneric } from './commands/builtin/generic/csplit.ts'
+export { mktempGeneric } from './commands/builtin/generic/mktemp.ts'
+export { patchGeneric } from './commands/builtin/generic/patch.ts'
+export { unzipGeneric } from './commands/builtin/generic/unzip.ts'
+export { zipGeneric } from './commands/builtin/generic/zip_cmd.ts'
+export { tarGeneric } from './commands/builtin/generic/tar.ts'
+export { realpathGeneric } from './commands/builtin/generic/realpath.ts'
+export { findGeneric, findSizeMtimeError, invalidFindArg } from './commands/builtin/generic/find.ts'
+export { statGeneric, statProvisionGeneric } from './commands/builtin/generic/stat.ts'
+export { diffGeneric } from './commands/builtin/generic/diff.ts'
+export { duGeneric } from './commands/builtin/generic/du.ts'
+export { treeGeneric } from './commands/builtin/generic/tree.ts'
+export { lsGeneric } from './commands/builtin/generic/ls.ts'
+export { fileGeneric } from './commands/builtin/generic/file.ts'
+export { sha256sumGeneric } from './commands/builtin/generic/sha256sum.ts'
+export { jqGeneric, jqProvisionGeneric } from './commands/builtin/generic/jq.ts'
+export { grepGeneric } from './commands/builtin/generic/grep.ts'
+export { rgGeneric } from './commands/builtin/generic/rg.ts'
+export { cpGeneric } from './commands/builtin/generic/cp.ts'
+export { mvGeneric } from './commands/builtin/generic/mv.ts'
+export { awkGeneric } from './commands/builtin/generic/awk.ts'
+export { catGeneric, catProvisionGeneric } from './commands/builtin/generic/cat.ts'
+export { headGeneric, headProvisionGeneric } from './commands/builtin/generic/head.ts'
+export { tailGeneric } from './commands/builtin/generic/tail.ts'
+export { wcGeneric } from './commands/builtin/generic/wc.ts'
+export { readlinkGeneric } from './commands/builtin/generic/readlink.ts'
+export { fmtGeneric } from './commands/builtin/generic/fmt.ts'
+export { headStream } from './commands/builtin/generic/head.ts'
+export { basenameFn } from './commands/builtin/generic/basename.ts'
+export { dirnameFn } from './commands/builtin/generic/dirname.ts'
+export { gnuBasename, gnuDirname, norm, parent } from './utils/path.ts'
 export { detectFileType, FILE_MIME_MAP, formatFileResult } from './commands/builtin/file_helper.ts'
 export {
   type AggregateResult,
@@ -213,7 +309,6 @@ export {
   type AsyncReaddirFn,
   type AsyncReadBytesFn,
   type AsyncStatFn,
-  type FiletypeFn,
   rgFolderFiletype,
   type RgFolderFiletypeOptions,
   rgFull,
@@ -221,11 +316,23 @@ export {
   rgMatchesFilter,
   TYPE_EXTENSIONS,
 } from './commands/builtin/rg_helper.ts'
-export { compareKeys, sortKey, type SortKeyOptions } from './commands/builtin/sort_helper.ts'
+export {
+  compareKeys,
+  parseKeyOptions,
+  sortAndDedupe,
+  sortKey,
+  splitSortLines,
+  type SortKeyOptions,
+} from './commands/builtin/sort_helper.ts'
 export { countNewlines, parseN, tailBytes } from './commands/builtin/tail_helper.ts'
 export { AsyncLineIterator } from './io/async_line_iterator.ts'
 export { readStdinAsync, resolveSource, wrapBytes } from './commands/builtin/utils/stream.ts'
 export { formatLsLong, humanSize } from './commands/builtin/utils/formatting.ts'
+export {
+  formatOptionalRecords,
+  formatRecordText,
+  formatRecords,
+} from './commands/builtin/utils/output.ts'
 export { grepFilesOnly, grepRecursive } from './commands/builtin/grep_helper.ts'
 export { interpretEscapes } from './commands/builtin/utils/escapes.ts'
 export { deflateRaw, gunzip, gzip, inflateRaw } from './utils/compress.ts'
@@ -239,7 +346,18 @@ export {
   parseJsonAuto,
   parseJsonPath,
 } from './core/jq/index.ts'
-export { edScript, unifiedDiff } from './commands/builtin/diff_helper.ts'
+export { DiffOpTag } from './commands/builtin/diff_types.ts'
+export { edScript, normalDiff, unifiedDiff } from './commands/builtin/diff_helper.ts'
+export {
+  AwkBlock,
+  AwkBoolOp,
+  AwkBuiltin,
+  AwkCmpOp,
+  CMP_OP_PATTERN,
+  FIELD_PREFIX,
+  PRINT_STMT,
+} from './commands/builtin/generic/awk_types.ts'
+export { awkStream } from './commands/builtin/generic/awk_helper.ts'
 export {
   executeProgram,
   executeProgram as sedExecuteProgram,
@@ -292,10 +410,23 @@ export {
   type IndexConfig,
   type ListResult,
   type LookupResult,
+  type RedisIndexConfig,
 } from './cache/index/config.ts'
 export { IndexCacheStore } from './cache/index/store.ts'
 export { RAMIndexCacheStore } from './cache/index/ram.ts'
-export { ExecutionHistory, type ExecutionHistoryOptions } from './workspace/history.ts'
+export { CacheManager } from './cache/manager.ts'
+export {
+  activeCacheManager,
+  invalidateAfterUnlink,
+  invalidateAfterWrite,
+  runWithCacheManager,
+  type CacheInvalidator,
+} from './cache/context.ts'
+export {
+  RedisIndexCacheStore,
+  type RedisClientLike,
+  type RedisIndexCacheOptions,
+} from './cache/index/redis.ts'
 export {
   ExecutionNode,
   type ExecutionNodeInit,
@@ -351,7 +482,7 @@ export {
   handleTest,
   handleTrap,
   handleUnset,
-} from './workspace/executor/builtins.ts'
+} from './workspace/executor/builtins/index.ts'
 export { NodeType, Redirect, type RedirectInit, RedirectKind, ShellBuiltin } from './shell/types.ts'
 export {
   getCaseItems,
@@ -425,16 +556,18 @@ export { expandTestExpr } from './workspace/node/test_expr.ts'
 export { executeNode, type ExecuteNodeDeps } from './workspace/node/execute_node.ts'
 export { S3Accessor, type S3ResourceLike } from './accessor/s3.ts'
 export {
+  normalizeKeyPrefix,
   redactConfig as redactS3Config,
+  S3ConfigSchema,
   type S3BrowserOperation,
   type S3BrowserPresignedUrlProvider,
   type S3BrowserSignOptions,
   type S3Config,
   type S3ConfigRedacted,
 } from './resource/s3/config.ts'
+export { remapCommandsResource, remapOpsResource } from './resource/s3/remap.ts'
 export { S3_PROMPT } from './resource/s3/prompt.ts'
 export { SCOPE_ERROR as S3_SCOPE_ERROR } from './core/s3/constants.ts'
-export { S3IndexEntry, type S3IndexEntryInit, type S3Object } from './core/s3/entry.ts'
 export { copy } from './core/s3/copy.ts'
 export { create } from './core/s3/create.ts'
 export { du, duAll } from './core/s3/du.ts'
@@ -442,7 +575,7 @@ export { exists } from './core/s3/exists.ts'
 export { find } from './core/s3/find.ts'
 export { resolveGlob as resolveS3Glob } from './core/s3/glob.ts'
 export { mkdir } from './core/s3/mkdir.ts'
-export { read } from './core/s3/read.ts'
+export { fpRevFromS3Response, read } from './core/s3/read.ts'
 export { readdir } from './core/s3/readdir.ts'
 export { rename } from './core/s3/rename.ts'
 export { rmR } from './core/s3/rm.ts'
@@ -522,8 +655,11 @@ export { resolveLinearGlob } from './core/linear/glob.ts'
 export { LINEAR_PROMPT, LINEAR_WRITE_PROMPT } from './resource/linear/prompt.ts'
 export { NotionAccessor, type NotionResourceLike } from './accessor/notion.ts'
 export {
+  HttpNotionTransport,
   MCPNotionTransport,
+  NotionAPIError,
   NotionMCPError,
+  type HttpNotionTransportOptions,
   type NotionTransport,
   type MCPNotionTransportOptions,
 } from './core/notion/_client.ts'
@@ -577,13 +713,17 @@ export { GITHUB_COMMANDS } from './commands/builtin/github/index.ts'
 export { GITHUB_VFS_OPS } from './ops/github/index.ts'
 export { read as githubRead, stream as githubStream } from './core/github/read.ts'
 export { readdir as githubReaddir } from './core/github/readdir.ts'
+export {
+  buildTreeMap as githubBuildTreeMap,
+  populateIndex as githubPopulateIndex,
+} from './core/github/tree.ts'
 export { stat as githubStat } from './core/github/stat.ts'
 export { resolveGlob as githubResolveGlob } from './core/github/glob.ts'
 export {
   type TreeEntry as GitHubTreeEntry,
   makeTreeEntry as githubMakeTreeEntry,
   indexEntryFromTree as githubIndexEntryFromTree,
-} from './core/github/entry.ts'
+} from './core/github/tree_entry.ts'
 export {
   search as githubSearchCode,
   narrowPaths as githubNarrowPaths,
@@ -636,7 +776,13 @@ export {
   googlePut,
   refreshAccessToken,
 } from './core/google/_client.ts'
-export type { GoogleConfig } from './core/google/config.ts'
+export {
+  GoogleConfigSchema,
+  normalizeGoogleConfig,
+  redactGoogleConfig,
+  type GoogleConfig,
+  type GoogleConfigRedacted,
+} from './core/google/config.ts'
 export {
   MIME_TO_EXT,
   WORKSPACE_MIMES,
@@ -834,10 +980,6 @@ export {
   type GmailSearchRow,
 } from './core/gmail/search.ts'
 export { GMAIL_PROMPT, GMAIL_WRITE_PROMPT } from './resource/gmail/prompt.ts'
-export { catProvision } from './commands/builtin/ram/cat/cat.ts'
-export { headProvision } from './commands/builtin/ram/head/head.ts'
-export { jqProvision } from './commands/builtin/ram/jq.ts'
-export { statProvision } from './commands/builtin/ram/stat/stat.ts'
 export { loadOptionalPeer, type OptionalPeerConfig } from './utils/optional_peer.ts'
 export {
   type FieldNormalizer,
@@ -868,7 +1010,26 @@ export {
   searchKind as postgresSearchKind,
   searchSchema as postgresSearchSchema,
 } from './core/postgres/search.ts'
-export type { MongoDriver, MongoFindOptions } from './core/mongodb/_driver.ts'
+export type {
+  MongoCollectionSpec,
+  MongoDriver,
+  MongoFindOptions,
+  MongoIndexAccess,
+  MongoIterOptions,
+} from './core/mongodb/_driver.ts'
+export {
+  BsonTypeTag,
+  EntityKind,
+  IndexType,
+  KIND_DIR_NAMES,
+  KIND_TO_DIR,
+  KIND_TO_RESOURCE_TYPE,
+  PRIMARY_KEY,
+  RESOURCE_TYPE_COLLECTION,
+  RESOURCE_TYPE_DATABASE,
+  RESOURCE_TYPE_VIEW,
+  ScopeLevel,
+} from './core/mongodb/types.ts'
 export { MongoDBAccessor } from './accessor/mongodb.ts'
 export {
   normalizeMongoDBConfig,
@@ -884,9 +1045,50 @@ export { readdir as mongoReaddir } from './core/mongodb/readdir.ts'
 export { stat as mongoStat } from './core/mongodb/stat.ts'
 export { resolveGlob as resolveMongoGlob } from './core/mongodb/glob.ts'
 export { detectScope as detectMongoScope, type MongoDBScope } from './core/mongodb/scope.ts'
+export type { LanceDriver, LanceRow } from './core/lancedb/_driver.ts'
+export { LanceDBAccessor } from './accessor/lancedb.ts'
+export {
+  resolveLanceDBConfig,
+  type LanceDBConfig,
+  type LanceDBConfigResolved,
+} from './resource/lancedb/config.ts'
+export { LANCEDB_PROMPT } from './resource/lancedb/prompt.ts'
+export { LANCEDB_OPS } from './ops/lancedb/index.ts'
+export { LANCEDB_COMMANDS } from './commands/builtin/lancedb/index.ts'
+export { read as lanceRead } from './core/lancedb/read.ts'
+export { readdir as lanceReaddir } from './core/lancedb/readdir.ts'
+export { stat as lanceStat } from './core/lancedb/stat.ts'
+export { resolveGlob as resolveLanceGlob } from './core/lancedb/glob.ts'
+export { searchRowsOutput as lanceSearch } from './core/lancedb/search.ts'
+export {
+  detectScope as detectLanceScope,
+  ScopeLevel as LanceScopeLevel,
+  type LanceDBScope,
+} from './core/lancedb/scope.ts'
+export { ChromaAccessor } from './accessor/chroma.ts'
+export {
+  resolveChromaConfig,
+  type ChromaConfig,
+  type ChromaConfigResolved,
+} from './resource/chroma/config.ts'
+export { CHROMA_PROMPT } from './resource/chroma/prompt.ts'
+export { CHROMA_OPS } from './ops/chroma/index.ts'
+export { CHROMA_COMMANDS } from './commands/builtin/chroma/index.ts'
+export { ChromaResource, type ChromaResourceOptions } from './resource/chroma/chroma.ts'
+export { readBytes as chromaRead, readStream as chromaReadStream } from './core/chroma/read.ts'
+export { readdir as chromaReaddir } from './core/chroma/readdir.ts'
+export { stat as chromaStat } from './core/chroma/stat.ts'
+export { resolveGlob as resolveChromaGlob } from './core/chroma/glob.ts'
+export { searchSegments as chromaSearch } from './core/chroma/search.ts'
+export { scoreFromDistance } from './utils/score.ts'
 export {
   countDocuments as mongoCountDocuments,
   findDocuments as mongoFindDocuments,
+  getIndexStats as mongoGetIndexStats,
+  getValidator as mongoGetValidator,
+  isView as mongoIsView,
+  iterDocuments as mongoIterDocuments,
+  iterInserts as mongoIterInserts,
   listCollections as mongoListCollections,
   listDatabases as mongoListDatabases,
   listIndexes as mongoListIndexes,
@@ -897,164 +1099,57 @@ export {
   searchDatabase as mongoSearchDatabase,
   type CollectionMatches as MongoCollectionMatches,
 } from './core/mongodb/search.ts'
-export type {
-  SSCholarAuthor,
-  SSCholarDriver,
-  SSCholarPaper,
-  SSCholarSearchOptions,
-  SSCholarSearchResult,
-  SSCholarSnippet,
-  SSCholarSnippetMatch,
-  SSCholarSnippetSearchResult,
-  SSCholarTLDR,
-} from './core/sscholar/_driver.ts'
-export { SSCholarAccessor } from './accessor/sscholar.ts'
-export {
-  normalizeSSCholarConfig,
-  resolveSSCholarConfig,
-  type SSCholarConfig,
-  type SSCholarConfigResolved,
-} from './resource/sscholar/config.ts'
-export { SSCHOLAR_PAPER_PROMPT } from './resource/sscholar/prompt.ts'
-export { SSCHOLAR_PAPER_OPS } from './ops/sscholar/index.ts'
-export { SSCHOLAR_PAPER_COMMANDS } from './commands/builtin/sscholar/index.ts'
-export { read as sscholarPaperRead } from './core/sscholar/read.ts'
-export { readdir as sscholarPaperReaddir } from './core/sscholar/readdir.ts'
-export { stat as sscholarPaperStat } from './core/sscholar/stat.ts'
-export { resolveGlob as resolveSSCholarPaperGlob } from './core/sscholar/glob.ts'
-export {
-  detectScope as detectSSCholarPaperScope,
-  type SSCholarPaperScope,
-  type SSCholarPaperLevel,
-} from './core/sscholar/scope.ts'
-export {
-  PAPER_FILES as SSCHOLAR_PAPER_FILES,
-  SSCHOLAR_FIELDS,
-  SSCHOLAR_FIELD_SLUGS,
-  SSCHOLAR_YEARS,
-  fieldToSlug as sscholarFieldToSlug,
-  slugToField as sscholarSlugToField,
-} from './core/sscholar/fields.ts'
-export {
-  getPaper as sscholarGetPaper,
-  searchPapers as sscholarSearchPapers,
-  searchPapersByField as sscholarSearchPapersByField,
-  searchSnippets as sscholarSearchSnippets,
-} from './core/sscholar/_client.ts'
-export { HttpSSCholarDriver, type HttpSSCholarDriverOptions } from './core/sscholar/http_driver.ts'
-export type {
-  SSCholarAuthorPapersOptions,
-  SSCholarAuthorPapersResult,
-  SSCholarAuthorProfile,
-  SSCholarAuthorSearchResult,
-} from './core/sscholar/author_driver.ts'
-export { SSCHOLAR_AUTHOR_PROMPT } from './resource/sscholar/author_prompt.ts'
-export { SSCHOLAR_AUTHOR_OPS } from './ops/sscholar_author/index.ts'
-export { SSCHOLAR_AUTHOR_COMMANDS } from './commands/builtin/sscholar_author/index.ts'
-export { read as sscholarAuthorRead } from './core/sscholar/author_read.ts'
-export { readdir as sscholarAuthorReaddir } from './core/sscholar/author_readdir.ts'
-export { stat as sscholarAuthorStat } from './core/sscholar/author_stat.ts'
-export { resolveGlob as resolveSSCholarAuthorGlob } from './core/sscholar/author_glob.ts'
-export {
-  detectAuthorScope as detectSSCholarAuthorScope,
-  AUTHOR_FILES as SSCHOLAR_AUTHOR_FILES,
-  type SSCholarAuthorScope,
-  type SSCholarAuthorLevel,
-} from './core/sscholar/author_scope.ts'
-export {
-  getAuthor as sscholarGetAuthor,
-  getAuthorPapers as sscholarGetAuthorPapers,
-  searchAuthors as sscholarSearchAuthors,
-} from './core/sscholar/author_client.ts'
-
-export type {
-  VercelDeployment,
-  VercelDeploymentEvent,
-  VercelDomain,
-  VercelDriver,
-  VercelEnvVar,
-  VercelListOptions,
-  VercelProject,
-  VercelTeam,
-  VercelTeamMember,
-  VercelUser,
-} from './core/vercel/_driver.ts'
-export { VercelAccessor } from './accessor/vercel.ts'
-export {
-  normalizeVercelConfig,
-  resolveVercelConfig,
-  type VercelConfig,
-  type VercelConfigResolved,
-} from './resource/vercel/config.ts'
-export { VERCEL_PROMPT } from './resource/vercel/prompt.ts'
-export { VERCEL_OPS } from './ops/vercel/index.ts'
-export { VERCEL_COMMANDS } from './commands/builtin/vercel/index.ts'
-export { read as vercelRead } from './core/vercel/read.ts'
-export { readdir as vercelReaddir } from './core/vercel/readdir.ts'
-export { stat as vercelStat } from './core/vercel/stat.ts'
-export { resolveGlob as resolveVercelGlob } from './core/vercel/glob.ts'
-export {
-  detectScope as detectVercelScope,
-  type VercelScope,
-  type VercelLevel,
-  ROOT_ENTRIES as VERCEL_ROOT_ENTRIES,
-  TEAM_FILES as VERCEL_TEAM_FILES,
-  PROJECT_FILES as VERCEL_PROJECT_FILES,
-  PROJECT_SUBDIRS as VERCEL_PROJECT_SUBDIRS,
-  DEPLOYMENT_FILES as VERCEL_DEPLOYMENT_FILES,
-} from './core/vercel/scope.ts'
-export {
-  getUser as vercelGetUser,
-  listTeams as vercelListTeams,
-  getTeam as vercelGetTeam,
-  listTeamMembers as vercelListTeamMembers,
-  listProjects as vercelListProjects,
-  getProject as vercelGetProject,
-  listProjectDomains as vercelListProjectDomains,
-  listProjectEnv as vercelListProjectEnv,
-  listProjectDeployments as vercelListProjectDeployments,
-  getDeployment as vercelGetDeployment,
-  listDeploymentEvents as vercelListDeploymentEvents,
-} from './core/vercel/_client.ts'
-export { HttpVercelDriver, type HttpVercelDriverOptions } from './core/vercel/http_driver.ts'
-
-export type {
-  PostHogDriver,
-  PostHogPaged,
-  PostHogProject,
-  PostHogUser,
-} from './core/posthog/_driver.ts'
-export { PostHogAccessor } from './accessor/posthog.ts'
-export {
-  normalizePostHogConfig,
-  resolvePostHogConfig,
-  type PostHogConfig,
-  type PostHogConfigResolved,
-} from './resource/posthog/config.ts'
-export { POSTHOG_PROMPT } from './resource/posthog/prompt.ts'
-export { POSTHOG_OPS } from './ops/posthog/index.ts'
-export { POSTHOG_COMMANDS } from './commands/builtin/posthog/index.ts'
-export { read as posthogRead } from './core/posthog/read.ts'
-export { readdir as posthogReaddir } from './core/posthog/readdir.ts'
-export { stat as posthogStat } from './core/posthog/stat.ts'
-export { resolveGlob as resolvePostHogGlob } from './core/posthog/glob.ts'
-export {
-  detectScope as detectPostHogScope,
-  type PostHogScope,
-  type PostHogLevel,
-  ROOT_ENTRIES as POSTHOG_ROOT_ENTRIES,
-  PROJECT_FILES as POSTHOG_PROJECT_FILES,
-} from './core/posthog/scope.ts'
-export {
-  getUser as posthogGetUser,
-  getProject as posthogGetProject,
-  listProjects as posthogListProjects,
-  listFeatureFlags as posthogListFeatureFlags,
-  listCohorts as posthogListCohorts,
-  listDashboards as posthogListDashboards,
-  listInsights as posthogListInsights,
-  listPersons as posthogListPersons,
-} from './core/posthog/_client.ts'
-export { HttpPostHogDriver, type HttpPostHogDriverOptions } from './core/posthog/http_driver.ts'
-
 export { setHttpProxyBase } from './commands/builtin/utils/http.ts'
+
+export { lstripSlash, rstripSlash, stripSlash } from './utils/slash.ts'
+export { fnmatch } from './utils/fnmatch.ts'
+export {
+  buildTree,
+  computeNonemptyDirs,
+  evalPredicate,
+  type FindEntry,
+  keep,
+  type PredNode,
+} from './commands/builtin/findEval.ts'
+export { enoent, enotdir, errorVirtualPath, type FsError, gnuStrerror } from './utils/errors.ts'
+
+export {
+  DatabricksVolumeAccessor,
+  type DatabricksVolumeResourceLike,
+} from './accessor/databricks_volume.ts'
+export {
+  DatabricksVolumeConfigSchema,
+  normalizeDatabricksVolumeConfig,
+  redactDatabricksVolumeConfig,
+  type DatabricksVolumeConfig,
+  type DatabricksVolumeConfigRedacted,
+} from './resource/databricks_volume/config.ts'
+export { DATABRICKS_VOLUME_PROMPT } from './resource/databricks_volume/prompt.ts'
+export { DATABRICKS_VOLUME_OPS } from './ops/databricks_volume/index.ts'
+export { DATABRICKS_VOLUME_COMMANDS } from './commands/builtin/databricks_volume/index.ts'
+export {
+  DatabricksVolumeApiError,
+  isNotFound as isDatabricksVolumeNotFound,
+} from './core/databricks_volume/errors.ts'
+export { readBytes as databricksVolumeRead } from './core/databricks_volume/read.ts'
+export {
+  readStream as databricksVolumeReadStream,
+  rangeRead as databricksVolumeRangeRead,
+} from './core/databricks_volume/stream.ts'
+export { readdir as databricksVolumeReaddir } from './core/databricks_volume/readdir.ts'
+export { stat as databricksVolumeStat } from './core/databricks_volume/stat.ts'
+export { exists as databricksVolumeExists } from './core/databricks_volume/exists.ts'
+export { find as databricksVolumeFind } from './core/databricks_volume/find.ts'
+export { resolveGlob as resolveDatabricksVolumeGlob } from './core/databricks_volume/glob.ts'
+export { writeBytes as databricksVolumeWrite } from './core/databricks_volume/write.ts'
+export { create as databricksVolumeCreate } from './core/databricks_volume/create.ts'
+export { mkdir as databricksVolumeMkdir } from './core/databricks_volume/mkdir.ts'
+export { rmdir as databricksVolumeRmdir } from './core/databricks_volume/rmdir.ts'
+export { unlink as databricksVolumeUnlink } from './core/databricks_volume/unlink.ts'
+export { rmRecursive as databricksVolumeRmRecursive } from './core/databricks_volume/rm.ts'
+export { copy as databricksVolumeCopy } from './core/databricks_volume/copy.ts'
+export { rename as databricksVolumeRename } from './core/databricks_volume/rename.ts'
+export {
+  backendPath as databricksVolumeBackendPath,
+  virtualPath as databricksVolumeVirtualPath,
+} from './core/databricks_volume/path.ts'

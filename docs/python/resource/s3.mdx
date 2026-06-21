@@ -1,5 +1,6 @@
 ---
 title: S3
+description: Mount AWS S3 or S3-compatible buckets as a Mirage filesystem with async access, caching, and shell commands.
 icon: aws
 ---
 The S3 resource mounts an Amazon S3 bucket (or any S3-compatible service) at
@@ -66,7 +67,7 @@ Path mapping: virtual `/s3/data/file.txt` maps to S3 key `data/file.txt`.
 
 ## Cache
 
-The S3 resource uses `IndexCacheStore` with `_index_ttl = 600` (10 minutes).
+The S3 resource uses `IndexCacheStore` with `index_ttl = 600` (10 minutes).
 Directory listings are cached for up to 600 seconds before being refreshed
 from S3. This reduces API calls for repeated directory traversals.
 
@@ -223,33 +224,25 @@ Commands with format-specific variants for structured data files:
 These variants auto-detect the format by extension and convert to
 tabular text (CSV) for processing.
 
-### Audio Support (Optional)
-
-Audio commands are opt-in and require `sherpa-onnx` with a Whisper model.
-They transcribe audio to text, enabling `cat`, `head`, `tail`, `grep`,
-and `stat` on audio files.
-
-| Format | Extension | Commands                    |
-| ------ | --------- | --------------------------- |
-| WAV    | `.wav`    | cat, head, tail, grep, stat |
-| MP3    | `.mp3`    | cat, head, tail, grep, stat |
-| OGG    | `.ogg`    | cat, head, tail, grep, stat |
-
-To enable, register audio commands manually:
-
-```python
-from mirage.commands.audio import AUDIO_COMMANDS
-from mirage.commands.audio.utils import configure
-
-configure(model_dir="path/to/sherpa-onnx-whisper-base")
-
-for cmd in AUDIO_COMMANDS:
-    ws.register(cmd)
-```
-
 ## Use Cases
 
 - **AI agents accessing cloud data**: Mount S3 buckets for agents to read and process remote datasets
 - **Data pipelines**: Read and write S3 objects with shell-like commands
 - **Sandboxed cloud storage access**: Restrict agent operations to a specific bucket and prefix
 - **FUSE mounting**: Expose S3 buckets through a virtual FUSE mount for external tools
+
+## Scoping a resource to a key prefix
+
+Pass `key_prefix: str | None = None` to `S3Config` to transparently scope every operation to a subpath of the bucket:
+
+```python
+S3Resource(S3Config(
+    bucket="app-data",
+    region="eu-west-1",
+    key_prefix=f"users/{user_id}/",
+))
+```
+
+When set, every read/write/list/stat/copy/rename/delete operation is transparently scoped to that bucket subpath. Agents see clean paths like `/data/notes.md`; the underlying bucket key is `users/{user_id}/data/notes.md`. Useful for multi-tenant systems. Pairs naturally with STS AssumeRole session policies for AWS-side enforcement. Unset behavior is unchanged.
+
+**Normalization:** leading slashes are stripped and a trailing slash is added automatically. Both `None` and an empty string are treated as "no prefix."

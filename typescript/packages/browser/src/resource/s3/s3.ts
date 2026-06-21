@@ -55,14 +55,13 @@ export const S3_BROWSER_PROMPT = `{prefix}
 
 export interface S3ResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: S3ConfigRedacted
 }
 
 export class S3Resource implements Resource {
+  readonly supportsSnapshot: boolean = true
   readonly kind: string = ResourceName.S3
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 600
   readonly prompt: string = S3_BROWSER_PROMPT
   readonly config: S3Config
@@ -199,8 +198,6 @@ export class S3Resource implements Resource {
   getState(): Promise<S3ResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['presignedUrlProvider'],
       config: redactConfig(this.config),
     })
   }
@@ -211,7 +208,7 @@ export class S3Resource implements Resource {
 
   // Ignored — duAll is not yet on the public Resource interface, but keeping
   // it around matches the node-side S3Resource.opsMap hook for completeness.
-  _duAll(p: PathSpec): Promise<[string, number][]> {
+  _duAll(p: PathSpec): Promise<[[string, number][], number]> {
     return duAllCore(this.accessor, p)
   }
 

@@ -109,8 +109,16 @@ async def main() -> None:
     result = await ws.execute("ls /data/")
     print(await result.stdout_str())
 
+    print("=== not-found errors show the full virtual path ===")
+    for cmd in ("cat /data/missing.json", "head /data/missing.json",
+                "stat /data/missing.json"):
+        result = await ws.execute(cmd)
+        print(f"$ {cmd}")
+        print(f"  exit={result.exit_code}  "
+              f"{(await result.stderr_str()).strip()}")
+
     # ── persistence: save / load / copy / deepcopy ──────────────────
-    # Disk has needs_override=False — full file tree is in the snapshot.
+    # Disk has no redacted config: full file tree is in the snapshot.
     # Default load behavior creates a fresh tmpdir. Caller can override
     # by supplying DiskResource(root=...) in resources={...}.
     print("\n=== PERSISTENCE ===\n")
@@ -118,34 +126,33 @@ async def main() -> None:
         snap = f.name
     custom_root = tempfile.mkdtemp(prefix="mirage-disk-restore-")
     try:
-        ws.snapshot(snap)
+        await ws.snapshot(snap)
         print(f"  saved → {snap} ({os.path.getsize(snap)} bytes)")
 
         # Load with default fresh tmpdir
-        loaded_default = Workspace.load(snap)
+        loaded_default = await Workspace.load(snap)
         r = await loaded_default.execute("ls /data/")
         print(f"  loaded (default tmpdir) ls: "
               f"{(await r.stdout_str()).strip()[:80]}…")
 
         # Load with caller-supplied root — files written into custom_root
-        loaded_custom = Workspace.load(
+        loaded_custom = await Workspace.load(
             snap, resources={"/data": DiskResource(root=custom_root)})
         r = await loaded_custom.execute("ls /data/")
         print(f"  loaded (root={custom_root[:40]}…) ls: "
               f"{(await r.stdout_str()).strip()[:80]}…")
         print(f"  custom_root contents: {sorted(os.listdir(custom_root))[:5]}")
 
-        cp = ws.copy()
+        cp = await ws.copy()
         print(f"  copy() mounts: {[m.prefix for m in cp.mounts()]}")
 
-        deep = _copy.deepcopy(ws)
-        print(f"  deepcopy() mounts: {[m.prefix for m in deep.mounts()]}")
-
-        try:
-            _copy.copy(ws)
-            print("  ✗ shallow copy should have raised")
-        except NotImplementedError as e:
-            print(f"  ✓ shallow copy raises: {str(e)[:60]}…")
+        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
+                                                           _copy.copy)):
+            try:
+                op(ws)
+                print(f"  ✗ {op_name} should have raised")
+            except NotImplementedError as e:
+                print(f"  ✓ {op_name} raises: {str(e)[:60]}…")
     finally:
         os.unlink(snap)
         shutil.rmtree(custom_root, ignore_errors=True)

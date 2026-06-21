@@ -13,44 +13,31 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { IndexEntry } from '../../cache/index/config.ts'
+import { makeIdName } from '../../utils/naming.ts'
 
 export const DiscordResourceType = Object.freeze({
   GUILD: 'discord/guild',
   CHANNEL: 'discord/channel',
   MEMBER: 'discord/member',
   HISTORY: 'discord/history',
+  DATE_DIR: 'discord/date_dir',
+  CHAT_JSONL: 'discord/chat_jsonl',
+  FILES_DIR: 'discord/files_dir',
+  FILE: 'discord/file',
 } as const)
 
 export type DiscordResourceType = (typeof DiscordResourceType)[keyof typeof DiscordResourceType]
 
-const UNSAFE_CHARS = /[^\w\s\-.]/g
-const MULTI_UNDERSCORE = /_+/g
-const MAX_LEN = 100
-
-export function sanitizeName(name: string): string {
-  if (name.trim() === '') return 'unknown'
-  let cleaned = name.replace(UNSAFE_CHARS, '_')
-  cleaned = cleaned.replace(/ /g, '_')
-  cleaned = cleaned.replace(MULTI_UNDERSCORE, '_')
-  cleaned = cleaned.replace(/^_+|_+$/g, '')
-  if (cleaned.length > MAX_LEN) cleaned = cleaned.slice(0, MAX_LEN)
-  return cleaned
-}
-
-function makeIdName(name: string, id: string): string {
-  return `${sanitizeName(name)}__${id}`
-}
-
 export function guildDirname(g: { id: string; name?: string }): string {
-  return makeIdName(g.name ?? g.id, g.id)
+  return makeIdName(g.name ?? '', g.id, true)
 }
 
 export function channelDirname(c: { id: string; name?: string }): string {
-  return makeIdName(c.name ?? c.id, c.id)
+  return makeIdName(c.name ?? '', c.id, true)
 }
 
 export function memberFilename(m: { id: string; name?: string }): string {
-  return `${makeIdName(m.name ?? m.id, m.id)}.json`
+  return `${makeIdName(m.name ?? '', m.id, true)}.json`
 }
 
 export const DiscordIndexEntry = {

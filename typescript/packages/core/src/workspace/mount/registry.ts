@@ -13,11 +13,13 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { FileCache } from '../../cache/file/mixin.ts'
+import { CacheManager } from '../../cache/manager.ts'
 import { GENERAL_COMMANDS } from '../../commands/builtin/general/index.ts'
-import type { Resource } from '../../resource/base.ts'
+import { cachesReads, type Resource } from '../../resource/base.ts'
 import { DevResource } from '../../resource/dev/dev.ts'
 import { ConsistencyPolicy, MountMode, PathSpec } from '../../types.ts'
 import { Mount } from './mount.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 
 export const DEV_PREFIX = '/dev/'
 
@@ -39,6 +41,27 @@ export class MountRegistry {
   private defaultMountRef: Mount | null = null
   private consistency: ConsistencyPolicy = ConsistencyPolicy.LAZY
   private readonly defaultMode: MountMode
+  private fileCache: FileCache | null = null
+
+  /**
+   * Attach the workspace file cache and build per-mount CacheManagers.
+   * Called once by Workspace after the cache store exists; mounts
+   * added later get their manager in `mount()` / `setDefaultMount()`.
+   */
+  attachFileCache(cache: FileCache | null): void {
+    this.fileCache = cache
+    for (const m of this.mountList) this.attachManager(m)
+    if (this.defaultMountRef !== null) this.attachManager(this.defaultMountRef)
+  }
+
+  private attachManager(m: Mount): void {
+    m.cacheManager = new CacheManager(
+      this.fileCache,
+      m.resource.index ?? null,
+      m.prefix,
+      cachesReads(m.resource),
+    )
+  }
 
   constructor(
     resources: Record<string, Resource>,
@@ -113,6 +136,7 @@ export class MountRegistry {
         else m.registerOp(op)
       }
     }
+    if (this.fileCache !== null) this.attachManager(m)
     this.mountList.push(m)
     this.mountList.sort((a, b) => b.prefix.length - a.prefix.length)
     return m
@@ -232,6 +256,7 @@ export class MountRegistry {
         else mount.registerOp(op)
       }
     }
+    if (this.fileCache !== null) this.attachManager(mount)
     this.defaultMountRef = mount
     return mount
   }
@@ -246,15 +271,15 @@ export class MountRegistry {
       throw new Error(`no mount matches path: ${path}`)
     }
     const hadTrailing = path.endsWith('/')
-    const norm = `/${path.replace(/^\/+|\/+$/g, '')}`
-    const mountPrefix = m.prefix.replace(/\/+$/, '')
+    const norm = `/${stripSlash(path)}`
+    const mountPrefix = rstripSlash(m.prefix)
     return [m.resource, PathSpec.fromStrPath(hadTrailing ? `${norm}/` : norm, mountPrefix), m.mode]
   }
 
   mountFor(path: string): Mount | null {
-    const norm = `/${path.replace(/^\/+|\/+$/g, '')}`
+    const norm = `/${stripSlash(path)}`
     for (const m of this.mountList) {
-      const prefixNoTrail = m.prefix.replace(/\/+$/, '') || '/'
+      const prefixNoTrail = rstripSlash(m.prefix) || '/'
       if (norm === prefixNoTrail || norm.startsWith(m.prefix)) {
         return m
       }
@@ -268,7 +293,7 @@ export class MountRegistry {
 
   isExecAllowed(): boolean {
     for (const m of this.mountList) {
-      const prefixNoTrail = m.prefix.replace(/\/+$/, '') || '/'
+      const prefixNoTrail = rstripSlash(m.prefix) || '/'
       if (prefixNoTrail === '/') return m.mode === MountMode.EXEC
     }
     if (this.defaultMode === MountMode.EXEC) return true
@@ -288,7 +313,6 @@ export class MountRegistry {
       if (m.prefix === DEV_PREFIX) continue
       const cmd = m.resolveCommand(cmdName)
       if (cmd === null) continue
-      if (cmd.write && m.mode === MountMode.READ) continue
       return m
     }
     return null
@@ -306,7 +330,12 @@ export class MountRegistry {
     }
     if (mount === null) return null
     const defaultMount = this.defaultMountRef
-    if (defaultMount !== null && pathScopes.length > 0 && isFileCache(defaultMount.resource)) {
+    if (
+      defaultMount !== null &&
+      pathScopes.length > 0 &&
+      isFileCache(defaultMount.resource) &&
+      cachesReads(mount.resource)
+    ) {
       const baseCmd = mount.resolveCommand(cmdName)
       if (!baseCmd?.write) {
         if (this.consistency === ConsistencyPolicy.ALWAYS) {
@@ -328,7 +357,7 @@ export class MountRegistry {
   ): Promise<void> {
     const resource = realMount.resource
     if (resource.fingerprint === undefined) return
-    const mountPrefix = realMount.prefix.replace(/\/+$/, '')
+    const mountPrefix = rstripSlash(realMount.prefix)
     for (const scope of pathScopes) {
       const key = scope.original
       if (!(await cache.exists(key))) continue
@@ -354,6 +383,6 @@ export class MountRegistry {
 }
 
 function normalizePrefix(prefix: string): string {
-  const stripped = prefix.replace(/^\/+|\/+$/g, '')
+  const stripped = stripSlash(prefix)
   return stripped ? `/${stripped}/` : '/'
 }

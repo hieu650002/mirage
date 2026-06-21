@@ -13,11 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.redis import RedisAccessor
+from mirage.cache.context import invalidate_after_unlink
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def rmdir(accessor: RedisAccessor, path: PathSpec) -> None:
@@ -26,7 +24,7 @@ async def rmdir(accessor: RedisAccessor, path: PathSpec) -> None:
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     if not await store.has_dir(p):
         raise FileNotFoundError(p)
     prefix = p.rstrip("/") + "/"
@@ -39,3 +37,4 @@ async def rmdir(accessor: RedisAccessor, path: PathSpec) -> None:
     if children:
         raise OSError(f"directory not empty: {p}")
     await store.remove_dir(p)
+    await invalidate_after_unlink(path)

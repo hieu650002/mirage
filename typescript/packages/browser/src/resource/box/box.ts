@@ -35,14 +35,12 @@ import { redactBoxConfig, type BoxConfig, type BoxConfigRedacted } from './confi
 
 export interface BoxResourceState {
   type: string
-  needsOverride: boolean
-  redactedFields: readonly string[]
   config: BoxConfigRedacted
 }
 
 export class BoxResource implements Resource {
   readonly kind: string = ResourceName.BOX
-  readonly isRemote: boolean = true
+  readonly cachesReads: boolean = true
   readonly indexTtl: number = 86_400
   readonly prompt: string = BOX_PROMPT
   readonly config: BoxConfig
@@ -119,8 +117,6 @@ export class BoxResource implements Resource {
   getState(): Promise<BoxResourceState> {
     return Promise.resolve({
       type: this.kind,
-      needsOverride: true,
-      redactedFields: ['clientSecret', 'refreshToken', 'accessToken'],
       config: redactBoxConfig(this.config),
     })
   }

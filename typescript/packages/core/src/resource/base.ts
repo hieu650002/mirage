@@ -13,7 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Accessor } from '../accessor/base.ts'
-import type { IndexCacheStore } from '../cache/index/index.ts'
+import { IndexType, type IndexConfig, type RedisIndexConfig } from '../cache/index/config.ts'
+import { RAMIndexCacheStore } from '../cache/index/ram.ts'
+import { RedisIndexCacheStore } from '../cache/index/redis.ts'
+import type { IndexCacheStore } from '../cache/index/store.ts'
+import type { PredNode } from '../commands/builtin/findEval.ts'
 import type { RegisteredCommand } from '../commands/config.ts'
 import type { RegisteredOp } from '../ops/registry.ts'
 import type { FileStat, PathSpec } from '../types.ts'
@@ -29,6 +33,8 @@ export interface FindOptions {
   orNames?: string[] | null
   iname?: string | null
   pathPattern?: string | null
+  empty?: boolean | null
+  tree?: PredNode | null
   mtimeMin?: number | null
   mtimeMax?: number | null
 }
@@ -38,10 +44,29 @@ export interface Resource {
   readonly prompt?: string
   readonly writePrompt?: string
   readonly indexTtl?: number
-  readonly isRemote?: boolean
+  /**
+   * Whether reads of this resource may be served from / written to the
+   * local file cache. Defaults to false. A network-backed resource whose
+   * content is read-mostly (e.g. object storage) sets this to true so
+   * reads can be cached; a resource whose content is live (e.g. a
+   * database collection) leaves it false so reads always hit the backend
+   * and live follows (`tail -f`) are not masked by a cached snapshot.
+   */
+  readonly cachesReads?: boolean
+  /**
+   * Whether this resource carries enough version information for
+   * snapshot+replay drift detection. When true, the resource's
+   * {@link Resource.stat} must populate {@link FileStat.fingerprint}
+   * (and optionally {@link FileStat.revision}) with stable per-path
+   * markers. When false (the default), reads are treated as live-only
+   * at replay time: no fingerprint is captured at snapshot, no drift
+   * check fires at load.
+   */
+  readonly supportsSnapshot?: boolean
   readonly index?: IndexCacheStore
   readonly accessor?: Accessor
   readonly opsMap?: Record<string, unknown>
+  setIndex?(config?: IndexConfig): void
   open(): Promise<void>
   close(): Promise<void>
   ops?(): readonly RegisteredOp[]
@@ -69,4 +94,39 @@ export interface Resource {
 
 export function throwUnsupported(op: string): never {
   throw new Error(`resource has no ${op} support`)
+}
+
+export function cachesReads(resource: Resource): boolean {
+  return resource.cachesReads === true
+}
+
+export abstract class BaseResource {
+  readonly indexTtl: number = 600
+  protected _index?: IndexCacheStore
+
+  get index(): IndexCacheStore {
+    let store = this._index
+    if (store === undefined) {
+      store = this.makeIndex()
+      this._index = store
+    }
+    return store
+  }
+
+  setIndex(config?: IndexConfig): void {
+    this._index = this.makeIndex(config)
+  }
+
+  private makeIndex(config?: IndexConfig): IndexCacheStore {
+    if (config?.type === IndexType.REDIS) {
+      const redis = config as RedisIndexConfig
+      return new RedisIndexCacheStore({
+        ttl: redis.ttl ?? 600,
+        ...(redis.url !== undefined ? { url: redis.url } : {}),
+        ...(redis.keyPrefix !== undefined ? { keyPrefix: redis.keyPrefix } : {}),
+      })
+    }
+    const ttl = config === undefined ? this.indexTtl : (config.ttl ?? 600)
+    return new RAMIndexCacheStore({ ttl })
+  }
 }

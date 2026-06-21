@@ -13,37 +13,44 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { NOOPAccessor } from '../accessor/base.ts'
-import { applyIo } from '../cache/file/io.ts'
-import { CacheEntry } from '../cache/file/entry.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
+import type { IndexConfig } from '../cache/index/config.ts'
 import { RAMFileCacheStore } from '../cache/file/ram.ts'
 import type { ByteSource } from '../io/types.ts'
 import { IOResult, materialize } from '../io/types.ts'
-import { runWithRecording } from '../observe/context.ts'
-import { Observer } from '../observe/observer.ts'
+import { runWithRecording, runWithRevisions } from '../observe/context.ts'
+import { type EventDict, Observer } from '../observe/observer.ts'
 import type { OpRecord } from '../observe/record.ts'
+import type { ObserverStore } from '../observe/store.ts'
 import { type OpKwargs, OpsRegistry } from '../ops/registry.ts'
+import { assertMountAllowed, runWithSession } from '../runtime/session_context.ts'
 import type { Resource } from '../resource/base.ts'
-import { RAMResource, type RAMResourceState } from '../resource/ram/ram.ts'
-import { GENERAL_COMMANDS, HISTORY_COMMANDS } from '../commands/builtin/general/index.ts'
-import { applyBarrier, BarrierPolicy } from '../shell/barrier.ts'
+import { HISTORY_PREFIX, HistoryViewResource } from '../resource/history/history.ts'
+import { resourceStateRequiresOverride } from '../resource/secrets.ts'
+import { GENERAL_COMMANDS } from '../commands/builtin/general/index.ts'
+import {
+  applyOpSafeguard,
+  CommandTimeoutError,
+  runWithTimeout,
+} from '../commands/builtin/utils/safeguard.ts'
+import { resolveSafeguard } from '../commands/safeguard.ts'
 import { JobTable } from '../shell/job_table.ts'
-import type { ShellParser } from '../shell/parse.ts'
+import { findSyntaxError, type ShellParser } from '../shell/parse.ts'
+import { snapshot as writeSnapshot } from './snapshot/api.ts'
+import { checkDrift } from './snapshot/drift.ts'
+import { readFileBytes } from './snapshot/fs.ts'
+import { applyStateDict, buildMountArgs, toStateDict } from './snapshot/state.ts'
+import { readSnapshotTar } from './snapshot/tar_io.ts'
+import type { WorkspaceStateDict } from './snapshot/types.ts'
 import {
-  decodeSnapshot,
-  encodeSnapshot,
-  loadSnapshotFromFile,
-  saveSnapshotToFile,
-} from '../snapshot/persist.ts'
-import {
-  type ExecutionNodeSnapshot,
-  type ExecutionRecordSnapshot,
-  type MountSnapshot,
-  type ResourceState,
-  SNAPSHOT_FORMAT_VERSION,
-  type WorkspaceStateDict,
-} from '../snapshot/state.ts'
-import { DEFAULT_AGENT_ID, FileType, MountMode, type PathSpec } from '../types.ts'
+  type CommandSafeguard,
+  ConsistencyPolicy,
+  DEFAULT_AGENT_ID,
+  DriftPolicy,
+  FileType,
+  MountMode,
+  type PathSpec,
+} from '../types.ts'
 import type { TSNodeLike } from './expand/variable.ts'
 import type { ExecuteFn } from './expand/node.ts'
 import type { DispatchFn } from './executor/cross_mount.ts'
@@ -56,76 +63,35 @@ import type { BridgeDispatchFn, MirageEntry } from './executor/python/mirage_bri
 import { PyodideRuntime } from './executor/python/runtime.ts'
 import type { PythonReplRunResult } from './executor/python/types.ts'
 import { makeAbortError } from './abort.ts'
-import { executeNode } from './node/execute_node.ts'
+import { Dispatcher } from './dispatcher.ts'
 import { provisionNode } from './node/provision_node.ts'
+import { runCommandTree } from './node/run_tree.ts'
+import { buildFilePrompt } from './file_prompt.ts'
 import { SessionManager } from './session/manager.ts'
-import { Session } from './session/session.ts'
-import { ExecutionHistory } from './history.ts'
-import { ExecutionNode, ExecutionRecord } from './types.ts'
+import type { Session } from './session/session.ts'
+import type { ExecutionNode } from './types.ts'
+import { errorVirtualPath, gnuStrerror } from '../utils/errors.ts'
+import { stripSlash } from '../utils/slash.ts'
 
 const NOOP_ACCESSOR_INSTANCE = new NOOPAccessor()
-
-function nodeToSnapshot(n: ExecutionNode): ExecutionNodeSnapshot {
-  return {
-    command: n.command,
-    op: n.op,
-    stderr: n.stderr,
-    exitCode: n.exitCode,
-    children: n.children.map((c) => nodeToSnapshot(c)),
-  }
-}
-
-function nodeFromSnapshot(s: ExecutionNodeSnapshot): ExecutionNode {
-  return new ExecutionNode({
-    command: s.command,
-    op: s.op,
-    stderr: s.stderr,
-    exitCode: s.exitCode,
-    children: s.children.map((c) => nodeFromSnapshot(c)),
-  })
-}
-
-function recordToSnapshot(r: ExecutionRecord): ExecutionRecordSnapshot {
-  return {
-    agent: r.agent,
-    command: r.command,
-    stdout: r.stdout,
-    stdin: r.stdin,
-    exitCode: r.exitCode,
-    tree: nodeToSnapshot(r.tree),
-    timestamp: r.timestamp,
-    sessionId: r.sessionId,
-  }
-}
-
-function recordFromSnapshot(s: ExecutionRecordSnapshot): ExecutionRecord {
-  return new ExecutionRecord({
-    agent: s.agent,
-    command: s.command,
-    stdout: s.stdout,
-    stdin: s.stdin,
-    exitCode: s.exitCode,
-    tree: nodeFromSnapshot(s.tree),
-    timestamp: s.timestamp,
-    sessionId: s.sessionId,
-  })
-}
-
-const DISPATCH_READ_OPS = new Set(['read', 'read_bytes'])
-const DISPATCH_WRITE_OPS = new Set([
-  'write',
-  'write_bytes',
-  'append',
-  'unlink',
-  'create',
-  'truncate',
-])
-
-const VALID_MODES: readonly string[] = [MountMode.READ, MountMode.WRITE, MountMode.EXEC]
 
 export interface WorkspaceOptions {
   mode?: MountMode
   modeOverrides?: Record<string, MountMode>
+  consistency?: ConsistencyPolicy
+  commandSafeguards?: Record<string, Record<string, CommandSafeguard>>
+  /**
+   * Behaviour for the post-load drift check on fingerprinted reads. Only
+   * consulted by {@link Workspace.load} / {@link Workspace.fromState};
+   * fresh workspaces never have fingerprints to check.
+   *
+   * - `STRICT` (load default): raise {@link ContentDriftError} on the
+   *   first mismatch when the workspace's first `dispatch`/`execute`
+   *   runs.
+   * - `OFF`: skip drift checks entirely and evict the snapshot cache
+   *   for fingerprinted paths.
+   */
+  driftPolicy?: DriftPolicy
   ops?: OpsRegistry
   shellParser?: ShellParser
   shellParserFactory?: () => Promise<ShellParser>
@@ -133,8 +99,8 @@ export interface WorkspaceOptions {
   sessionId?: string
   cacheLimit?: string | number
   cache?: FileCache & Resource
-  observerResource?: Resource
-  observerPrefix?: string
+  index?: IndexConfig
+  observe?: ObserverStore
   python?: {
     autoLoadFromImports?: boolean
     bootstrapCode?: string
@@ -167,7 +133,6 @@ export interface ExecuteOptions {
   provision?: boolean
   sessionId?: string
   agentId?: string
-  native?: boolean
   /**
    * Abort the in-progress execution. Observed cooperatively at recursion
    * boundaries between LIST/PIPELINE/loop iterations and inside `sleep`.
@@ -176,10 +141,15 @@ export interface ExecuteOptions {
    * `DOMException('execute aborted', 'AbortError')`.
    */
   signal?: AbortSignal
-  // When true, do not record this execution in history. Useful for
-  // implicit/utility commands the UI runs (e.g. `stat` for an `open` action)
-  // that shouldn't pollute the user's command history.
-  noHistory?: boolean
+  /**
+   * When false, run without logging a history entry or opening a
+   * recording context; ops emitted by the command flow into the
+   * caller's recorder. Used by the executor's internal evaluations
+   * ($(), eval, source, xargs) and available to SDK callers that need
+   * an unrecorded run. Mirrors GNU: history is appended where the typed
+   * line is read, never inside the evaluator.
+   */
+  record?: boolean
   /**
    * Per-call working directory. Providing this runs the command in an
    * isolated session, like a bash subshell `(cd <cwd> && cmd)`. Mutations
@@ -199,9 +169,6 @@ export interface ExecuteOptions {
   env?: Record<string, string>
 }
 
-const HELP_HINT =
-  'Tip: run `man` to list every available command grouped by resource, `man <cmd>` for a single entry, and `<cmd> --help` for flag details.'
-
 export class Workspace {
   readonly registry: MountRegistry
   readonly sessionManager: SessionManager
@@ -212,9 +179,9 @@ export class Workspace {
   private readonly opened = new Set<Resource>()
   private readonly openOrder: Resource[] = []
   readonly jobTable = new JobTable()
-  private readonly agentId: string
+  readonly agentId: string
   readonly cache: FileCache & Resource
-  readonly history: ExecutionHistory = new ExecutionHistory()
+  private readonly dispatcher: Dispatcher
   readonly observer: Observer
   readonly records: OpRecord[] = []
   readonly fs: WorkspaceFS
@@ -224,6 +191,12 @@ export class Workspace {
   private readonly pythonRuntime: PyodideRuntime
   private fuseMountpointValue: string | null = null
   private fuseOwnedInProcess = false
+  // Drift check state populated by Workspace.load. Empty during normal
+  // runs. Drained on first dispatch/execute after load (see
+  // {@link runPendingDriftCheck}).
+  protected driftPolicy: DriftPolicy = DriftPolicy.OFF
+  protected driftCheckPending = false
+  protected pendingDrift: { mount: Mount; path: string; fingerprint: string }[] = []
 
   get fuseMountpoint(): string | null {
     return this.fuseMountpointValue
@@ -239,14 +212,16 @@ export class Workspace {
   }
 
   constructor(resources: Record<string, Resource>, options: WorkspaceOptions = {}) {
-    const observerResource: Resource = options.observerResource ?? new RAMResource()
-    const observerPrefix = options.observerPrefix ?? '/.sessions'
-    this.observer = new Observer(observerResource, observerPrefix)
-    const withObserver = { ...resources, [observerPrefix]: observerResource }
-    this.registry = new MountRegistry(withObserver, options.mode ?? MountMode.READ, {
+    this.registry = new MountRegistry(resources, options.mode ?? MountMode.READ, {
       ...(options.modeOverrides ?? {}),
-      [observerPrefix]: MountMode.READ,
     })
+    const consistency = options.consistency ?? ConsistencyPolicy.LAZY
+    this.registry.setConsistency(consistency)
+    if (options.index !== undefined) {
+      for (const resource of Object.values(resources)) {
+        resource.setIndex?.(options.index)
+      }
+    }
     this.sessionManager = new SessionManager(options.sessionId ?? 'default')
     this.opsRegistry = options.ops ?? new OpsRegistry()
     this.shellParser = options.shellParser ?? null
@@ -258,9 +233,19 @@ export class Workspace {
       workspaceBridge: this.buildWorkspaceBridge(),
     })
     this.closers.push(() => this.pythonRuntime.close())
+    this.observer = new Observer(options.observe)
+    this.registry.mount(HISTORY_PREFIX, new HistoryViewResource(this.observer), MountMode.READ)
     this.cache = options.cache ?? new RAMFileCacheStore({ limit: options.cacheLimit ?? '512MB' })
+    this.registry.attachFileCache(this.cache)
+    this.dispatcher = new Dispatcher(
+      this.registry,
+      this.cache,
+      this.opsRegistry,
+      (p) => this.resolve(p),
+      consistency,
+    )
     const defaultMount = this.registry.setDefaultMount(this.cache)
-    for (const resource of [...Object.values(withObserver), this.cache]) {
+    for (const resource of [...this.registry.allMounts().map((m) => m.resource), this.cache]) {
       const resourceOps = resource.ops?.()
       if (resourceOps === undefined) continue
       for (const op of resourceOps) {
@@ -279,15 +264,29 @@ export class Workspace {
       for (const cmd of GENERAL_COMMANDS) {
         mount.registerGeneral(cmd)
       }
-      for (const cmd of HISTORY_COMMANDS) {
-        mount.registerGeneral(cmd)
+    }
+    for (const [prefix, safeguards] of Object.entries(options.commandSafeguards ?? {})) {
+      const mount = this.registry.mountForPrefix(prefix)
+      if (mount === null) {
+        throw new Error(`commandSafeguards references unknown mount prefix: ${prefix}`)
+      }
+      for (const [cmd, sg] of Object.entries(safeguards)) {
+        mount.commandSafeguards.set(cmd, sg)
       }
     }
     this.fs = new WorkspaceFS((path) => this.resolve(path), this.opsRegistry)
     for (const m of this.registry.allMounts()) {
-      if (m.prefix === observerPrefix || m.prefix === '/.sessions/') continue
+      if (m.prefix === HISTORY_PREFIX || m.prefix === HISTORY_PREFIX + '/') continue
       void this.forwardAddMountToPython(m.prefix)
     }
+  }
+
+  /**
+   * Command events recorded by the hidden recorder, across all sessions
+   * in timestamp order.
+   */
+  history(): Promise<EventDict[]> {
+    return this.observer.commandEvents()
   }
 
   private buildWorkspaceBridge(): BridgeDispatchFn {
@@ -351,8 +350,33 @@ export class Workspace {
     this.sessionManager.env = value
   }
 
-  createSession(sessionId: string): Session {
-    return this.sessionManager.create(sessionId)
+  createSession(
+    sessionId: string,
+    options: { allowedMounts?: ReadonlySet<string> | null } = {},
+  ): Session {
+    let allowed = options.allowedMounts ?? null
+    if (allowed !== null) {
+      const normalized = new Set<string>()
+      for (const m of allowed) normalized.add('/' + stripSlash(m))
+      for (const p of this.infrastructureMountPrefixes()) normalized.add(p)
+      allowed = normalized
+    }
+    return this.sessionManager.create(sessionId, { allowedMounts: allowed })
+  }
+
+  /**
+   * Mount prefixes a session is always allowed to touch.
+   *
+   * The cache mount (where text-processing commands like `wc` without a
+   * path argument resolve), the device mount, and the history view are
+   * infrastructure: they hold no user credentials, and rejecting them
+   * would break common shell idioms or the history builtin.
+   */
+  private infrastructureMountPrefixes(): Set<string> {
+    const prefixes = new Set<string>(['/dev', HISTORY_PREFIX])
+    const def = this.registry.defaultMount
+    if (def !== null) prefixes.add('/' + stripSlash(def.prefix))
+    return prefixes
   }
 
   getSession(sessionId: string): Session {
@@ -409,12 +433,12 @@ export class Workspace {
   /**
    * Remove a mount by prefix. Closes the resource if the workspace had opened
    * it and no other mount still references it. Drops cache entries under the
-   * unmounted prefix. Forbidden prefixes: cache root, observer prefix, /dev/.
+   * unmounted prefix. Forbidden prefixes: cache root, history view, /dev/.
    * In-flight ops that already resolved their Mount are not interrupted.
    */
   async unmount(prefix: string): Promise<void> {
     if (this.closed) throw new Error('Workspace is closed')
-    const stripped = prefix.replace(/^\/+|\/+$/g, '')
+    const stripped = stripSlash(prefix)
     const norm = stripped ? `/${stripped}/` : '/'
     if (norm === '/' || norm === '/_default/') {
       throw new Error(`cannot unmount cache root: ${prefix}`)
@@ -422,10 +446,8 @@ export class Workspace {
     if (norm === '/dev/') {
       throw new Error(`cannot unmount reserved prefix: /dev/`)
     }
-    const observerStripped = this.observer.prefix.replace(/^\/+|\/+$/g, '')
-    const observerNorm = observerStripped ? `/${observerStripped}/` : '/'
-    if (norm === observerNorm) {
-      throw new Error(`cannot unmount observer prefix: ${this.observer.prefix}`)
+    if (norm === HISTORY_PREFIX + '/') {
+      throw new Error(`cannot unmount history view: ${HISTORY_PREFIX}`)
     }
     const removed = this.registry.unmount(prefix)
     try {
@@ -462,19 +484,93 @@ export class Workspace {
   }
 
   get filePrompt(): string {
-    const parts: string[] = [HELP_HINT]
-    for (const m of this.registry.allMounts()) {
-      const r = m.resource as { prompt?: string; writePrompt?: string }
-      const prompt = r.prompt
-      if (prompt === undefined || prompt === '') continue
-      const prefix = m.prefix.replace(/\/+$/, '') || '/'
-      let section = prompt.replace(/\{prefix\}/g, prefix)
-      if (m.mode !== MountMode.READ && r.writePrompt !== undefined && r.writePrompt !== '') {
-        section += '\n' + r.writePrompt.replace(/\{prefix\}/g, prefix)
-      }
-      parts.push(section)
+    return buildFilePrompt(this.registry.allMounts())
+  }
+
+  /**
+   * Drain the post-load drift check.
+   *
+   * Called once on the first async entry point (`dispatch` or `execute`)
+   * after {@link Workspace.load} with a non-OFF drift policy. Stats every
+   * queued `(mount, path, expected_fingerprint)` triple against the live
+   * source in parallel and throws {@link ContentDriftError} on the first
+   * mismatch. Subsequent calls are no-ops.
+   *
+   * Pinned paths (those whose manifest entry carried a stable revision)
+   * are never enqueued — the pin guarantees bytes match by construction.
+   */
+  protected async runPendingDriftCheck(): Promise<void> {
+    this.driftCheckPending = false
+    if (this.pendingDrift.length === 0) return
+    const pending = this.pendingDrift
+    this.pendingDrift = []
+    const statFn = async (p: string): Promise<unknown> => this.dispatch('stat', p)
+    const results = await Promise.allSettled(
+      pending.map((p) => checkDrift(this.registry, statFn, p.path, p.fingerprint)),
+    )
+    for (const r of results) {
+      if (r.status === 'rejected') throw r.reason
     }
-    return parts.join('\n\n')
+  }
+
+  /**
+   * Walk a loaded snapshot's fingerprint manifest. For entries with a
+   * revision, install the pin on the owning mount so replay reads pin to
+   * that revision. For fingerprint-only entries, queue a `(mount, path,
+   * fingerprint)` tuple for the drift check.
+   *
+   * Idempotent: clearing existing state before installing. Called from
+   * {@link Workspace.load} / {@link Workspace.fromState}.
+   */
+  protected installDriftState(
+    state: WorkspaceStateDict,
+    policy: DriftPolicy = DriftPolicy.STRICT,
+  ): void {
+    this.driftPolicy = policy
+    this.pendingDrift = []
+    this.driftCheckPending = false
+    const entries = state.fingerprints ?? []
+    if (entries.length === 0) return
+    if (policy === DriftPolicy.OFF) {
+      // Evict snapshot cache for fingerprinted paths so reads serve live.
+      for (const e of entries) {
+        void this.cache.remove(e.path)
+      }
+      return
+    }
+    for (const e of entries) {
+      const mount = this.registry.mountFor(e.path)
+      if (mount === null) continue
+      if (e.revision !== undefined && e.revision !== null) {
+        mount.revisions.set(e.path, e.revision)
+        continue
+      }
+      if (e.fingerprint !== undefined && e.fingerprint !== null) {
+        this.pendingDrift.push({ mount, path: e.path, fingerprint: e.fingerprint })
+      }
+    }
+    this.driftCheckPending = this.pendingDrift.length > 0
+    const liveOnly = state.live_only_mounts ?? []
+    if (liveOnly.length > 0) {
+      console.warn(
+        `Workspace.load: ${String(liveOnly.length)} mount(s) opt out of snapshot replay; ` +
+          `reads against them will serve current state with no drift detection: ` +
+          liveOnly.join(', '),
+      )
+    }
+  }
+
+  /**
+   * Read-only view of every mount's installed revision pins. Useful for
+   * tests, audit, and debugging. Empty until a snapshot is loaded with
+   * revisions in its manifest.
+   */
+  get revisions(): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const m of this.registry.allMounts()) {
+      for (const [path, revision] of m.revisions) out[path] = revision
+    }
+    return out
   }
 
   async stat(path: string): Promise<unknown> {
@@ -491,6 +587,9 @@ export class Workspace {
     args: readonly unknown[] = [],
     kwargs: OpKwargs = {},
   ): Promise<unknown> {
+    if (this.driftCheckPending) {
+      await this.runPendingDriftCheck()
+    }
     const [resource, spec, mode] = await this.resolve(path)
     if (mode === MountMode.READ && this.opsRegistry.find(opName, resource.kind)?.write === true) {
       throw new Error(`mount at '${path}' is read-only`)
@@ -499,14 +598,28 @@ export class Workspace {
       kwargs.index === undefined && resource.index !== undefined
         ? { ...kwargs, index: resource.index }
         : kwargs
-    return this.opsRegistry.call(
-      opName,
-      resource.kind,
-      resource.accessor ?? NOOP_ACCESSOR_INSTANCE,
-      spec,
-      args,
-      fullKwargs,
+    const mount = this.registry.mountFor(path)
+    const opOverride = mount?.commandSafeguards.get(opName) ?? null
+    const opTimeout = opOverride !== null ? opOverride.timeoutSeconds : null
+    const result = await runWithRevisions(
+      mount !== null && mount.revisions.size > 0 ? mount.revisions : null,
+      async () =>
+        runWithTimeout(
+          Promise.resolve(
+            this.opsRegistry.call(
+              opName,
+              resource.kind,
+              resource.accessor ?? NOOP_ACCESSOR_INSTANCE,
+              spec,
+              args,
+              fullKwargs,
+            ),
+          ),
+          opTimeout,
+          opName,
+        ),
     )
+    return applyOpSafeguard(result, opOverride)
   }
 
   async resolve(path: string): Promise<[Resource, PathSpec, MountMode]> {
@@ -515,12 +628,28 @@ export class Workspace {
     }
     const result = this.registry.resolve(path)
     const [resource] = result
+    const mount = this.registry.mountFor(path)
+    if (mount !== null) assertMountAllowed(mount.prefix)
     if (!this.opened.has(resource)) {
       await resource.open()
       this.opened.add(resource)
       this.openOrder.push(resource)
     }
     return result
+  }
+
+  /**
+   * Drop file-cache + stale parent index after a write to `path`.
+   *
+   * Single source of truth for post-write invalidation. Called from the
+   * dispatch closure so a write through any code path (including direct
+   * Ops) sees the same invalidation rules: file cache is dropped only
+   * for remote-backed mounts, and the parent directory index is dirtied
+   * for any mount that maintains an index. No-op for paths that resolve
+   * to no known mount.
+   */
+  async invalidateAfterWriteByPath(path: string): Promise<void> {
+    await this.dispatcher.invalidateAfterWriteByPath(path)
   }
 
   async provision(command: string): Promise<ProvisionResult> {
@@ -536,7 +665,14 @@ export class Workspace {
         exitCode: res.exitCode,
       })
     }
-    return provisionNode({ registry: this.registry, executeFn }, rootNode, session)
+    const provName = command.trim().split(/\s+/)[0] ?? ''
+    const provResolved = provName !== '' ? resolveSafeguard(provName) : null
+    const provTimeout = provResolved !== null ? provResolved.timeoutSeconds : null
+    return runWithTimeout(
+      provisionNode({ registry: this.registry, executeFn }, rootNode, session),
+      provTimeout,
+      provName !== '' ? provName : '?',
+    )
   }
 
   async execute(
@@ -555,46 +691,33 @@ export class Workspace {
     if (options.signal?.aborted === true) {
       throw makeAbortError()
     }
+    if (this.driftCheckPending) {
+      await this.runPendingDriftCheck()
+    }
     const stdin = options.stdin ?? null
     if (options.provision === true) return this.provision(command)
     const parser = await this.getShellParser()
-    const opsRegistry = this.opsRegistry
     const root = parser.parse(command)
+    const offending = findSyntaxError(root)
+    if (offending !== null) {
+      const snippet = offending.trim().slice(0, 40)
+      const errMsg =
+        snippet.length > 0
+          ? `mirage: syntax error near '${snippet}'\n`
+          : 'mirage: syntax error in command\n'
+      const err = new TextEncoder().encode(errMsg)
+      return new ExecuteResult(new Uint8Array(), err, 2)
+    }
     const rootNode = root as unknown as TSNodeLike
 
-    const cache = this.cache
-    const dispatch: DispatchFn = async (opName, path, args, kwargs) => {
-      const [resource, scope, mode] = await this.resolve(path.original)
-      const cacheable = resource.isRemote === true
-      if (cacheable && DISPATCH_READ_OPS.has(opName)) {
-        const cached = await cache.get(path.original)
-        if (cached !== null) {
-          return [cached, new IOResult({ reads: { [path.original]: cached } })]
-        }
-      }
-      if (mode === MountMode.READ && opsRegistry.find(opName, resource.kind)?.write === true) {
-        throw new Error(`mount at '${path.original}' is read-only`)
-      }
-      const fullKwargs: OpKwargs =
-        kwargs?.index === undefined && resource.index !== undefined
-          ? { ...(kwargs ?? {}), index: resource.index }
-          : (kwargs ?? {})
-      const result = await opsRegistry.call(
-        opName,
-        resource.kind,
-        resource.accessor ?? NOOP_ACCESSOR_INSTANCE,
-        scope,
-        args ?? [],
-        fullKwargs,
-      )
-      if (cacheable && DISPATCH_WRITE_OPS.has(opName)) {
-        await cache.remove(path.original)
-      }
-      return [result, new IOResult()]
-    }
+    const dispatch: DispatchFn = this.dispatcher.dispatch
 
     const executeFn: ExecuteFn = async (cmd) => {
-      const innerOpts: ExecuteOptions & { provision?: false } = {}
+      // The executor's internal evals ($(), eval, source, xargs) are
+      // never a typed line: they must not record a history entry or open
+      // their own recording context, so their ops flow into this line's
+      // recorder (GNU: history is appended by the line reader).
+      const innerOpts: ExecuteOptions & { provision?: false } = { record: false }
       if (options.signal !== undefined) innerOpts.signal = options.signal
       const res = await this.execute(cmd, innerOpts)
       return new IOResult({
@@ -625,52 +748,79 @@ export class Workspace {
       ensureOpen,
       unmount: (prefix: string) => this.unmount(prefix),
       pythonRuntime: this.pythonRuntime,
-      history: this.history,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
     }
     const targetSessionId = options.sessionId ?? this.sessionManager.defaultId
     const targetSession = this.sessionManager.get(targetSessionId)
     const useOverride = options.cwd !== undefined || options.env !== undefined
     const effectiveSession = useOverride
-      ? new Session({
-          sessionId: targetSession.sessionId,
-          cwd: options.cwd ?? targetSession.cwd,
-          env: { ...targetSession.env, ...(options.env ?? {}) },
-          createdAt: targetSession.createdAt,
-          functions: { ...targetSession.functions },
-          lastExitCode: targetSession.lastExitCode,
-          positionalArgs: [...targetSession.positionalArgs],
+      ? targetSession.fork({
+          ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+          ...(options.env !== undefined ? { env: { ...targetSession.env, ...options.env } } : {}),
         })
       : targetSession
-    const [[stdout, io], opRecords] = await runWithRecording(() =>
-      executeNode(deps, rootNode, effectiveSession, stdin, null),
-    )
-    const materialized = await applyBarrier(stdout, io, BarrierPolicy.VALUE)
-    io.syncExitCode()
+    // The line-reader decision (GNU: history is appended where the typed
+    // line is read, never inside the evaluator). Internal evaluations run
+    // with record:false: no new recording scope, so their ops land in the
+    // caller's recorder, and no command entry is logged for them.
+    const isLine = options.record !== false
+    const runBody = (): Promise<[ByteSource | null, IOResult, ExecutionNode]> =>
+      runWithSession(effectiveSession, () =>
+        runCommandTree(deps, rootNode, effectiveSession, stdin),
+      )
+    let execResult: [[ByteSource | null, IOResult, ExecutionNode], OpRecord[]]
+    try {
+      execResult = isLine ? await runWithRecording(runBody) : [await runBody(), []]
+    } catch (err) {
+      if (err instanceof CommandTimeoutError) {
+        const msg = new TextEncoder().encode(`${err.message}\n`)
+        targetSession.lastExitCode = 124
+        return new ExecuteResult(new Uint8Array(), msg, 124)
+      }
+      throw err
+    }
+    const [[materialized, io], opRecords] = execResult
     targetSession.lastExitCode = io.exitCode
-    await applyIo(this.cache, io)
-    const stdoutBytes = materialized === null ? new Uint8Array() : await materialize(materialized)
+    let stdoutBytes: Uint8Array
+    try {
+      await this.dispatcher.applyIo(io)
+      stdoutBytes = materialized === null ? new Uint8Array() : await materialize(materialized)
+    } catch (err) {
+      // Lazy reads can fail while draining (e.g. head/tail that open the
+      // stream mid-pipeline, or a backend size guard thrown on the first
+      // pull); surface that as a failed command, not a crash. The command
+      // name is the first token of the pipeline's failing stage; for a bare
+      // command it is simply the command.
+      const strerror = gnuStrerror((err as { code?: string }).code)
+      const cmdName = command.trim().split(/\s+/)[0] ?? command
+      io.exitCode = 1
+      io.stderr = new TextEncoder().encode(
+        strerror !== null
+          ? `${cmdName}: ${errorVirtualPath(err)}: ${strerror}\n`
+          : `${err instanceof Error ? err.message : String(err)}\n`,
+      )
+      targetSession.lastExitCode = 1
+      stdoutBytes = new Uint8Array()
+    }
     const stderrBytes = await materialize(io.stderr)
 
+    // One rule on every path: an op that happened is always accounted, in
+    // byte accounting (which feeds snapshot fingerprints/drift) and as
+    // observer op events. The command event's exit_code says whether the
+    // line that emitted them succeeded. Internal evals (record:false) have
+    // an empty opRecords here: their ops were accounted by the line above.
     this.records.push(...opRecords)
-    const sessionId = targetSession.sessionId
-    const sessionCwd = effectiveSession.cwd
-    for (const rec of opRecords) {
-      await this.observer.logOp(rec, callAgentId, sessionId, sessionCwd)
+    if (isLine) {
+      io.stdout = stdoutBytes
+      await this.observer.logExecution(
+        command,
+        io,
+        opRecords,
+        callAgentId,
+        targetSession.sessionId,
+        effectiveSession.cwd,
+      )
     }
-    const record = new ExecutionRecord({
-      agent: callAgentId,
-      command,
-      stdout: stdoutBytes,
-      exitCode: io.exitCode,
-      tree: new ExecutionNode({ command, exitCode: io.exitCode }),
-      timestamp: Date.now() / 1000,
-      sessionId,
-    })
-    if (options.noHistory !== true) {
-      await this.history.append(record)
-    }
-    await this.observer.logCommand(record, sessionCwd)
 
     return new ExecuteResult(stdoutBytes, stderrBytes, io.exitCode)
   }
@@ -684,83 +834,8 @@ export class Workspace {
     return handlePythonRepl(code, sessionId, { runtime: this.pythonRuntime })
   }
 
-  async toStateDict(): Promise<WorkspaceStateDict> {
-    const observerPrefix = normalizePrefix(this.observer.prefix)
-    const skip = new Set([observerPrefix, '/.sessions/', '/dev/'])
-    const mounts = [...this.registry.allMounts()].filter((m) => !skip.has(m.prefix))
-    const mountSnapshots: MountSnapshot[] = []
-    for (let i = 0; i < mounts.length; i++) {
-      const m = mounts[i]
-      if (m === undefined) continue
-      const resource = m.resource as unknown as {
-        kind: string
-        getState: () => ResourceState | Promise<ResourceState>
-      }
-      const state = await Promise.resolve(resource.getState())
-      mountSnapshots.push({
-        index: i,
-        prefix: m.prefix,
-        mode: m.mode,
-        resourceClass: resource.kind,
-        resourceState: state,
-      })
-    }
-    const ramCache = this.cache instanceof RAMFileCacheStore ? this.cache : null
-    const cacheEntries =
-      ramCache !== null
-        ? ramCache.snapshotEntries().map(({ key, entry }) => ({
-            key,
-            data: ramCache.store.files.get(key) ?? new Uint8Array(),
-            fingerprint: entry.fingerprint,
-            ttl: entry.ttl,
-            cachedAt: entry.cachedAt,
-            size: entry.size,
-          }))
-        : []
-    const historyRecords = this.history.entries().map((r) => recordToSnapshot(r))
-    return {
-      version: SNAPSHOT_FORMAT_VERSION,
-      mounts: mountSnapshots,
-      cache: { limit: this.cache.cacheLimit, entries: cacheEntries },
-      history: historyRecords,
-    }
-  }
-
-  async restore(state: WorkspaceStateDict): Promise<void> {
-    for (const m of state.mounts) {
-      if (m.resourceState.needsOverride === true) continue
-      const mount = this.registry.mountFor(m.prefix)
-      if (mount === null) continue
-      const resource = mount.resource as unknown as {
-        loadState: (state: ResourceState) => void | Promise<void>
-      }
-      await Promise.resolve(resource.loadState(m.resourceState as RAMResourceState))
-    }
-    if (this.cache instanceof RAMFileCacheStore) {
-      for (const e of state.cache.entries) {
-        this.cache.loadEntry(
-          e.key,
-          e.data,
-          new CacheEntry({
-            size: e.size,
-            cachedAt: e.cachedAt,
-            fingerprint: e.fingerprint,
-            ttl: e.ttl,
-          }),
-        )
-      }
-    }
-    this.history.clear()
-    for (const r of state.history) {
-      await this.history.append(recordFromSnapshot(r))
-    }
-  }
-
   async snapshot(target: string): Promise<number> {
-    const state = await this.toStateDict()
-    saveSnapshotToFile(state, target)
-    const bytes = encodeSnapshot(state)
-    return bytes.byteLength
+    return writeSnapshot(this, target)
   }
 
   static async load<T extends typeof Workspace>(
@@ -769,7 +844,8 @@ export class Workspace {
     options: WorkspaceOptions = {},
     overrides: Record<string, Resource> = {},
   ): Promise<InstanceType<T>> {
-    const state = typeof source === 'string' ? loadSnapshotFromFile(source) : decodeSnapshot(source)
+    const bytes = typeof source === 'string' ? readFileBytes(source) : source
+    const state = (await readSnapshotTar(bytes)) as WorkspaceStateDict
     return this.fromState(state, options, overrides)
   }
 
@@ -779,47 +855,41 @@ export class Workspace {
     options: WorkspaceOptions = {},
     overrides: Record<string, Resource> = {},
   ): Promise<InstanceType<T>> {
+    const ws = await this._fromState(state, options, overrides)
+    ws.installDriftState(state, options.driftPolicy ?? DriftPolicy.STRICT)
+    return ws
+  }
+
+  protected static async _fromState<T extends typeof Workspace>(
+    this: T,
+    state: WorkspaceStateDict,
+    options: WorkspaceOptions = {},
+    overrides: Record<string, Resource> = {},
+  ): Promise<InstanceType<T>> {
+    const args = buildMountArgs(state, overrides)
     const resources: Record<string, Resource> = {}
-    const needsRestore: MountSnapshot[] = []
-    for (const m of state.mounts) {
-      if (m.resourceState.needsOverride === true) {
-        const override = overrides[m.prefix]
-        if (override === undefined) {
-          throw new Error(
-            `Workspace.fromState: resource for mount '${m.prefix}' has needsOverride=true; pass it via overrides['${m.prefix}']`,
-          )
-        }
-        resources[m.prefix] = override
-      } else {
-        const r = new RAMResource()
-        r.loadState(m.resourceState as RAMResourceState)
-        resources[m.prefix] = r
-        needsRestore.push(m)
-      }
-    }
     const snapshotModes: Record<string, MountMode> = {}
-    for (const m of state.mounts) {
-      if (!VALID_MODES.includes(m.mode)) {
-        throw new Error(`Workspace.fromState: mount '${m.prefix}' has invalid mode '${m.mode}'`)
-      }
-      snapshotModes[m.prefix] = m.mode as MountMode
+    for (const [prefix, [resource, mode]] of Object.entries(args.mountArgs)) {
+      resources[prefix] = resource
+      snapshotModes[prefix] = mode
     }
     const mergedOptions: WorkspaceOptions = {
+      sessionId: args.defaultSessionId,
+      agentId: args.defaultAgentId,
       ...options,
       modeOverrides: { ...(options.modeOverrides ?? {}), ...snapshotModes },
     }
     const ws = new this(resources, mergedOptions) as InstanceType<T>
-    await ws.restore({ ...state, mounts: needsRestore })
+    await applyStateDict(ws, state)
     return ws
   }
 
   async copy(options: WorkspaceOptions = {}): Promise<this> {
     // Mirrors Python's Workspace.copy(): remote-backed resources (Redis, S3,
-    // GDrive — marked needsOverride) are reused; local resources (RAM, Disk)
-    // are reconstructed from snapshot state.
-    const state = await this.toStateDict()
-    const bytes = encodeSnapshot(state)
-    const cloned = decodeSnapshot(bytes)
+    // GDrive — with redacted config) are reused; local resources (RAM, Disk)
+    // are reconstructed from snapshot state. Uses _fromState directly (no tar
+    // round-trip, no drift install) like Python's `type(self)._from_state`.
+    const state = await toStateDict(this)
     const opts: WorkspaceOptions = {
       mode: options.mode ?? MountMode.WRITE,
       agentId: options.agentId ?? this.agentId,
@@ -829,19 +899,24 @@ export class Workspace {
     if (parser !== null) opts.shellParser = parser
     const overrides: Record<string, Resource> = {}
     for (const mount of this.registry.allMounts()) {
-      for (const snap of cloned.mounts) {
-        if (snap.prefix === mount.prefix && snap.resourceState.needsOverride === true) {
+      for (const snap of state.mounts) {
+        if (snap.prefix === mount.prefix && resourceStateRequiresOverride(snap.resource_state)) {
           overrides[mount.prefix] = mount.resource
         }
       }
     }
     const Ctor = this.constructor as typeof Workspace
-    return (await Ctor.fromState(cloned, opts, overrides)) as this
+    return (await Ctor._fromState(state, opts, overrides)) as this
   }
 
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
+    const drainTasks = [...(this.cache.drainTasks?.values() ?? [])]
+    for (const task of drainTasks) {
+      await task
+    }
+    await this.cache.clear()
     for (const fn of this.closers.splice(0)) {
       try {
         await fn()
@@ -862,9 +937,4 @@ export class Workspace {
     this.opened.clear()
     this.openOrder.length = 0
   }
-}
-
-function normalizePrefix(prefix: string): string {
-  const s = prefix.replace(/^\/+|\/+$/g, '')
-  return s === '' ? '/' : `/${s}/`
 }

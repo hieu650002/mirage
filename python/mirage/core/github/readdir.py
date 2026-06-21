@@ -17,6 +17,7 @@ import logging
 from mirage.cache.index import IndexCacheStore, IndexEntry, LookupStatus
 from mirage.core.github.tree import fetch_dir_tree
 from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 log = logging.getLogger(__name__)
 
@@ -25,11 +26,15 @@ async def readdir(accessor, path: PathSpec,
                   index: IndexCacheStore) -> list[str]:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.directory if path.pattern else path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
+    path = path.rstrip("/") or "/"
     listing = await index.list_dir(path)
     if listing.entries is not None:
         if prefix and listing.entries and not listing.entries[0].startswith(
@@ -38,8 +43,9 @@ async def readdir(accessor, path: PathSpec,
         return listing.entries
     if listing.status == LookupStatus.NOT_FOUND:
         if accessor.truncated:
-            return await _fallback_readdir(accessor, path, index, prefix)
-        raise FileNotFoundError(path)
+            return await _fallback_readdir(accessor, path, index, virtual,
+                                           prefix)
+        raise enoent(virtual)
     return []
 
 
@@ -47,12 +53,13 @@ async def _fallback_readdir(
     accessor,
     path: str,
     index: IndexCacheStore,
+    virtual: str,
     prefix: str = "",
 ) -> list[str]:
     """Per-directory tree fetch when recursive tree was truncated."""
     parent_sha = await _resolve_dir_sha(accessor, path, index)
     if parent_sha is None:
-        raise FileNotFoundError(path)
+        raise enoent(virtual)
     entries = await fetch_dir_tree(accessor.config, accessor.owner,
                                    accessor.repo, parent_sha)
     norm = "/" + path.strip("/")

@@ -16,7 +16,10 @@ import fnmatch
 
 from mirage.accessor.trello import TrelloAccessor
 from mirage.cache.index import IndexCacheStore
+from mirage.commands.builtin.find_helper import (_parse_depth,
+                                                 _validate_size_mtime)
 from mirage.commands.builtin.trello._provision import metadata_provision
+from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.core.trello.glob import resolve_glob
@@ -73,21 +76,25 @@ async def find(
     path: str | None = None,
     mindepth: str | None = None,
     prefix: str = "",
+    index: IndexCacheStore = None,
     **_extra: object,
 ) -> tuple[ByteSource | None, IOResult]:
-    index: IndexCacheStore | None = _extra.get("index")
+    index: IndexCacheStore | None = index
     paths = await resolve_glob(accessor, paths, index)
     p0 = paths[0]
     root = p0.original
     pfx = p0.prefix
+    max_depth_val = (_parse_depth(maxdepth, "-maxdepth")
+                     if maxdepth is not None else None)
+    min_depth_val = (_parse_depth(mindepth, "-mindepth")
+                     if mindepth is not None else None)
+    _validate_size_mtime(size, mtime)
     all_paths = await _walk(accessor, p0, index)
     stripped_root = root
     if pfx and stripped_root.startswith(pfx):
         stripped_root = stripped_root[len(pfx):] or "/"
     root_depth = stripped_root.strip("/").count("/") if stripped_root.strip(
         "/") else 0
-    max_depth_val = int(maxdepth) if maxdepth is not None else None
-    min_depth_val = int(mindepth) if mindepth is not None else None
     wanted_type = {"d": FileType.DIRECTORY, "f": None}.get(type)
     results: list[str] = []
     for entry_path in all_paths:
@@ -122,4 +129,4 @@ async def find(
         else:
             value = entry_path
         results.append(value)
-    return "\n".join(results).encode(), IOResult()
+    return format_records(results), IOResult()

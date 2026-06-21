@@ -23,7 +23,7 @@ const DEC = new TextDecoder()
 
 async function runFind(
   paths: PathSpec[],
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   options: { index?: RAMIndexCacheStore; transport?: FakeDiscordTransport } = {},
 ): Promise<string> {
   const cmd = DISCORD_FIND[0]
@@ -46,10 +46,10 @@ async function runFind(
 }
 
 describe('discord find', () => {
-  it('returns *.jsonl files under a 4-level VFS channel directory', async () => {
+  it('returns chat.jsonl files under a 5-level VFS channel directory', async () => {
     const idx = new RAMIndexCacheStore()
-    await seedGuild(idx, '/mnt/discord', 'My_Server__G1', 'G1')
-    await seedChannel(idx, '/mnt/discord', 'My_Server__G1', 'general__C1', 'C1', {
+    await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
+    await seedChannel(idx, '/mnt/discord', 'My Server__G1', 'general__C1', 'C1', {
       dates: ['2024-01-01', '2024-01-02'],
     })
     const transport = new FakeDiscordTransport(() => {
@@ -58,17 +58,35 @@ describe('discord find', () => {
     const out = await runFind(
       [
         new PathSpec({
-          original: '/mnt/discord/My_Server__G1/channels/general__C1',
-          directory: '/mnt/discord/My_Server__G1/channels/general__C1',
+          original: '/mnt/discord/My Server__G1/channels/general__C1',
+          directory: '/mnt/discord/My Server__G1/channels/general__C1',
           resolved: false,
           prefix: '/mnt/discord',
         }),
       ],
-      { name: '*.jsonl' },
+      { name: 'chat.jsonl' },
       { index: idx, transport },
     )
     const lines = out.split('\n').filter((s) => s !== '')
-    expect(lines).toContain('/mnt/discord/My_Server__G1/channels/general__C1/2024-01-01.jsonl')
-    expect(lines).toContain('/mnt/discord/My_Server__G1/channels/general__C1/2024-01-02.jsonl')
+    expect(lines).toContain('/mnt/discord/My Server__G1/channels/general__C1/2024-01-01/chat.jsonl')
+    expect(lines).toContain('/mnt/discord/My Server__G1/channels/general__C1/2024-01-02/chat.jsonl')
+  })
+
+  it('exits 1 with a clean error for an invalid -maxdepth', async () => {
+    const cmd = DISCORD_FIND[0]
+    if (cmd === undefined) throw new Error('find not registered')
+    const resource = makeFakeResource(new FakeDiscordTransport())
+    const result = await cmd.fn(
+      resource.accessor,
+      [new PathSpec({ original: '/mnt/discord', directory: '/mnt/discord', resolved: false })],
+      [],
+      { stdin: null, flags: { maxdepth: 'abc' }, filetypeFns: null, cwd: '/', resource },
+    )
+    expect(result).not.toBeNull()
+    const [out, io] = result as [unknown, { exitCode: number; stderr: AsyncIterable<Uint8Array> }]
+    expect(out).toBeNull()
+    expect(io.exitCode).toBe(1)
+    const buf = io.stderr instanceof Uint8Array ? io.stderr : await materialize(io.stderr)
+    expect(DEC.decode(buf)).toBe("find: invalid argument 'abc' to '-maxdepth'\n")
   })
 })

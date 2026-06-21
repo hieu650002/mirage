@@ -14,6 +14,7 @@
 
 import type { PathSpec } from '../../types.ts'
 import type { S3Accessor } from '../../accessor/s3.ts'
+import { invalidateAfterUnlink } from '../../cache/context.ts'
 import { loadS3Module, rawPathOf, s3Prefix, withClient } from './_client.ts'
 
 export async function rmR(accessor: S3Accessor, path: PathSpec): Promise<void> {
@@ -23,7 +24,7 @@ export async function rmR(accessor: S3Accessor, path: PathSpec): Promise<void> {
   // with this prefix".
   const { DeleteObjectsCommand, ListObjectsV2Command } = await loadS3Module(accessor.config)
   const raw = rawPathOf(path)
-  const pfx = s3Prefix(raw)
+  const pfx = s3Prefix(raw, accessor.config)
   await withClient(accessor.config, async (client) => {
     let continuationToken: string | undefined
     do {
@@ -52,4 +53,5 @@ export async function rmR(accessor: S3Accessor, path: PathSpec): Promise<void> {
       continuationToken = resp.IsTruncated === true ? resp.NextContinuationToken : undefined
     } while (continuationToken !== undefined)
   })
+  await invalidateAfterUnlink(path)
 }

@@ -17,13 +17,9 @@ import { LookupStatus } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { PathSpec } from '../../types.ts'
 import { fetchDirTree } from './_client.ts'
-import { indexEntryForChild } from './entry.ts'
-
-function enoent(path: string): Error {
-  const e = new Error(`ENOENT: ${path}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
+import { IndexEntry } from '../../cache/index/config.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 function stripPrefix(path: PathSpec): string {
   const prefix = path.prefix
@@ -35,7 +31,7 @@ function stripPrefix(path: PathSpec): string {
 }
 
 function normalizeKey(p: string): string {
-  const trimmed = p.replace(/^\/+|\/+$/g, '')
+  const trimmed = stripSlash(p)
   return trimmed === '' ? '/' : `/${trimmed}`
 }
 
@@ -61,7 +57,7 @@ export async function readdir(
     if (accessor.truncated) {
       return fallbackReaddir(accessor, key, index, prefix)
     }
-    throw enoent(stripped)
+    throw enoent(path)
   }
   return []
 }
@@ -73,14 +69,23 @@ async function fallbackReaddir(
   prefix: string,
 ): Promise<string[]> {
   const parentSha = await resolveDirSha(accessor, key, index)
-  if (parentSha === null) throw enoent(key)
+  if (parentSha === null) throw enoent(`${prefix}/${key}`)
   const entries = await fetchDirTree(accessor.transport, accessor.owner, accessor.repo, parentSha)
   const childKeys: string[] = []
-  const childEntries: [string, ReturnType<typeof indexEntryForChild>][] = []
+  const childEntries: [string, IndexEntry][] = []
   for (const e of entries) {
     const childKey = `${key === '/' ? '' : key}/${e.path}`
     childKeys.push(childKey)
-    childEntries.push([childKey, indexEntryForChild(e.path, e.sha, e.type, e.size ?? null)])
+    childEntries.push([
+      childKey,
+      new IndexEntry({
+        id: e.sha,
+        name: e.path,
+        vfsName: e.path,
+        resourceType: e.type === 'tree' ? 'folder' : 'file',
+        size: e.size ?? null,
+      }),
+    ])
   }
   childKeys.sort()
   await index.setDir(key, childEntries)
@@ -96,8 +101,7 @@ async function resolveDirSha(
   if (result.entry !== undefined && result.entry !== null) {
     return result.entry.id
   }
-  const parts = key
-    .replace(/^\/+|\/+$/g, '')
+  const parts = stripSlash(key)
     .split('/')
     .filter((p) => p !== '')
   let currentSha = accessor.ref
@@ -115,7 +119,13 @@ async function resolveDirSha(
     currentPath += `/${part}`
     await index.put(
       currentPath,
-      indexEntryForChild(part, found.sha, found.type, found.size ?? null),
+      new IndexEntry({
+        id: found.sha,
+        name: part,
+        vfsName: part,
+        resourceType: found.type === 'tree' ? 'folder' : 'file',
+        size: found.size ?? null,
+      }),
     )
   }
   return currentSha

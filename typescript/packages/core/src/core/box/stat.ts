@@ -16,12 +16,8 @@ import type { BoxAccessor } from '../../accessor/box.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { readdir as coreReaddir } from './readdir.ts'
-
-function enoent(p: string): Error & { code: string } {
-  const e = new Error(`ENOENT: ${p}`) as Error & { code: string }
-  e.code = 'ENOENT'
-  return e
-}
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 function guessType(name: string): FileType {
   const lower = name.toLowerCase()
@@ -54,7 +50,7 @@ export async function stat(
   const prefix = path.prefix
   let p = path.original
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   if (key === '') return new FileStat({ name: '/', type: FileType.DIRECTORY })
 
   if (index === undefined) throw enoent(path.original)

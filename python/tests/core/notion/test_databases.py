@@ -106,14 +106,6 @@ async def test_read_database_json_returns_database_metadata(
                 "last_edited_time": "2026-01-03T00:00:00Z",
             }),
     )
-    monkeypatch.setattr(
-        notion_read,
-        "query_database",
-        AsyncMock(return_value=[{
-            "object": "page",
-            "id": ROW_ID
-        }]),
-    )
     data = await read(accessor,
                       f"/databases/Tasks__{DATABASE_ID}/database.json")
     import json
@@ -121,7 +113,9 @@ async def test_read_database_json_returns_database_metadata(
     decoded = json.loads(data)
     assert decoded["database_id"] == DATABASE_ID
     assert decoded["title"] == "Tasks"
-    assert decoded["row_count"] == 1
+    assert decoded["properties"] == {"Name": {"type": "title"}}
+    assert "rows" not in decoded
+    assert "row_count" not in decoded
 
 
 @pytest.mark.asyncio

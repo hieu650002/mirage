@@ -1,0 +1,40 @@
+{
+  "_meta": {
+    "filetypes": [],
+    "has_aggregate": false,
+    "has_provision": false,
+    "has_write": false,
+    "resources": [
+      "box",
+      "discord",
+      "disk",
+      "dropbox",
+      "email",
+      "gdocs",
+      "gdrive",
+      "github",
+      "gmail",
+      "gsheets",
+      "gslides",
+      "hf_buckets",
+      "hf_datasets",
+      "hf_models",
+      "hf_spaces",
+      "linear",
+      "notion",
+      "ram",
+      "redis",
+      "s3",
+      "slack",
+      "ssh",
+      "trello"
+    ]
+  },
+  "description": null,
+  "ignore_tokens": [],
+  "options": [],
+  "positional": [],
+  "rest": {
+    "kind": "text"
+  }
+}

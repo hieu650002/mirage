@@ -38,7 +38,7 @@ describe('TrelloResource (browser)', () => {
   it('constructs with apiKey/apiToken and exposes expected fields', () => {
     const r = new TrelloResource({ apiKey: 'k', apiToken: 't' })
     expect(r.kind).toBe(ResourceName.TRELLO)
-    expect(r.isRemote).toBe(true)
+    expect(r.cachesReads).toBe(true)
     expect(r.indexTtl).toBe(600)
     expect(r.config).toEqual({ apiKey: 'k', apiToken: 't' })
     expect(typeof r.prompt).toBe('string')
@@ -54,8 +54,8 @@ describe('TrelloResource (browser)', () => {
     const r = new TrelloResource({ apiKey: 'k', apiToken: 't', workspaceId: 'w1' })
     const state = await r.getState()
     expect(state.type).toBe(ResourceName.TRELLO)
-    expect(state.needsOverride).toBe(true)
-    expect(state.redactedFields).toEqual(['apiKey', 'apiToken'])
+    expect(state).not.toHaveProperty('needsOverride')
+    expect(state).not.toHaveProperty('redactedFields')
     expect(state.config).toEqual({
       apiKey: '<REDACTED>',
       apiToken: '<REDACTED>',

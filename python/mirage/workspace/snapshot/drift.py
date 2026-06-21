@@ -1,0 +1,178 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import logging
+
+from mirage.types import DriftPolicy, FingerprintKey
+
+logger = logging.getLogger(__name__)
+
+
+class ContentDriftError(Exception):
+    """Raised at load time when a remote resource's live fingerprint
+    differs from what was recorded in the snapshot.
+
+    Indicates the underlying source has been modified since the snapshot
+    was taken, so reading current bytes would silently diverge from what
+    the original agent saw. Surface to the caller rather than mask.
+
+    Attributes:
+        path (str): Virtual path that drifted.
+        snapshot_fingerprint (str): Recorded marker.
+        live_fingerprint (str | None): Marker observed at load time.
+    """
+
+    def __init__(self, path: str, snapshot_fingerprint: str,
+                 live_fingerprint: str | None) -> None:
+        self.path = path
+        self.snapshot_fingerprint = snapshot_fingerprint
+        self.live_fingerprint = live_fingerprint
+        live_repr = repr(
+            live_fingerprint) if live_fingerprint is not None else "<missing>"
+        super().__init__(
+            f"{path}: snapshot fingerprint {snapshot_fingerprint!r}, "
+            f"live {live_repr}; data on the underlying source has changed "
+            "since the snapshot was taken")
+
+
+def capture_fingerprints(ws) -> list[dict]:
+    """Walk session ops and emit one entry per distinct read on a
+    ``SUPPORTS_SNAPSHOT`` mount.
+
+    Pure aggregation over ``ws._ops.records``. Each read ``OpRecord``
+    carries the ``fingerprint`` and/or ``revision`` the backend
+    returned at the moment the agent read the bytes (populated from
+    the GET response, not a fresh stat at snapshot time). This avoids
+    the race where the upstream changes between read and snapshot.
+
+    Skips paths whose owning mount has ``SUPPORTS_SNAPSHOT=False``
+    (live-only backends like Gmail/Slack/Linear) and reads where the
+    backend returned neither marker.
+
+    Args:
+        ws: Workspace whose ops log to walk.
+
+    Returns:
+        list[dict]: One entry per (recorded, fingerprinted) path, with
+        ``PATH``, ``MOUNT_PREFIX`` and at least one of ``FINGERPRINT``
+        or ``REVISION``. Both may be present on versioned backends that
+        return ETag and VersionId on every GET.
+    """
+    seen: set[str] = set()
+    out: list[dict] = []
+    for rec in ws._ops.records:
+        if rec.op != "read" or rec.path in seen:
+            continue
+        if rec.fingerprint is None and rec.revision is None:
+            continue
+        seen.add(rec.path)
+        try:
+            mount = ws._registry.mount_for(rec.path)
+        except ValueError:
+            continue
+        if not getattr(mount.resource, "SUPPORTS_SNAPSHOT", False):
+            continue
+        entry: dict = {
+            FingerprintKey.PATH: rec.path,
+            FingerprintKey.MOUNT_PREFIX: mount.prefix,
+        }
+        if rec.fingerprint is not None:
+            entry[FingerprintKey.FINGERPRINT] = rec.fingerprint
+        if rec.revision is not None:
+            entry[FingerprintKey.REVISION] = rec.revision
+        out.append(entry)
+    return out
+
+
+def install_fingerprints(ws, fingerprint_entries: list[dict],
+                         drift_policy: DriftPolicy) -> None:
+    """Install snapshot fingerprints/revisions onto a reconstructed ws.
+
+    Revisions pin replay reads to exact backend versions; bare
+    fingerprints queue an eager drift check. OFF evicts the snapshot
+    cache for fingerprinted paths so reads serve current state.
+
+    Args:
+        ws: the reconstructed workspace to install onto.
+        fingerprint_entries: entries from a snapshot's FINGERPRINTS.
+        drift_policy: STRICT queues drift checks; OFF skips and evicts.
+    """
+    ws._drift_policy = drift_policy
+    if drift_policy == DriftPolicy.OFF:
+        if fingerprint_entries:
+            ws._cache.evict_paths(f[FingerprintKey.PATH]
+                                  for f in fingerprint_entries)
+        return
+    for f in fingerprint_entries:
+        path = f[FingerprintKey.PATH]
+        try:
+            mount = ws._registry.mount_for(path)
+        except ValueError:
+            continue
+        revision = f.get(FingerprintKey.REVISION)
+        if revision is not None:
+            mount.revisions[path] = revision
+            continue
+        fingerprint = f.get(FingerprintKey.FINGERPRINT)
+        if fingerprint is not None:
+            ws._pending_drift.append((mount, path, fingerprint))
+    ws._drift_check_pending = bool(ws._pending_drift)
+
+
+def live_only_mount_prefixes(ws) -> list[str]:
+    """Return mount prefixes whose resource opts out of snapshot replay.
+
+    These mounts will serve current state at load time with no drift
+    detection. Surfaced in the snapshot manifest so the load layer can
+    log them and so users can audit which paths are non-replayable.
+    """
+    out: list[str] = []
+    for m in ws._registry.mounts():
+        if m.prefix in {"/dev/", "/.bash_history/"}:
+            continue
+        if not getattr(m.resource, "SUPPORTS_SNAPSHOT", False):
+            out.append(m.prefix)
+    return out
+
+
+async def check_drift(ws, path: str, recorded: str) -> None:
+    """Stat `path` against its mount and raise ContentDriftError if the
+    live fingerprint does not match `recorded`.
+
+    No-op if the mount cannot be resolved or the resource cannot
+    fingerprint (raises only on a real, observable mismatch).
+
+    Args:
+        ws: Workspace whose registry to consult.
+        path (str): Virtual path to check.
+        recorded (str): Fingerprint recorded at snapshot time.
+
+    Raises:
+        ContentDriftError: live fingerprint differs from recorded.
+    """
+    try:
+        mount = ws._registry.mount_for(path)
+    except ValueError:
+        return
+    if not getattr(mount.resource, "SUPPORTS_SNAPSHOT", False):
+        return
+    try:
+        stat = await mount.execute_op("stat", path)
+    except FileNotFoundError as exc:
+        raise ContentDriftError(path, recorded, None) from exc
+    live = getattr(stat, "fingerprint", None)
+    if live is None:
+        return
+    if live != recorded:
+        raise ContentDriftError(path, recorded, live)

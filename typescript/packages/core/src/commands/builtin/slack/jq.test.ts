@@ -24,7 +24,7 @@ const DEC = new TextDecoder()
 async function runJq(
   paths: PathSpec[],
   texts: string[],
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   options: { index?: RAMIndexCacheStore; transport?: FakeSlackTransport } = {},
 ): Promise<{ stdout: string; exitCode: number }> {
   const cmd = SLACK_JQ[0]
@@ -69,7 +69,7 @@ describe('slack jq', () => {
     const out = await runJq(
       [
         new PathSpec({
-          original: '/mnt/slack/channels/general__C1/2024-01-01.jsonl',
+          original: '/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl',
           directory: '/mnt/slack/channels/general__C1/',
           resolved: false,
           prefix: '/mnt/slack',

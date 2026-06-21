@@ -19,7 +19,9 @@ import asyncssh
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.ssh._client import _abs
+from mirage.core.timeutil import to_iso_z
 from mirage.types import FileStat, FileType, PathSpec
+from mirage.utils.errors import enoent
 from mirage.utils.filetype import guess_type
 
 
@@ -28,11 +30,14 @@ async def stat(accessor: SSHAccessor,
                index: IndexCacheStore = None) -> FileStat:
     if isinstance(path, str):
         path = PathSpec(original=path, directory=path)
+    virtual = path.original
     if isinstance(path, PathSpec):
         prefix = path.prefix
         path = path.original
     if prefix and path.startswith(prefix):
-        path = path[len(prefix):] or "/"
+        rest = path[len(prefix):]
+        if prefix.endswith("/") or rest == "" or rest.startswith("/"):
+            path = rest or "/"
     config = accessor.config
     sftp = await accessor.sftp()
     try:
@@ -42,8 +47,8 @@ async def stat(accessor: SSHAccessor,
         name = path.rstrip("/").rsplit("/", 1)[-1] or "/"
         mod_str = ""
         if attrs.mtime is not None:
-            mod_str = datetime.fromtimestamp(attrs.mtime,
-                                             tz=timezone.utc).isoformat()
+            mod_str = to_iso_z(
+                datetime.fromtimestamp(attrs.mtime, tz=timezone.utc))
         return FileStat(
             name=name,
             size=attrs.size or 0,
@@ -52,4 +57,4 @@ async def stat(accessor: SSHAccessor,
             type=FileType.DIRECTORY if is_dir else guess_type(path),
         )
     except asyncssh.SFTPNoSuchFile:
-        raise FileNotFoundError(path)
+        raise enoent(virtual)

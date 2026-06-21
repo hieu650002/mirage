@@ -14,43 +14,11 @@
 
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { resolveGlob } from '../../../core/s3/glob.ts'
-import { read as s3Read } from '../../../core/s3/read.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
+import { stream as s3Stream } from '../../../core/s3/stream.ts'
 import { ResourceName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { readStdinAsync } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function splitLinesNoTrailing(text: string): string[] {
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped === '' ? [] : stripped.split('\n')
-}
-
-function foldLine(line: string, width: number, breakSpaces: boolean): string {
-  if (line.length <= width) return line
-  const parts: string[] = []
-  let rest = line
-  while (rest.length > width) {
-    if (breakSpaces) {
-      const idx = rest.lastIndexOf(' ', width - 1)
-      if (idx > 0) {
-        parts.push(rest.slice(0, idx + 1))
-        rest = rest.slice(idx + 1)
-      } else {
-        parts.push(rest.slice(0, width))
-        rest = rest.slice(width)
-      }
-    } else {
-      parts.push(rest.slice(0, width))
-      rest = rest.slice(width)
-    }
-  }
-  if (rest !== '') parts.push(rest)
-  return parts.join('\n')
-}
+import { foldGeneric } from '../generic/fold.ts'
 
 async function foldCommand(
   accessor: S3Accessor,
@@ -58,29 +26,9 @@ async function foldCommand(
   _texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
-  const width = typeof opts.flags.w === 'string' ? Number.parseInt(opts.flags.w, 10) : 80
-  const breakSpaces = opts.flags.s === true
-  if (paths.length > 0) {
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
-    const allLines: string[] = []
-    for (const p of resolved) {
-      const data = DEC.decode(await s3Read(accessor, p, opts.index ?? undefined))
-      for (const line of splitLinesNoTrailing(data)) {
-        allLines.push(foldLine(line, width, breakSpaces))
-      }
-    }
-    const result: ByteSource = ENC.encode(allLines.join('\n') + '\n')
-    return [result, new IOResult()]
-  }
-  const stdinData = await readStdinAsync(opts.stdin)
-  if (stdinData === null) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('fold: missing operand\n') })]
-  }
-  const lines = splitLinesNoTrailing(DEC.decode(stdinData))
-  const result: ByteSource = ENC.encode(
-    lines.map((ln) => foldLine(ln, width, breakSpaces)).join('\n') + '\n',
-  )
-  return [result, new IOResult()]
+  const resolved =
+    paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
+  return foldGeneric(resolved, opts, (p) => s3Stream(accessor, p))
 }
 
 export const S3_FOLD = command({

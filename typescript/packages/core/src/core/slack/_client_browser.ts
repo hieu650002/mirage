@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { HttpSlackTransport } from './_client.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 export interface BrowserSlackTransportOptions {
   proxyUrl: string
@@ -32,13 +33,13 @@ export class BrowserSlackTransport extends HttpSlackTransport {
     }
   }
   protected baseUrl(): string {
-    const trimmed = this.opts.proxyUrl.replace(/\/+$/, '')
+    const trimmed = rstripSlash(this.opts.proxyUrl)
     if (/^https?:\/\//i.test(trimmed)) return trimmed
     const origin =
       (globalThis as { location?: { origin?: string } }).location?.origin ?? 'http://localhost'
     return `${origin}${trimmed.startsWith('/') ? trimmed : `/${trimmed}`}`
   }
-  protected async authHeaders(): Promise<Record<string, string>> {
+  protected async authHeaders(_endpoint?: string): Promise<Record<string, string>> {
     const cb = this.opts.getHeaders
     if (cb === undefined) return {}
     return await cb()

@@ -15,14 +15,13 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
 import { norm, nowIso, parent } from './utils.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { invalidateAfterWrite } from '../../cache/context.ts'
 
-export function mkdir(accessor: RAMAccessor, path: PathSpec, parents = false): Promise<void> {
+export async function mkdir(accessor: RAMAccessor, path: PathSpec, parents = false): Promise<void> {
   const p = norm(path.stripPrefix)
   if (parents) {
-    const parts = p
-      .replace(/^\/+|\/+$/g, '')
-      .split('/')
-      .filter(Boolean)
+    const parts = stripSlash(p).split('/').filter(Boolean)
     let current = ''
     const now = nowIso()
     for (const part of parts) {
@@ -32,6 +31,7 @@ export function mkdir(accessor: RAMAccessor, path: PathSpec, parents = false): P
         accessor.store.modified.set(current, now)
       }
     }
+    await invalidateAfterWrite(path)
     return Promise.resolve()
   }
   const par = parent(p)
@@ -40,5 +40,6 @@ export function mkdir(accessor: RAMAccessor, path: PathSpec, parents = false): P
   }
   accessor.store.dirs.add(p)
   accessor.store.modified.set(p, nowIso())
+  await invalidateAfterWrite(path)
   return Promise.resolve()
 }

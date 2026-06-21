@@ -15,6 +15,7 @@
 import type { IndexCacheStore, PathSpec } from '@struktoai/mirage-core'
 import type { EmailAccessor } from '../../accessor/email.ts'
 import { fetchAttachment, fetchMessage } from './_client.ts'
+import { gnuDirname, stripSlash } from '@struktoai/mirage-core'
 
 const ENC = new TextEncoder()
 
@@ -30,13 +31,6 @@ function eisdir(p: string): Error {
   return e
 }
 
-function dirname(p: string): string {
-  const norm = p.replace(/\/+$/, '')
-  const idx = norm.lastIndexOf('/')
-  if (idx <= 0) return '/'
-  return norm.slice(0, idx)
-}
-
 export async function read(
   accessor: EmailAccessor,
   path: PathSpec,
@@ -45,7 +39,7 @@ export async function read(
   const prefix = path.prefix
   let p = path.original
   if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = p.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(p)
   if (index === undefined) throw enoent(path.original)
   const virtualKey = prefix !== '' ? `${prefix}/${key}` : `/${key}`
   const result = await index.get(virtualKey)
@@ -55,20 +49,20 @@ export async function read(
     throw eisdir(path.original)
   }
   if (rt === 'email/attachment') {
-    const parentKey = dirname(virtualKey)
+    const parentKey = gnuDirname(virtualKey)
     const parentResult = await index.get(parentKey)
     if (parentResult.entry === undefined || parentResult.entry === null) {
       throw enoent(path.original)
     }
     const uid = parentResult.entry.id
-    const parts = virtualKey.replace(/^\/+|\/+$/g, '').split('/')
+    const parts = stripSlash(virtualKey).split('/')
     const folder = prefix !== '' ? (parts[1] ?? '') : (parts[0] ?? '')
     const filename = result.entry.vfsName !== '' ? result.entry.vfsName : result.entry.name
     const data = await fetchAttachment(accessor, folder, uid, filename)
     if (data === null) throw enoent(path.original)
     return data
   }
-  const parts = virtualKey.replace(/^\/+|\/+$/g, '').split('/')
+  const parts = stripSlash(virtualKey).split('/')
   const folder = prefix !== '' ? (parts[1] ?? '') : (parts[0] ?? '')
   const uid = result.entry.id
   const msg = await fetchMessage(accessor, folder, uid)

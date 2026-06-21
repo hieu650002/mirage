@@ -141,8 +141,10 @@ describe('S3 complex scenarios (mocked)', () => {
     expect(lines).toEqual([
       '=== /s3/data/example.json ===',
       '/s3/data/example.json: json',
+      '',
       '=== /s3/data/example.jsonl ===',
       '/s3/data/example.jsonl: json',
+      '',
       '=== /s3/reports/summary.txt ===',
       '/s3/reports/summary.txt: text',
     ])
@@ -163,8 +165,9 @@ describe('S3 complex scenarios (mocked)', () => {
     const jsonlBytes = objects['data/example.jsonl']
     if (jsonBytes === undefined || jsonlBytes === undefined) throw new Error('missing fixture')
     expect(lines).toEqual([
-      `/s3/data/example.json ${jsonBytes.byteLength.toString()}`,
-      `/s3/data/example.jsonl ${jsonlBytes.byteLength.toString()}`,
+      `/s3/data/example.json ${jsonBytes.byteLength.toString()} /s3/data/example.json`,
+      '',
+      `/s3/data/example.jsonl ${jsonlBytes.byteLength.toString()} /s3/data/example.jsonl`,
     ])
   })
 
@@ -178,6 +181,6 @@ describe('S3 complex scenarios (mocked)', () => {
         'cat /tmp/search_report.txt',
     )
     const lines = decode(io.stdout).trim().split('\n')
-    expect(lines).toEqual(['/s3/data/example.jsonl', '"Strukto"'])
+    expect(lines).toEqual(['/s3/data/example.jsonl', '', '"Strukto"'])
   })
 })

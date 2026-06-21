@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from mirage.resource.oci import OCIConfig, OCIResource
 from mirage.resource.s3 import S3Config
+from mirage.resource.secrets import reveal_secret
 from mirage.types import ResourceName
 
 
@@ -62,8 +63,8 @@ def test_oci_config_to_s3_config():
     assert s3_config.endpoint_url == (
         "https://my-namespace.compat.objectstorage."
         "us-ashburn-1.oci.customer-oci.com")
-    assert s3_config.aws_access_key_id == "access-key"
-    assert s3_config.aws_secret_access_key == "secret-key"
+    assert reveal_secret(s3_config.aws_access_key_id) == "access-key"
+    assert reveal_secret(s3_config.aws_secret_access_key) == "secret-key"
     assert s3_config.path_style is True
     assert s3_config.proxy == "http://localhost:8080"
 
@@ -90,7 +91,7 @@ def test_oci_resource_uses_s3_resource_type():
             secret_access_key="secret-key",
         ))
     assert resource.name == ResourceName.S3
-    assert resource.is_remote is True
+    assert resource.caches_reads is True
     assert isinstance(resource.config, S3Config)
     assert resource.config.path_style is True
 

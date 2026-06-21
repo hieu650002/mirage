@@ -1,11 +1,11 @@
 [project]
 name = "mirage-ai"
-version = "0.0.2a0"
+version = "0.0.3a0"
 description = "A unified virtual filesystem for AI agents. Mount S3, Google Drive, Slack, Gmail, GitHub, Linear, Notion, Postgres, MongoDB, SSH, and more behind one filesystem so agents read, write, and pipe across services with familiar shell commands."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 authors = [
     { name = "Zecheng Zhang", email = "zecheng@strukto.ai" },
 ]
@@ -27,6 +27,7 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Filesystems",
@@ -35,22 +36,19 @@ classifiers = [
 
 dependencies = [
     "aiofiles>=24.1.0",
-    "aiohttp>=3.13.3",
+    "aiohttp>=3.14.0",
     "fastapi>=0.135.1",
     "httpx>=0.28.1",
-    "python-multipart>=0.0.20",
-    "numpy>=2.4.3",
+    "python-multipart>=0.0.27",
     "orjson>=3.11",
     "pyyaml>=6.0.3",
-    "python-dotenv>=1.2.2",
     "tree-sitter>=0.25.2",
     "tree-sitter-bash>=0.25.1",
     "typer>=0.12.0",
     "uvicorn[standard]>=0.41.0",
-    "pypdfium2>=5.7.0",
-    "pillow>=12.2.0",
     "jq>=1.11.0",
-    "mfusepy>=1.0.0",
+    "pyjwt[crypto]>=2.13.0",
+    "dulwich>=1.2.5",
 ]
 
 [project.urls]
@@ -75,15 +73,20 @@ s3       = ["aioboto3>=13.0"]
 r2       = ["aioboto3>=13.0"]
 gcs      = ["aioboto3>=13.0"]
 oci      = ["aioboto3>=13.0"]
+databricks = ["databricks-sdk>=0.72.0"]
 
 # --- network / remote ---
-ssh      = ["asyncssh>=2.22.0", "paramiko>=4.0.0"]
+ssh      = ["asyncssh>=2.23.0"]
+nextcloud = ["opendal>=0.47.1"]
+
+# --- huggingface ---
+hf       = ["opendal>=0.47.1"]
 
 # --- mount ---
 fuse     = ["mfusepy>=1.0.0"]
 
 # --- mongodb ---
-mongodb  = ["motor>=3.7.1"]
+mongodb  = ["pymongo>=4.9"]
 
 # --- postgres ---
 postgres = ["asyncpg>=0.30.0"]
@@ -96,14 +99,15 @@ email    = ["aioimaplib>=2.0.1", "aiosmtplib>=5.1.0"]
 
 # --- data ---
 parquet  = ["pandas>=3.0.1", "pyarrow>=15.0"]
-hdf5     = ["h5py>=3.16.0", "tables>=3.11.1"]
-pdf      = ["pypdfium2>=5.6.0", "pillow>=12.2.0"]
-
-# --- audio ---
-audio    = ["av>=17.0.0", "sherpa-onnx>=1.12.34", "tinytag>=2.2.1"]
+hdf5     = ["h5py>=3.16.0", "tables>=3.11.1", "pandas>=3.0.1"]
+pdf      = ["pypdfium2>=5.7.0", "pillow>=12.2.0"]
 
 # --- observability ---
 langfuse = ["langfuse>=4.2.0"]
+
+# --- chroma ---
+# thin HTTP-only client; the accessor uses AsyncHttpClient exclusively
+chroma   = ["chromadb-client>=1.0.0"]
 
 # --- anthropic ---
 anthropic   = ["anthropic>=0.88"]
@@ -113,7 +117,7 @@ openai      = ["openai>=2.30.0", "openai-agents>=0.14.7"]
 
 # --- pydantic-ai ---
 pydantic-ai = [
-    "pydantic-ai>=1.35",
+    "pydantic-ai-slim>=1.56",
     "pydantic-ai-backend>=0.1.0",
     "mirage-ai[pdf]",
 ]
@@ -122,10 +126,22 @@ pydantic-ai = [
 deepagents  = ["deepagents>=0.4.12", "mirage-ai[pdf]"]
 
 # --- openhands ---
-openhands   = ["openhands-sdk>=1.18.0", "openhands-tools>=1.18.0"]
+openhands   = [
+    "openhands-sdk>=1.18.0; python_version >= '3.12'",
+    "openhands-tools>=1.18.0; python_version >= '3.12'",
+]
+
+# --- agno ---
+agno        = ["agno>=2.4.0"]
+
+# --- claude-agent-sdk ---
+claude-agent-sdk = ["claude-agent-sdk>=0.1.0"]
 
 # --- camel ---
 camel       = ["camel-ai>=0.2.40,<0.3", "markitdown>=0.1.5"]
+
+# --- sandboxes ---
+daytona     = ["daytona>=0.176.0"]
 
 # --- meta: install everything ---
 all = [
@@ -133,7 +149,10 @@ all = [
     "mirage-ai[r2]",
     "mirage-ai[gcs]",
     "mirage-ai[oci]",
+    "mirage-ai[databricks]",
     "mirage-ai[ssh]",
+    "mirage-ai[nextcloud]",
+    "mirage-ai[hf]",
     "mirage-ai[fuse]",
     "mirage-ai[mongodb]",
     "mirage-ai[postgres]",
@@ -142,13 +161,19 @@ all = [
     "mirage-ai[parquet]",
     "mirage-ai[hdf5]",
     "mirage-ai[pdf]",
-    "mirage-ai[audio]",
     "mirage-ai[langfuse]",
+    "mirage-ai[chroma]",
     "mirage-ai[anthropic]",
     "mirage-ai[openai]",
     "mirage-ai[pydantic-ai]",
     "mirage-ai[deepagents]",
     "mirage-ai[openhands]",
+    "mirage-ai[agno]",
+    "mirage-ai[claude-agent-sdk]",
+    "mirage-ai[daytona]",
+]
+lancedb = [
+    "lancedb>=0.33.0",
 ]
 
 [tool.uv]
@@ -173,9 +198,11 @@ conflicts = [
 
 [dependency-groups]
 dev = [
+    "aioresponses>=0.7.6",
+    "python-dotenv>=1.2.2",
     "grpcio>=1.78.0",
     "grpcio-tools>=1.78.0",
-    "moto[s3]>=5.1.22",
+    "moto[s3,server]>=5.1.22",
     "pre-commit",
     "pytest",
     "pytest-asyncio>=0.24.0",
@@ -194,4 +221,6 @@ testpaths = ["tests"]
 addopts = "--cov=mirage --cov-report=term-missing -q --import-mode=importlib"
 markers = [
     "network: tests that require network access",
+    "no_host_override: skip the tests/server/conftest autouse MIRAGE_ALLOWED_HOSTS=* override",
+    "no_auth_override: skip the tests/server/conftest autouse MIRAGE_AUTH_MODE=local-with-no-token override",
 ]

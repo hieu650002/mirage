@@ -38,7 +38,7 @@ describe('DiscordResource (browser)', () => {
   it('constructs with proxyUrl and exposes expected fields', () => {
     const r = new DiscordResource({ proxyUrl: '/api/discord' })
     expect(r.kind).toBe(ResourceName.DISCORD)
-    expect(r.isRemote).toBe(true)
+    expect(r.cachesReads).toBe(true)
     expect(r.indexTtl).toBe(600)
     expect(r.config).toEqual({ proxyUrl: '/api/discord' })
     expect(typeof r.prompt).toBe('string')
@@ -67,8 +67,8 @@ describe('DiscordResource (browser)', () => {
     const r = new DiscordResource({ proxyUrl: '/api/discord', getHeaders: headers })
     const state = await r.getState()
     expect(state.type).toBe(ResourceName.DISCORD)
-    expect(state.needsOverride).toBe(true)
-    expect(state.redactedFields).toEqual(['getHeaders'])
+    expect(state).not.toHaveProperty('needsOverride')
+    expect(state).not.toHaveProperty('redactedFields')
     expect(state.config).toEqual({ proxyUrl: '/api/discord', getHeaders: '<REDACTED>' })
   })
 

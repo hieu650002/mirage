@@ -24,7 +24,7 @@ const DEC = new TextDecoder()
 async function runRg(
   paths: PathSpec[],
   texts: string[],
-  flags: Record<string, string | boolean>,
+  flags: Record<string, string | boolean | string[]>,
   options: { index?: RAMIndexCacheStore; transport?: FakeDiscordTransport } = {},
 ): Promise<{ stdout: string; exitCode: number }> {
   const cmd = DISCORD_RG[0]
@@ -53,8 +53,8 @@ async function runRg(
 describe('discord rg', () => {
   it('uses native search for a channel directory (useNative scope)', async () => {
     const idx = new RAMIndexCacheStore()
-    await seedGuild(idx, '/mnt/discord', 'My_Server__G1', 'G1')
-    await seedChannel(idx, '/mnt/discord', 'My_Server__G1', 'general__C1', 'C1')
+    await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
+    await seedChannel(idx, '/mnt/discord', 'My Server__G1', 'general__C1', 'C1')
     const transport = new FakeDiscordTransport((_method, endpoint) => {
       if (endpoint === '/guilds/G1/messages/search') {
         return {
@@ -77,8 +77,8 @@ describe('discord rg', () => {
     const out = await runRg(
       [
         new PathSpec({
-          original: '/mnt/discord/My_Server__G1/channels/general__C1',
-          directory: '/mnt/discord/My_Server__G1/channels/general__C1',
+          original: '/mnt/discord/My Server__G1/channels/general__C1',
+          directory: '/mnt/discord/My Server__G1/channels/general__C1',
           resolved: false,
           prefix: '/mnt/discord',
         }),
@@ -99,8 +99,8 @@ describe('discord rg', () => {
     const out = await runRg(
       [
         new PathSpec({
-          original: '/mnt/discord/My_Server__G1/channels/general__C1',
-          directory: '/mnt/discord/My_Server__G1/channels/general__C1',
+          original: '/mnt/discord/My Server__G1/channels/general__C1',
+          directory: '/mnt/discord/My Server__G1/channels/general__C1',
           resolved: false,
           prefix: '/mnt/discord',
         }),

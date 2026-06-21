@@ -13,11 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.redis import RedisAccessor
+from mirage.cache.context import invalidate_after_unlink
 from mirage.types import PathSpec
-
-
-def _norm(path: str) -> str:
-    return "/" + path.strip("/")
+from mirage.utils.path import norm
 
 
 async def rm_r(accessor: RedisAccessor, path: PathSpec) -> None:
@@ -26,7 +24,7 @@ async def rm_r(accessor: RedisAccessor, path: PathSpec) -> None:
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     store = accessor.store
-    p = _norm(path)
+    p = norm(path)
     prefix = p.rstrip("/") + "/"
     for key in await store.list_files():
         if key == p or key.startswith(prefix):
@@ -36,3 +34,4 @@ async def rm_r(accessor: RedisAccessor, path: PathSpec) -> None:
         if key == p or key.startswith(prefix):
             await store.remove_dir(key)
             await store.del_modified(key)
+    await invalidate_after_unlink(path)

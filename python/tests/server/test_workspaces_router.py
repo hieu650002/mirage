@@ -35,9 +35,11 @@ def _minimal_config() -> dict:
     }
 
 
-def _make_app_with_short_grace(grace: float = 0.2):
+def _make_app_with_short_grace(grace: float = 0.2, snapshot_root=None):
     exit_event = asyncio.Event()
-    app = build_app(idle_grace_seconds=grace, exit_event=exit_event)
+    app = build_app(idle_grace_seconds=grace,
+                    exit_event=exit_event,
+                    snapshot_root=snapshot_root)
     return app, exit_event
 
 
@@ -163,34 +165,38 @@ async def test_health_endpoint():
 
 
 @pytest.mark.asyncio
-async def test_snapshot_returns_tar_bytes():
-    app, _ = _make_app_with_short_grace(grace=10.0)
+async def test_snapshot_writes_tar_to_path(tmp_path):
+    app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport,
                            base_url="http://test") as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
-        r = await client.get(f"/v1/workspaces/{wid}/snapshot")
-        assert r.status_code == 200
-        assert r.headers["content-type"] == "application/x-tar"
-        assert len(r.content) > 0
+        target = tmp_path / "snap.tar"
+        r = await client.post(f"/v1/workspaces/{wid}/snapshot",
+                              json={"path": str(target)})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["path"] == str(target)
+        assert body["size"] > 0
+        assert target.exists()
+        assert target.stat().st_size == body["size"]
 
 
 @pytest.mark.asyncio
-async def test_snapshot_load_round_trip():
-    app, _ = _make_app_with_short_grace(grace=10.0)
+async def test_snapshot_load_round_trip(tmp_path):
+    app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport,
                            base_url="http://test") as client:
         r = await client.post("/v1/workspaces", json=_minimal_config())
         wid = r.json()["id"]
-        snap = await client.get(f"/v1/workspaces/{wid}/snapshot")
-        tar_bytes = snap.content
+        target = tmp_path / "snap.tar"
+        await client.post(f"/v1/workspaces/{wid}/snapshot",
+                          json={"path": str(target)})
 
-        r = await client.post(
-            "/v1/workspaces/load",
-            files={"tar": ("snap.tar", tar_bytes, "application/x-tar")},
-        )
+        r = await client.post("/v1/workspaces/load",
+                              json={"path": str(target)})
         assert r.status_code == 201, r.text
         new_id = r.json()["id"]
         assert new_id != wid
@@ -198,6 +204,31 @@ async def test_snapshot_load_round_trip():
         r = await client.get(f"/v1/workspaces/{new_id}")
         assert r.status_code == 200
         assert {m["prefix"] for m in r.json()["mounts"]} == {"/"}
+
+
+@pytest.mark.asyncio
+async def test_snapshot_rejects_path_outside_root(tmp_path):
+    app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport,
+                           base_url="http://test") as client:
+        r = await client.post("/v1/workspaces", json=_minimal_config())
+        wid = r.json()["id"]
+        r = await client.post(f"/v1/workspaces/{wid}/snapshot",
+                              json={"path": "../escape.tar"})
+        assert r.status_code == 400, r.text
+        assert not (tmp_path.parent / "escape.tar").exists()
+
+
+@pytest.mark.asyncio
+async def test_load_missing_path_returns_400(tmp_path):
+    app, _ = _make_app_with_short_grace(grace=10.0, snapshot_root=tmp_path)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport,
+                           base_url="http://test") as client:
+        r = await client.post("/v1/workspaces/load",
+                              json={"path": str(tmp_path / "nope.tar")})
+        assert r.status_code == 400, r.text
 
 
 @pytest.mark.asyncio

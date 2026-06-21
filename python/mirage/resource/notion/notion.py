@@ -32,7 +32,7 @@ _NOTION_OPS = {
 class NotionResource(BaseResource):
 
     name: str = ResourceName.NOTION
-    is_remote: bool = True
+    caches_reads: bool = True
     _ops: dict = _NOTION_OPS
     PROMPT: str = PROMPT
     WRITE_PROMPT: str = WRITE_PROMPT
@@ -53,17 +53,7 @@ class NotionResource(BaseResource):
         return await _resolve_glob(self.accessor, paths, self._index)
 
     def get_state(self) -> dict:
-        redacted = ['api_key']
-        cfg = self.config.model_dump()
-        for f in redacted:
-            if cfg.get(f) is not None:
-                cfg[f] = "<REDACTED>"
-        return {
-            "type": self.name,
-            "needs_override": True,
-            "redacted_fields": redacted,
-            "config": cfg,
-        }
+        return self.config_state(self.config)
 
     def load_state(self, state: dict) -> None:
         pass

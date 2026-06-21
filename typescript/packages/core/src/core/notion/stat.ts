@@ -15,59 +15,18 @@
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, type PathSpec } from '../../types.ts'
 import type { NotionTransport } from './_client.ts'
-import { getDatabase, getPage } from './pages.ts'
+import { getDatabase } from './pages.ts'
 import { parseSegment } from './pathing.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { enoent } from '../../utils/errors.ts'
 
 export interface NotionStatAccessor {
   readonly transport: NotionTransport
 }
 
-function enoent(path: string): Error {
-  const err = new Error(`ENOENT: ${path}`) as Error & { code: string }
-  err.code = 'ENOENT'
-  return err
-}
-
-function makeVirtualKey(prefix: string, key: string): string {
-  if (key === '') return prefix !== '' ? prefix : '/'
-  return `${prefix}/${key}`
-}
-
 function pickString(record: Record<string, unknown>, key: string): string {
   const value = record[key]
   return typeof value === 'string' ? value : ''
-}
-
-async function resolveModified(
-  transport: NotionTransport,
-  index: IndexCacheStore | undefined,
-  cacheKey: string,
-  pageId: string,
-): Promise<string | null> {
-  if (index !== undefined) {
-    const result = await index.get(cacheKey)
-    const cached = result.entry?.remoteTime
-    if (typeof cached === 'string' && cached !== '') return cached
-  }
-  const page = await getPage(transport, pageId)
-  const time = pickString(page, 'last_edited_time')
-  return time === '' ? null : time
-}
-
-async function resolveDatabaseModified(
-  transport: NotionTransport,
-  index: IndexCacheStore | undefined,
-  cacheKey: string,
-  databaseId: string,
-): Promise<string | null> {
-  if (index !== undefined) {
-    const result = await index.get(cacheKey)
-    const cached = result.entry?.remoteTime
-    if (typeof cached === 'string' && cached !== '') return cached
-  }
-  const database = await getDatabase(transport, databaseId)
-  const time = pickString(database, 'last_edited_time')
-  return time === '' ? null : time
 }
 
 export async function stat(
@@ -80,49 +39,17 @@ export async function stat(
   if (prefix !== '' && p.startsWith(prefix)) {
     p = p.slice(prefix.length) || '/'
   }
-  const key = p.replace(/^\/+|\/+$/g, '')
-  const virtualKey = makeVirtualKey(prefix, key)
+  const key = stripSlash(p)
 
-  if (key === '' || key === 'pages') {
-    return new FileStat({ name: key === 'pages' ? 'pages' : '/', type: FileType.DIRECTORY })
-  }
-
-  if (key === 'databases') {
-    return new FileStat({ name: 'databases', type: FileType.DIRECTORY })
+  if (key === '' || key === 'pages' || key === 'databases') {
+    return new FileStat({ name: key !== '' ? key : '/', type: FileType.DIRECTORY })
   }
 
   const parts = key.split('/')
   const lastSegment = parts[parts.length - 1] ?? ''
 
-  if (parts[0] === 'databases' && parts.length === 2) {
-    let parsedDatabase: { id: string; title: string }
-    try {
-      parsedDatabase = parseSegment(lastSegment)
-    } catch {
-      throw enoent(path.original)
-    }
-    if (index !== undefined) {
-      const result = await index.get(virtualKey)
-      const cached = result.entry?.remoteTime
-      if (result.entry !== null && result.entry !== undefined) {
-        return new FileStat({
-          name: lastSegment,
-          type: FileType.DIRECTORY,
-          modified: typeof cached === 'string' && cached !== '' ? cached : null,
-          size: null,
-          extra: { database_id: parsedDatabase.id },
-        })
-      }
-    }
-    const database = await getDatabase(accessor.transport, parsedDatabase.id)
-    const modified = pickString(database, 'last_edited_time')
-    return new FileStat({
-      name: lastSegment,
-      type: FileType.DIRECTORY,
-      modified: modified === '' ? null : modified,
-      size: null,
-      extra: { database_id: parsedDatabase.id },
-    })
+  if (lastSegment === 'page.json') {
+    return new FileStat({ name: 'page.json', type: FileType.JSON })
   }
 
   if (lastSegment === 'database.json') {
@@ -134,71 +61,66 @@ export async function stat(
     } catch {
       throw enoent(path.original)
     }
-    const parentVirtualKey = makeVirtualKey(prefix, parts.slice(0, parts.length - 1).join('/'))
-    const modified = await resolveDatabaseModified(
-      accessor.transport,
-      index,
-      parentVirtualKey,
-      parsedDatabase.id,
-    )
     return new FileStat({
       name: 'database.json',
       type: FileType.JSON,
-      modified,
-      size: null,
       extra: { database_id: parsedDatabase.id },
     })
   }
 
-  if (parts[0] === 'databases') {
-    let parsedRow: { id: string; title: string }
+  if (parts[0] === 'databases' && parts.length === 2) {
+    let parsedDatabase: { id: string; title: string }
     try {
-      parsedRow = parseSegment(lastSegment)
+      parsedDatabase = parseSegment(lastSegment)
     } catch {
       throw enoent(path.original)
     }
-    const modified = await resolveModified(accessor.transport, index, virtualKey, parsedRow.id)
+    if (index !== undefined) {
+      const result = await index.get(`/${key}`)
+      if (result.entry !== null && result.entry !== undefined) {
+        return new FileStat({
+          name: result.entry.name,
+          type: FileType.DIRECTORY,
+          extra: { database_id: parsedDatabase.id },
+        })
+      }
+    }
+    const database = await getDatabase(accessor.transport, parsedDatabase.id)
+    const modified = pickString(database, 'last_edited_time')
     return new FileStat({
       name: lastSegment,
       type: FileType.DIRECTORY,
-      modified,
-      size: null,
-      extra: { page_id: parsedRow.id },
+      modified: modified === '' ? null : modified,
+      extra: { database_id: parsedDatabase.id },
     })
   }
 
-  if (lastSegment === 'page.json') {
-    if (parts.length < 2) throw enoent(path.original)
-    const parentSegment = parts[parts.length - 2] ?? ''
+  if (
+    (parts[0] === 'pages' && parts.length >= 2) ||
+    (parts[0] === 'databases' && parts.length >= 3)
+  ) {
     let parsed: { id: string; title: string }
     try {
-      parsed = parseSegment(parentSegment)
+      parsed = parseSegment(lastSegment)
     } catch {
       throw enoent(path.original)
     }
-    const parentVirtualKey = makeVirtualKey(prefix, parts.slice(0, parts.length - 1).join('/'))
-    const modified = await resolveModified(accessor.transport, index, parentVirtualKey, parsed.id)
+    if (index !== undefined) {
+      const result = await index.get(`/${key}`)
+      if (result.entry !== null && result.entry !== undefined) {
+        return new FileStat({
+          name: result.entry.name,
+          type: FileType.DIRECTORY,
+          extra: { page_id: parsed.id },
+        })
+      }
+    }
     return new FileStat({
-      name: 'page.json',
-      type: FileType.JSON,
-      modified,
-      size: null,
+      name: lastSegment,
+      type: FileType.DIRECTORY,
       extra: { page_id: parsed.id },
     })
   }
 
-  let parsed: { id: string; title: string }
-  try {
-    parsed = parseSegment(lastSegment)
-  } catch {
-    throw enoent(path.original)
-  }
-  const modified = await resolveModified(accessor.transport, index, virtualKey, parsed.id)
-  return new FileStat({
-    name: lastSegment,
-    type: FileType.DIRECTORY,
-    modified,
-    size: null,
-    extra: { page_id: parsed.id },
-  })
+  throw enoent(path.original)
 }

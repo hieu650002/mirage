@@ -15,6 +15,7 @@
 import time
 
 from mirage.accessor.s3 import S3Accessor
+from mirage.cache.context import invalidate_after_write
 from mirage.core.s3._client import _client_kwargs, _key, async_session
 from mirage.observe.context import record
 from mirage.types import PathSpec
@@ -27,9 +28,10 @@ async def write_bytes(accessor: S3Accessor, path: PathSpec,
     if isinstance(path, PathSpec):
         path = path.strip_prefix
     config = accessor.config
-    key = _key(path)
+    key = _key(path, config)
     start_ms = int(time.monotonic() * 1000)
     session = async_session(config)
     async with session.client(**_client_kwargs(config)) as client:
         await client.put_object(Bucket=config.bucket, Key=key, Body=data)
     record("write", path, "s3", len(data), start_ms)
+    await invalidate_after_write(path)

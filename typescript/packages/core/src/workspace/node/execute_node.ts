@@ -12,18 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { CommandHistory } from '../../commands/config.ts'
-import { OperandKind, type CommandSpec } from '../../commands/spec/types.ts'
 import { asyncChain } from '../../io/stream.ts'
-import type { ByteSource } from '../../io/types.ts'
-import { IOResult, materialize } from '../../io/types.ts'
+import { type ByteSource, IOResult } from '../../io/types.ts'
 import type { Resource } from '../../resource/base.ts'
 import { makeAbortError } from '../abort.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import {
   getCaseItems,
   getCaseWord,
-  getCommandName,
   getDeclarationKeyword,
   getForParts,
   getFunctionBody,
@@ -31,7 +27,6 @@ import {
   getIfBranches,
   getListParts,
   getNegatedCommand,
-  getParts,
   getPipelineCommands,
   getRedirects,
   getSubshellBody,
@@ -46,18 +41,12 @@ import {
   NodeType as NT,
   Redirect,
   RedirectKind as Redirect_,
-  ShellBuiltin as SB,
 } from '../../shell/types.ts'
-import { PathSpec } from '../../types.ts'
-import { classifyBarePath, classifyParts } from '../expand/classify.ts'
-import type { ExecuteFn } from '../expand/node.ts'
-import { expandNode } from '../expand/node.ts'
-import { expandAndClassify, expandParts } from '../expand/parts.ts'
+import { classifyBarePath } from '../expand/classify.ts'
+import { type ExecuteFn, expandNode } from '../expand/node.ts'
+import { expandAndClassify } from '../expand/parts.ts'
 import type { TSNodeLike } from '../expand/variable.ts'
-import { handleCommand } from '../executor/command.ts'
 import {
-  BreakSignal,
-  ContinueSignal,
   handleCase,
   handleFor,
   handleIf,
@@ -67,28 +56,12 @@ import {
 } from '../executor/control.ts'
 import type { DispatchFn } from '../executor/cross_mount.ts'
 import {
-  handleBash,
-  handleCd,
-  handleEcho,
-  handleEval,
   handleExport,
   handleLocal,
-  handleMan,
-  handlePrintenv,
-  handlePrintf,
-  handleRead,
   handleReadonly,
-  handleReturn,
-  handleSet,
-  handleShift,
-  handleSleep,
-  handleSource,
   handleTest,
-  handleTrap,
   handleUnset,
-  handleWhoami,
-} from '../executor/builtins.ts'
-import { handleBackground } from '../executor/jobs.ts'
+} from '../executor/builtins/index.ts'
 import { handleConnection, handlePipe, handleSubshell } from '../executor/pipes.ts'
 import { handleRedirect } from '../executor/redirect.ts'
 import type { MountRegistry } from '../mount/registry.ts'
@@ -96,6 +69,8 @@ import type { Session } from '../session/session.ts'
 import { ExecutionNode } from '../types.ts'
 import { resolveGlobs } from './resolve_globs.ts'
 import { expandTestExpr } from './test_expr.ts'
+import { executeProgram } from './program.ts'
+import { executeCommand } from './command_dispatch.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
@@ -110,7 +85,6 @@ export interface ExecuteNodeDeps {
   ensureOpen?: (resource: Resource) => Promise<void>
   unmount?: (prefix: string) => Promise<void>
   pythonRuntime?: PyodideRuntime
-  history?: CommandHistory
   signal?: AbortSignal
 }
 
@@ -157,7 +131,6 @@ export async function executeNode(
       deps.ensureOpen,
       deps.unmount,
       deps.pythonRuntime,
-      deps.history,
       deps.signal,
     )
   }
@@ -422,590 +395,4 @@ export async function executeNode(
   }
 
   throw new TypeError(`unsupported tree-sitter node type: ${ntype}`)
-}
-
-async function executeProgram(
-  recurse: (
-    n: TSNodeLike,
-    s: Session,
-    i: ByteSource | null,
-    cs: CallStack | null,
-  ) => Promise<Result>,
-  node: TSNodeLike,
-  session: Session,
-  stdin: ByteSource | null,
-  callStack: CallStack | null,
-  jobTable: JobTable | null,
-  agentId: string,
-): Promise<Result> {
-  const children = node.children
-  const allStdout: ByteSource[] = []
-  let mergedIo = new IOResult()
-  let lastExec = new ExecutionNode({ command: '', exitCode: 0 })
-
-  let i = 0
-  while (i < children.length) {
-    const child = children[i]
-    if (child === undefined) {
-      i += 1
-      continue
-    }
-    if (child.isNamed !== true || child.type === NT.ERROR || child.type === NT.COMMENT) {
-      i += 1
-      continue
-    }
-
-    const next = children[i + 1]
-    const isBg = next?.type === NT.BACKGROUND
-
-    let stdout: ByteSource | null
-    let io: IOResult
-    if (isBg) {
-      const [bgStdout, bgIo, bgExec] = await handleBackground(
-        recurse,
-        child,
-        null,
-        session,
-        jobTable,
-        agentId,
-        stdin,
-        callStack,
-      )
-      stdout = bgStdout
-      io = bgIo
-      lastExec = bgExec
-      i += 2
-    } else {
-      const [s, ioResult, execNode] = await recurse(child, session, stdin, callStack)
-      stdout = await materialize(s)
-      ioResult.syncExitCode()
-      session.lastExitCode = ioResult.exitCode
-      io = ioResult
-      lastExec = execNode
-      i += 1
-    }
-
-    if (stdout !== null) allStdout.push(stdout)
-    mergedIo = await mergedIo.merge(io)
-
-    if (
-      io.exitCode !== 0 &&
-      session.shellOptions.errexit === true &&
-      !isBg &&
-      !ERREXIT_EXEMPT_TYPES.has(child.type)
-    ) {
-      mergedIo.exitCode = io.exitCode
-      break
-    }
-  }
-
-  if (allStdout.length === 1 && allStdout[0] !== undefined) {
-    return [allStdout[0], mergedIo, lastExec]
-  }
-  const combined = allStdout.length > 0 ? asyncChain(...allStdout) : null
-  return [combined, mergedIo, lastExec]
-}
-
-async function executeCommand(
-  recurse: (
-    n: TSNodeLike,
-    s: Session,
-    i: ByteSource | null,
-    cs: CallStack | null,
-  ) => Promise<Result>,
-  dispatch: DispatchFn,
-  registry: MountRegistry,
-  executeFn: ExecuteFn,
-  node: TSNodeLike,
-  session: Session,
-  stdinIn: ByteSource | null,
-  callStack: CallStack | null,
-  jobTable: JobTable | null,
-  ensureOpen?: (resource: Resource) => Promise<void>,
-  unmount?: (prefix: string) => Promise<void>,
-  pythonRuntime?: PyodideRuntime,
-  history?: CommandHistory,
-  signal?: AbortSignal,
-): Promise<Result> {
-  const name = getCommandName(node)
-  const rawParts = getParts(node)
-
-  const prefixAssignments: [string, string][] = []
-  const nonPrefixParts: TSNodeLike[] = []
-  let sawCommandName = false
-  for (const p of rawParts) {
-    if (!sawCommandName && p.type === NT.VARIABLE_ASSIGNMENT) {
-      const atext = getText(p)
-      const eq = atext.indexOf('=')
-      if (eq >= 0) {
-        const key = atext.slice(0, eq)
-        const rawVal = atext.slice(eq + 1)
-        const valNodes = p.namedChildren.filter((c) => c.type !== NT.VARIABLE_NAME)
-        const firstVal = valNodes[0]
-        const v =
-          firstVal !== undefined
-            ? await expandNode(firstVal, session, executeFn, callStack)
-            : rawVal
-        prefixAssignments.push([key, v])
-      }
-      continue
-    }
-    if (p.type === NT.COMMAND_NAME) sawCommandName = true
-    nonPrefixParts.push(p)
-  }
-
-  for (const [k] of prefixAssignments) {
-    if (session.readonlyVars.has(k)) {
-      const err = new TextEncoder().encode(`bash: ${k}: readonly variable\n`)
-      return [
-        null,
-        new IOResult({ exitCode: 1, stderr: err }),
-        new ExecutionNode({ command: name !== '' ? name : k, exitCode: 1, stderr: err }),
-      ]
-    }
-  }
-
-  if (prefixAssignments.length > 0 && name === '') {
-    for (const [k, v] of prefixAssignments) session.env[k] = v
-    const cmdLabel = prefixAssignments.map(([k, v]) => `${k}=${v}`).join(' ')
-    return [null, new IOResult(), new ExecutionNode({ command: cmdLabel, exitCode: 0 })]
-  }
-
-  const isFunctionCall = name !== '' && session.functions[name] !== undefined
-  const savedEnvOverrides: Record<string, string | null> = {}
-  for (const [k, v] of prefixAssignments) {
-    if (!isFunctionCall) savedEnvOverrides[k] = k in session.env ? (session.env[k] ?? null) : null
-    session.env[k] = v
-  }
-
-  try {
-    return await runCommandBody(
-      recurse,
-      dispatch,
-      registry,
-      executeFn,
-      node,
-      nonPrefixParts,
-      name,
-      session,
-      stdinIn,
-      callStack,
-      jobTable,
-      ensureOpen,
-      unmount,
-      pythonRuntime,
-      history,
-      signal,
-    )
-  } finally {
-    for (const [k, prev] of Object.entries(savedEnvOverrides)) {
-      if (prev === null) {
-        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-        delete session.env[k]
-      } else {
-        session.env[k] = prev
-      }
-    }
-  }
-}
-
-async function runCommandBody(
-  recurse: (
-    n: TSNodeLike,
-    s: Session,
-    i: ByteSource | null,
-    cs: CallStack | null,
-  ) => Promise<Result>,
-  dispatch: DispatchFn,
-  registry: MountRegistry,
-  executeFn: ExecuteFn,
-  node: TSNodeLike,
-  parts: TSNodeLike[],
-  name: string,
-  session: Session,
-  stdinIn: ByteSource | null,
-  callStack: CallStack | null,
-  jobTable: JobTable | null,
-  ensureOpen?: (resource: Resource) => Promise<void>,
-  unmount?: (prefix: string) => Promise<void>,
-  pythonRuntime?: PyodideRuntime,
-  history?: CommandHistory,
-  signal?: AbortSignal,
-): Promise<Result> {
-  let stdin = stdinIn
-
-  for (const child of node.namedChildren) {
-    if (child.type === NT.HERESTRING_REDIRECT) {
-      for (const sc of child.namedChildren) {
-        const content = await expandNode(sc, session, executeFn, callStack)
-        stdin = new TextEncoder().encode(`${content}\n`)
-        break
-      }
-    }
-  }
-
-  const procSubParts: Uint8Array[] = []
-  const cleanParts: TSNodeLike[] = []
-  for (const p of parts) {
-    if (p.type === NT.PROCESS_SUBSTITUTION) {
-      const innerCmds = p.namedChildren.filter((c) => c.type === NT.COMMAND)
-      const innerFirst = innerCmds[0]
-      if (innerFirst !== undefined) {
-        const io = await executeFn(getText(innerFirst), { sessionId: session.sessionId })
-        procSubParts.push(await materialize(io.stdout))
-      }
-      continue
-    }
-    cleanParts.push(p)
-  }
-  if (procSubParts.length > 0 && stdin === null) {
-    let total = 0
-    for (const c of procSubParts) total += c.byteLength
-    const merged = new Uint8Array(total)
-    let off = 0
-    for (const c of procSubParts) {
-      merged.set(c, off)
-      off += c.byteLength
-    }
-    stdin = merged
-  }
-
-  const expanded = await expandParts(cleanParts, session, executeFn, callStack)
-
-  let textArgs: ReadonlySet<string> | null = null
-  let pathArgs: ReadonlySet<string> | null = null
-  const cwdMount = registry.mountFor(session.cwd)
-  const spec = cwdMount !== null ? cwdMount.specFor(name) : null
-  if (spec !== null) {
-    const [textSet, pathSet] = classifyArgvBySpec(spec, expanded.slice(1))
-    textArgs = textSet.size > 0 ? textSet : null
-    pathArgs = pathSet.size > 0 ? pathSet : null
-  }
-
-  const classified = classifyParts(expanded, registry, session.cwd, textArgs, pathArgs)
-  const resolved = await resolveGlobs(classified, registry, textArgs)
-  const finalExpanded = resolved.map((p) => (p instanceof PathSpec ? p.original : p))
-
-  // Shell builtins
-  if (name === SB.PWD) {
-    const out = new TextEncoder().encode(`${session.cwd}\n`)
-    return [out, new IOResult(), new ExecutionNode({ command: 'pwd', exitCode: 0 })]
-  }
-
-  if (name === SB.CD) {
-    let path: string | PathSpec = '/'
-    if (classified.length > 1) {
-      const raw = classified[1]
-      const rawStr = raw instanceof PathSpec ? raw.original : String(raw)
-      if (rawStr === '~') path = '/'
-      else if (raw instanceof PathSpec) path = raw
-      else if (rawStr.startsWith('/')) path = rawStr
-      else path = classifyBarePath(rawStr, registry, session.cwd)
-    }
-    return handleCd(dispatch, (p) => registry.isMountRoot(p), path, session)
-  }
-
-  if (name === SB.TRUE) {
-    return [null, new IOResult(), new ExecutionNode({ command: 'true', exitCode: 0 })]
-  }
-
-  if (name === SB.FALSE) {
-    return [
-      null,
-      new IOResult({ exitCode: 1 }),
-      new ExecutionNode({ command: 'false', exitCode: 1 }),
-    ]
-  }
-
-  if (name === SB.EVAL) return handleEval(executeFn, finalExpanded.slice(1), session)
-  if (name === SB.BASH || name === SB.SH) {
-    return handleBash(executeFn, finalExpanded.slice(1), session, stdin)
-  }
-  if (name === SB.EXPORT) return handleExport(finalExpanded.slice(1), session)
-  if (name === SB.UNSET) return handleUnset(finalExpanded.slice(1), session)
-  if (name === SB.LOCAL) return handleLocal(finalExpanded.slice(1), session)
-  if (name === SB.PRINTENV) {
-    return handlePrintenv(finalExpanded.length > 1 ? (finalExpanded[1] ?? null) : null, session)
-  }
-  if (name === SB.WHOAMI) return handleWhoami(session)
-  if (name === SB.MAN) return handleMan(finalExpanded.slice(1), session, registry)
-  if (name === SB.SET) return handleSet(finalExpanded.slice(1), session, callStack)
-  if (name === SB.SHIFT) {
-    const n = finalExpanded.length > 1 ? Number(finalExpanded[1]) : 1
-    return handleShift(Number.isFinite(n) ? n : 1, callStack, session)
-  }
-  if (name === SB.TRAP) return handleTrap(session)
-  if (name === SB.TEST || name === SB.BRACKET || name === SB.DOUBLE_BRACKET) {
-    return handleTest(dispatch, classified.slice(1), session)
-  }
-  if (name === SB.ECHO) {
-    const args = finalExpanded.slice(1)
-    const nFlag = args.includes('-n')
-    const eFlag = args.includes('-e')
-    return handleEcho(
-      args.filter((a) => a !== '-n' && a !== '-e'),
-      nFlag,
-      eFlag,
-    )
-  }
-  if (name === SB.PRINTF) return handlePrintf(finalExpanded.slice(1))
-  if (name === SB.SLEEP) return handleSleep(finalExpanded.slice(1), signal)
-  if (name === SB.READ) {
-    return handleRead(finalExpanded.slice(1), session, stdin)
-  }
-  if (name === SB.SOURCE || name === SB.DOT) {
-    const target = classified.length > 1 ? (classified[1] ?? '') : ''
-    return handleSource(dispatch, executeFn, target, session)
-  }
-  if (name === SB.RETURN) {
-    const n = finalExpanded.length > 1 ? Number(finalExpanded[1]) : 0
-    return handleReturn(Number.isFinite(n) ? n : 0)
-  }
-  if (name === SB.BREAK) throw new BreakSignal()
-  if (name === SB.CONTINUE) throw new ContinueSignal()
-
-  if (name === SB.XARGS) {
-    const stdinBytes = await materialize(stdin)
-    const inputArgs = new TextDecoder()
-      .decode(stdinBytes)
-      .split(/\s+/)
-      .filter((s) => s !== '')
-    const xargsCmd = finalExpanded[1] ?? 'echo'
-    const inner = `${xargsCmd} ${inputArgs.join(' ')}`
-    const io = await executeFn(inner, { sessionId: session.sessionId })
-    return [io.stdout, io, new ExecutionNode({ command: 'xargs', exitCode: io.exitCode })]
-  }
-
-  if (name === SB.TIMEOUT) {
-    if (finalExpanded.length >= 3) {
-      const innerCmd = finalExpanded.slice(2).join(' ')
-      const io = await executeFn(innerCmd, { sessionId: session.sessionId })
-      return [io.stdout, io, new ExecutionNode({ command: 'timeout', exitCode: io.exitCode })]
-    }
-    return [null, new IOResult(), new ExecutionNode({ command: 'timeout', exitCode: 0 })]
-  }
-
-  if (name === SB.PYTHON || name === SB.PYTHON3) {
-    if (!registry.isExecAllowed()) {
-      const err = new TextEncoder().encode(`${name}: root mount '/' is not in EXEC mode\n`)
-      return [
-        null,
-        new IOResult({ exitCode: 126, stderr: err }),
-        new ExecutionNode({ command: name, exitCode: 126 }),
-      ]
-    }
-    // Reference: mirage/workspace/node/execute_node.py:639-678
-    const { handlePython } = await import('../executor/python/handle.ts')
-    if (pythonRuntime === undefined) {
-      const err = new TextEncoder().encode(`${name}: python runtime is not available\n`)
-      return [
-        null,
-        new IOResult({ exitCode: 127, stderr: err }),
-        new ExecutionNode({ command: name, exitCode: 127 }),
-      ]
-    }
-    const pythonDeps = { runtime: pythonRuntime }
-    const hasCFlag = finalExpanded.includes('-c')
-    if (hasCFlag) {
-      const cIdx = finalExpanded.indexOf('-c')
-      const code = finalExpanded[cIdx + 1] ?? ''
-      const extraArgs = finalExpanded.slice(cIdx + 2)
-      return handlePython(dispatch, null, extraArgs, { stdin, env: session.env, code }, pythonDeps)
-    }
-    let pathScope: PathSpec | null = null
-    for (let i = 1; i < classified.length; i++) {
-      const p = classified[i]
-      if (p instanceof PathSpec) {
-        pathScope = p
-        break
-      }
-    }
-    if (pathScope === null) {
-      for (let i = 1; i < finalExpanded.length; i++) {
-        const arg = finalExpanded[i]
-        if (arg === undefined || arg === '' || arg.startsWith('-')) continue
-        const resolvedBare = classifyBarePath(arg, registry, session.cwd)
-        if (resolvedBare instanceof PathSpec) {
-          pathScope = resolvedBare
-        }
-        break
-      }
-    }
-    if (pathScope !== null) {
-      const scope = pathScope
-      const extraArgs = finalExpanded.slice(1).filter((a) => a !== scope.original)
-      return handlePython(
-        dispatch,
-        pathScope,
-        extraArgs,
-        { stdin, env: session.env, code: null },
-        pythonDeps,
-      )
-    }
-    if (stdin !== null) {
-      const data = await materialize(stdin)
-      if (data.length > 0) {
-        const code = new TextDecoder().decode(data)
-        const extraArgs = finalExpanded.slice(1)
-        return handlePython(
-          dispatch,
-          null,
-          extraArgs,
-          { stdin: null, env: session.env, code },
-          pythonDeps,
-        )
-      }
-    }
-    return [
-      null,
-      new IOResult({
-        exitCode: 1,
-        stderr: new TextEncoder().encode('python3: no input\n'),
-      }),
-      new ExecutionNode({ command: 'python3', exitCode: 1 }),
-    ]
-  }
-
-  // Default: mount-dispatched command
-  return handleCommand(
-    recurse,
-    dispatch,
-    registry,
-    classified,
-    session,
-    stdin,
-    callStack,
-    jobTable,
-    ensureOpen,
-    unmount,
-    history,
-  )
-}
-
-export function classifyArgvBySpec(
-  spec: CommandSpec,
-  argv: readonly string[],
-): [Set<string>, Set<string>] {
-  const boolFlags = new Set<string>()
-  const valueFlags = new Set<string>()
-  const valueFlagKinds = new Map<string, OperandKind>()
-  const longBoolFlags = new Set<string>()
-  const longValueFlags = new Set<string>()
-  let numericShorthandFlag: string | null = null
-  for (const opt of spec.options) {
-    if (opt.short !== null) {
-      if (opt.valueKind === OperandKind.NONE) boolFlags.add(opt.short)
-      else {
-        valueFlags.add(opt.short)
-        valueFlagKinds.set(opt.short, opt.valueKind)
-        if (opt.numericShorthand) numericShorthandFlag = opt.short
-      }
-    }
-    if (opt.long !== null) {
-      if (opt.valueKind === OperandKind.NONE) longBoolFlags.add(opt.long)
-      else {
-        longValueFlags.add(opt.long)
-        valueFlagKinds.set(opt.long, opt.valueKind)
-      }
-    }
-  }
-  const positional = spec.positional.map((op) => op.kind)
-  const restKind = spec.rest?.kind ?? null
-
-  const rawArgs: string[] = []
-  const flagTextValues = new Set<string>()
-  let i = 0
-  let endOfFlags = false
-  while (i < argv.length) {
-    const tok = argv[i]
-    if (tok === undefined) break
-    if (tok === '--' && !endOfFlags) {
-      endOfFlags = true
-      i += 1
-      continue
-    }
-    if (endOfFlags) {
-      rawArgs.push(tok)
-      i += 1
-      continue
-    }
-    if (spec.ignoreTokens.has(tok)) {
-      i += 1
-      continue
-    }
-    if (tok.startsWith('--')) {
-      if (longValueFlags.has(tok) && i + 1 < argv.length) {
-        if (valueFlagKinds.get(tok) === OperandKind.TEXT) {
-          flagTextValues.add(argv[i + 1] ?? '')
-        }
-        i += 2
-      } else {
-        if (!longBoolFlags.has(tok)) rawArgs.push(tok)
-        i += 1
-      }
-      continue
-    }
-    if (tok.startsWith('-') && tok.length > 1) {
-      if (numericShorthandFlag !== null && /^-\d+$/.test(tok)) {
-        flagTextValues.add(tok.slice(1))
-        i += 1
-        continue
-      }
-      let matched = false
-      for (const vf of valueFlags) {
-        if (tok === vf && i + 1 < argv.length) {
-          if (valueFlagKinds.get(vf) === OperandKind.TEXT) {
-            flagTextValues.add(argv[i + 1] ?? '')
-          }
-          i += 2
-          matched = true
-          break
-        }
-        if (tok.startsWith(vf) && tok.length > vf.length) {
-          if (valueFlagKinds.get(vf) === OperandKind.TEXT) {
-            flagTextValues.add(tok.slice(vf.length))
-          }
-          i += 1
-          matched = true
-          break
-        }
-      }
-      if (matched) continue
-      if (boolFlags.has(tok)) {
-        i += 1
-        continue
-      }
-      let allBool = true
-      for (const ch of tok.slice(1)) {
-        if (!boolFlags.has(`-${ch}`)) {
-          allBool = false
-          break
-        }
-      }
-      if (allBool && tok.length > 1) {
-        i += 1
-        continue
-      }
-      rawArgs.push(tok)
-      i += 1
-      continue
-    }
-    rawArgs.push(tok)
-    i += 1
-  }
-
-  const textSet = new Set<string>()
-  const pathSet = new Set<string>()
-  for (let j = 0; j < rawArgs.length; j++) {
-    const arg = rawArgs[j]
-    if (arg === undefined) continue
-    let kind: OperandKind | null
-    if (j < positional.length) kind = positional[j] ?? null
-    else kind = restKind
-    if (kind === null) continue
-    if (kind === OperandKind.TEXT) textSet.add(arg)
-    else if (kind === OperandKind.PATH) pathSet.add(arg)
-  }
-  for (const v of flagTextValues) textSet.add(v)
-  return [textSet, pathSet]
 }
