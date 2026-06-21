@@ -23,6 +23,7 @@ import { listGuilds } from './guilds.ts'
 import { DISCORD_EPOCH, listMessagesForDay } from './history.ts'
 import { listMembers } from './members.ts'
 import { DiscordApiError } from './_client.ts'
+import { epochToIso } from '../../utils/dates.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import { enoent } from '../../utils/errors.ts'
 
@@ -46,8 +47,7 @@ export function snowflakeToIso(snowflake: string): string | null {
   } catch {
     return null
   }
-  // second precision, matching the Python converter
-  return new Date(Number(ms / 1000n) * 1000).toISOString().replace('.000Z', 'Z')
+  return epochToIso(Number(ms / 1000n))
 }
 
 export function dateRangeDescending(endDate: string, days = 30): string[] {

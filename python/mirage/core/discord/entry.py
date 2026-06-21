@@ -17,7 +17,7 @@ from enum import Enum
 
 from mirage.cache.index.config import IndexEntry
 from mirage.core.discord.history import DISCORD_EPOCH
-from mirage.core.timeutil import to_iso_z
+from mirage.core.timeutil import epoch_to_iso
 from mirage.utils.naming import make_id_name
 
 
@@ -63,7 +63,7 @@ def snowflake_to_iso(snowflake: str) -> str | None:
         ms = (int(snowflake) >> 22) + DISCORD_EPOCH
     except (TypeError, ValueError):
         return None
-    return to_iso_z(datetime.fromtimestamp(ms // 1000, tz=timezone.utc))
+    return epoch_to_iso(ms // 1000)
 
 
 def guild_entry(g: dict) -> IndexEntry:

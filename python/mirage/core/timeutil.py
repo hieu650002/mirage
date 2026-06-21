@@ -21,3 +21,7 @@ def to_iso_z(dt: datetime) -> str:
 
 def now_iso() -> str:
     return to_iso_z(datetime.now(timezone.utc))
+
+
+def epoch_to_iso(seconds: float) -> str:
+    return to_iso_z(datetime.fromtimestamp(seconds, tz=timezone.utc))

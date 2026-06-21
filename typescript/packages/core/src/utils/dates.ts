@@ -16,3 +16,7 @@ export function utcDateFolder(ts?: number): string {
   const d = ts === undefined ? new Date() : new Date(ts)
   return d.toISOString().slice(0, 10)
 }
+
+export function epochToIso(seconds: number): string {
+  return new Date(seconds * 1000).toISOString().replace('.000Z', 'Z')
+}

@@ -16,6 +16,7 @@ import type { SlackAccessor } from '../../accessor/slack.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { readdir as coreReaddir } from './readdir.ts'
+import { epochToIso } from '../../utils/dates.ts'
 import { stripSlash } from '../../utils/slash.ts'
 
 const VIRTUAL_DIRS: ReadonlySet<string> = new Set(['', 'channels', 'dms', 'users'])
@@ -43,9 +44,8 @@ function filetypeFromMimetype(mime: string): FileType {
 function slackModified(remoteTime: string): string | null {
   if (remoteTime === '') return null
   const ts = Number.parseFloat(remoteTime)
-  if (Number.isNaN(ts)) return null
-  // second precision, matching the Python converter
-  return new Date(Math.floor(ts) * 1000).toISOString().replace('.000Z', 'Z')
+  if (Number.isNaN(ts) || ts <= 0) return null
+  return epochToIso(Math.floor(ts))
 }
 
 function fileNotFound(key: string): Error {
