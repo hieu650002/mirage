@@ -1,18 +1,9 @@
-from collections.abc import Callable
-
-from pydantic import BaseModel, ConfigDict, SecretStr
-
 from mirage.accessor.base import Accessor
+from mirage.core.msgraph.config import MsGraphConfig
 
 
-class SharePointConfig(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
-    access_token: SecretStr | Callable[[], str | SecretStr]
-    tenant_host: str | None = None
+class SharePointConfig(MsGraphConfig):
     site_filter: str | None = None
-    timeout: int = 30
-    max_retries: int = 5
 
 
 class SharePointAccessor(Accessor):
